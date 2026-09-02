@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .config import APP_NAME, APP_VERSION, BIN_DIR, IS_WINDOWS, STATE_PATH, ensure_dirs
+from .runtime import RuntimeInfo, RuntimeManager
 
 YTDLP_EXE = "yt-dlp.exe" if IS_WINDOWS else "yt-dlp"
 FFMPEG_EXE = "ffmpeg.exe" if IS_WINDOWS else "ffmpeg"
@@ -77,6 +78,8 @@ class ToolManager:
     def __init__(self, bin_dir: Path = BIN_DIR):
         self.bin_dir = bin_dir
         self.state = self._load_state()
+        self.runtime = RuntimeManager()
+        self.runtime_info = RuntimeInfo({}, False)
 
     # ---------------------------------------------------------------- estado
     def _load_state(self) -> dict:
@@ -315,6 +318,9 @@ class ToolManager:
         progress("Preparando o ambiente…", -1)
         self.ensure_ytdlp(progress, force)
         self.ensure_ffmpeg(progress, force)
+        # Nenhuma tela funcional é liberada antes desta atualização: PyTorch e
+        # faster-whisper ainda não foram importados, então arquivos/DLLs não ficam presos.
+        self.runtime_info = self.runtime.ensure(progress, force)
         tc = self.toolchain()
         if not tc.ok:
             raise RuntimeError("As dependências não ficaram disponíveis após a instalação.")

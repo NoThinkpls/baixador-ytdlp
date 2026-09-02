@@ -43,7 +43,9 @@ class SetupDialog(_Base):
         layout.setSpacing(10)
 
         self.title = SubtitleLabel(APP_NAME, container)
-        self.subtitle = CaptionLabel(f"versão {APP_VERSION}", container)
+        self.subtitle = CaptionLabel(
+            f"versão {APP_VERSION} · o programa será liberado após atualizar todas as dependências",
+            container)
         self.status = BodyLabel("Iniciando…", container)
         self.status.setWordWrap(True)
 

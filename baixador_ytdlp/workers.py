@@ -9,6 +9,7 @@ from .config import Settings
 from .downloader import DownloadOptions, DownloadRunner, Progress, Transcoder
 from .probe import MediaInfo, probe
 from .tools import ToolManager, Toolchain
+from .transcription import Transcriber, TranscriptionCancelled, TranscriptionOptions
 
 
 class SetupWorker(QThread):
@@ -94,3 +95,38 @@ class DownloadWorker(QThread):
             self.finished_ok.emit(self.job_id, files)
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(self.job_id, str(exc))
+
+
+class TranscriptionWorker(QThread):
+    """Executa Whisper fora da interface e encaminha eventos para a aba Legendar."""
+
+    status = Signal(str)
+    progress = Signal(int)
+    finished_ok = Signal(str)
+    cancelled = Signal()
+    failed = Signal(str)
+
+    def __init__(self, opts: TranscriptionOptions, tc: Toolchain, parent=None):
+        super().__init__(parent)
+        self.opts, self.tc = opts, tc
+        self.transcriber: Transcriber | None = None
+
+    def cancel(self) -> None:
+        if self.transcriber:
+            self.transcriber.cancel()
+
+    def pause(self, paused: bool) -> None:
+        if self.transcriber:
+            self.transcriber.pause(paused)
+
+    def run(self) -> None:
+        try:
+            self.transcriber = Transcriber(
+                self.tc, self.status.emit, self.progress.emit, self.opts.aggressive_filter)
+            self.transcriber.run(self.opts)
+        except TranscriptionCancelled:
+            self.cancelled.emit()
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+        else:
+            self.finished_ok.emit(str(self.opts.output_path))

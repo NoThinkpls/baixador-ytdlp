@@ -19,6 +19,8 @@ if (-not (Test-Path .venv)) {
 Write-Host '> Instalando dependências' -ForegroundColor Cyan
 python -m pip install --upgrade pip | Out-Null
 pip install -r requirements.txt pyinstaller | Out-Null
+# A variante CUDA deixa o Whisper usar a NVIDIA quando o driver estiver disponível.
+pip install torch --index-url https://download.pytorch.org/whl/cu126 | Out-Null
 
 Write-Host '> Compilando' -ForegroundColor Cyan
 Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue

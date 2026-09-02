@@ -42,6 +42,9 @@ disponíveis e baixa na melhor por padrão.
   navegador para conteúdo com login, detecção de link na área de transferência.
 - **Conversão por GPU (opcional).** NVENC em H.264, HEVC ou AV1 — leia a seção sobre GPU
   antes de ligar.
+- **Legendador local.** Transcreve vídeo ou áudio com `faster-whisper`, usando CUDA/float16
+  na NVIDIA quando disponível e CPU/int8 como fallback. Exporta SRT, WebVTT, ASS, TXT e JSON.
+  Inclui VAD, pré-processamento 16 kHz e filtro opcional contra alucinações.
 
 ## Instalação
 
@@ -85,6 +88,14 @@ Ou pelo GitHub Actions, sem instalar nada: qualquer push na `main` compila e pub
 `.exe` e o setup como artefatos do run. Uma tag `v1.0.0` gera uma release com o instalador
 e os hashes anexados.
 
+> A versão com legendador inclui PyTorch, faster-whisper, CTranslate2, CUDA e o atualizador de
+> pacotes no instalador; por isso a primeira build e o arquivo final são consideravelmente maiores.
+> Em **toda abertura**, antes de liberar a interface, o app identifica a presença do driver NVIDIA
+> e verifica/atualiza PyTorch, faster-whisper e CTranslate2 para o runtime isolado do usuário.
+> Sem driver NVIDIA ele busca a variante CPU; com NVIDIA, a variante CUDA. Se estiver offline, usa
+> a cópia embutida já funcional e informa isso na tela inicial. O yt-dlp e o FFmpeg continuam
+> atualizados no mesmo fluxo.
+
 ## Sobre a GPU
 
 **O download não usa a GPU.** Baixar vídeo é rede e cópia de arquivo — não existe "baixar
@@ -126,8 +137,9 @@ baixador_ytdlp/
 ├── gpu.py                  detecção de NVENC
 ├── probe.py                yt-dlp -J e montagem da lista de qualidades
 ├── downloader.py           linha de comando, leitura de progresso, NVENC
+├── transcription.py         Whisper, filtro de qualidade e exportação de legendas
 ├── workers.py              QThreads (nada de I/O na thread da interface)
-└── ui/                     setup_dialog, home_page, queue_page, settings_page, main_window
+└── ui/                     setup_dialog, download, fila, legendador, configurações e janela
 .github/workflows/build.yml compilação e release automáticas
 installer.iss               receita do Inno Setup
 baixador_ytdlp.spec         receita do PyInstaller
