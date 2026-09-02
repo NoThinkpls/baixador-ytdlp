@@ -1,16 +1,24 @@
 # -*- mode: python ; coding: utf-8 -*-
 """Receita do PyInstaller. Uso: pyinstaller baixador_ytdlp.spec --noconfirm"""
+from PyInstaller.utils.hooks import collect_all
+
+fw_datas, fw_binaries, fw_hidden = collect_all('faster_whisper')
+ct_datas, ct_binaries, ct_hidden = collect_all('ctranslate2')
+torch_datas, torch_binaries, torch_hidden = collect_all('torch')
+av_datas, av_binaries, av_hidden = collect_all('av')
+pip_datas, pip_binaries, pip_hidden = collect_all('pip')
 
 block_cipher = None
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[],
-    datas=[('assets/icon.ico', 'assets')],
-    hiddenimports=['qfluentwidgets', 'qframelesswindow'],
+    binaries=fw_binaries + ct_binaries + torch_binaries + av_binaries + pip_binaries,
+    datas=[('assets/icon.ico', 'assets')] + fw_datas + ct_datas + torch_datas + av_datas + pip_datas,
+    hiddenimports=(['qfluentwidgets', 'qframelesswindow'] + fw_hidden + ct_hidden + torch_hidden + av_hidden
+                   + pip_hidden),
     hookspath=[],
-    runtime_hooks=[],
+    runtime_hooks=['pyinstaller_runtime.py'],
     excludes=[
         'PySide6.QtWebEngineCore', 'PySide6.QtWebEngineWidgets', 'PySide6.Qt3DCore',
         'PySide6.QtQuick3D', 'PySide6.QtCharts', 'PySide6.QtDataVisualization',

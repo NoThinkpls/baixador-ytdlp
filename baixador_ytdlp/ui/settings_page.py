@@ -264,5 +264,8 @@ class SettingsPage(QWidget):
                     self.codec_combo.setCurrentIndex(i)
                     break
 
-    def set_versions(self, ytdlp: str, ffmpeg: str) -> None:
-        self.versions.setText(f"yt-dlp {ytdlp or '—'} · FFmpeg {ffmpeg or '—'}")
+    def set_versions(self, ytdlp: str, ffmpeg: str, transcription_runtime: str = "") -> None:
+        text = f"yt-dlp {ytdlp or '—'} · FFmpeg {ffmpeg or '—'}"
+        if transcription_runtime:
+            text += f"\n{transcription_runtime}"
+        self.versions.setText(text)

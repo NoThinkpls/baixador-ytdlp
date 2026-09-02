@@ -16,6 +16,7 @@ from .home_page import HomePage
 from .queue_page import QueuePage
 from .settings_page import SettingsPage
 from .setup_dialog import SetupDialog
+from .transcription_page import TranscriptionPage
 
 URL_RE = re.compile(r"https?://\S+")
 
@@ -30,6 +31,7 @@ class MainWindow(FluentWindow):
 
         self.home = HomePage(cfg, self)
         self.queue = QueuePage(cfg, self)
+        self.transcription = TranscriptionPage(cfg, self)
         self.settings = SettingsPage(cfg, self)
 
         self._init_window(icon)
@@ -54,6 +56,7 @@ class MainWindow(FluentWindow):
     def _init_navigation(self) -> None:
         self.addSubInterface(self.home, FIF.DOWNLOAD, "Baixar")
         self.addSubInterface(self.queue, FIF.MENU, "Fila")
+        self.addSubInterface(self.transcription, FIF.DOWNLOAD, "Legendar")
         self.addSubInterface(self.settings, FIF.SETTING, "Configurações",
                              position=NavigationItemPosition.BOTTOM)
 
@@ -74,7 +77,9 @@ class MainWindow(FluentWindow):
         self.toolchain = toolchain
         self.home.set_toolchain(toolchain)
         self.queue.set_toolchain(toolchain)
-        self.settings.set_versions(toolchain.ytdlp_version, toolchain.ffmpeg_version)
+        self.transcription.set_toolchain(toolchain)
+        self.settings.set_versions(toolchain.ytdlp_version, toolchain.ffmpeg_version,
+                                   self.manager.runtime_info.summary)
         self.settings.set_gpu(detect(toolchain.ffmpeg))
 
     def _on_enqueue(self, opts) -> None:

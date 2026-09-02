@@ -33,6 +33,8 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
+          # A build inclui PyTorch com CUDA para a transcrição local em GPUs NVIDIA.
+          pip install torch --index-url https://download.pytorch.org/whl/cu126
 
       - name: Definir a versão
         id: ver
@@ -71,6 +73,14 @@ jobs:
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
             "$hash  $($_.Name)" | Tee-Object -Append dist\installer\SHA256SUMS.txt
           }
+
+      - name: Criar a cópia de nome fixo
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          # Permite um link de download que nunca quebra:
+          # /releases/latest/download/baixador-ytdlp-setup.exe
+          $src = Get-ChildItem dist\installer\baixador-ytdlp-*-setup.exe | Select-Object -First 1
+          Copy-Item $src.FullName dist\installer\baixador-ytdlp-setup.exe
 
       - name: Publicar a versão portátil
         uses: actions/upload-artifact@v4

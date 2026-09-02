@@ -9,7 +9,7 @@ from pathlib import Path
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 IS_WINDOWS = sys.platform.startswith("win")
 
 
@@ -26,6 +26,8 @@ def _data_root() -> Path:
 DATA_DIR = _data_root()
 BIN_DIR = DATA_DIR / "bin"
 LOG_DIR = DATA_DIR / "logs"
+MODEL_DIR = DATA_DIR / "models"
+RUNTIME_DIR = DATA_DIR / "runtime"
 SETTINGS_PATH = DATA_DIR / "settings.json"
 STATE_PATH = DATA_DIR / "tools_state.json"
 
@@ -81,6 +83,11 @@ class Settings:
     transcode_cq: int = 20
     transcode_preset: str = "p5"
     transcode_replace: bool = False       # apagar o original após converter
+    # Legendas/transcrição (faster-whisper)
+    transcription_language: str = "pt"
+    transcription_model: str = "medium"
+    transcription_format: str = "srt"    # srt | vtt | ass | txt | json
+    transcription_aggressive_filter: bool = False
 
     @classmethod
     def load(cls) -> "Settings":
@@ -99,5 +106,5 @@ class Settings:
 
 
 def ensure_dirs() -> None:
-    for path in (DATA_DIR, BIN_DIR, LOG_DIR):
+    for path in (DATA_DIR, BIN_DIR, LOG_DIR, MODEL_DIR, RUNTIME_DIR):
         path.mkdir(parents=True, exist_ok=True)
