@@ -9,7 +9,7 @@
 Instala e atualiza as próprias dependências, analisa o link, mostra todas as qualidades
 disponíveis e baixa na melhor por padrão.
 
-[![build](https://github.com/SEU_USUARIO/baixador-ytdlp/actions/workflows/build.yml/badge.svg)](https://github.com/SEU_USUARIO/baixador-ytdlp/actions/workflows/build.yml)
+[![build](https://github.com/NoThinkpls/baixador-ytdlp/actions/workflows/build.yml/badge.svg)](https://github.com/NoThinkpls/baixador-ytdlp/actions/workflows/build.yml)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![Windows](https://img.shields.io/badge/plataforma-Windows%2010%2F11-0078D4)
 ![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-green)
@@ -58,7 +58,7 @@ portátil (a pasta inteira) nos artefatos de cada build.
 ## Rodando a partir do código
 
 ```powershell
-git clone https://github.com/SEU_USUARIO/baixador-ytdlp.git
+git clone https://github.com/NoThinkpls/baixador-ytdlp.git
 cd baixador-ytdlp
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
