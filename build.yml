@@ -72,6 +72,14 @@ jobs:
             "$hash  $($_.Name)" | Tee-Object -Append dist\installer\SHA256SUMS.txt
           }
 
+      - name: Criar a cópia de nome fixo
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          # Permite um link de download que nunca quebra:
+          # /releases/latest/download/baixador-ytdlp-setup.exe
+          $src = Get-ChildItem dist\installer\baixador-ytdlp-*-setup.exe | Select-Object -First 1
+          Copy-Item $src.FullName dist\installer\baixador-ytdlp-setup.exe
+
       - name: Publicar a versão portátil
         uses: actions/upload-artifact@v4
         with:

@@ -10,9 +10,11 @@ Instala e atualiza as próprias dependências, analisa o link, mostra todas as q
 disponíveis e baixa na melhor por padrão.
 
 [![build](https://github.com/NoThinkpls/baixador-ytdlp/actions/workflows/build.yml/badge.svg)](https://github.com/NoThinkpls/baixador-ytdlp/actions/workflows/build.yml)
-![Python](https://img.shields.io/badge/python-3.12-blue)
+[![release](https://img.shields.io/github/v/release/NoThinkpls/baixador-ytdlp?label=vers%C3%A3o)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
+[![downloads](https://img.shields.io/github/downloads/NoThinkpls/baixador-ytdlp/total?label=downloads)](https://github.com/NoThinkpls/baixador-ytdlp/releases)
 ![Windows](https://img.shields.io/badge/plataforma-Windows%2010%2F11-0078D4)
-![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-green)
+
+### [⬇ Baixar o instalador](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-setup.exe)
 
 </div>
 
