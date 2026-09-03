@@ -65,7 +65,7 @@ class Transcriber:
     )
 
     def __init__(self, toolchain: Toolchain, status: StatusCB, progress: ProgressCB,
-                 aggressive_filter: bool = False, cancel_event=None, pause_event=None):
+                 aggressive_filter: bool = False, cancel_event=None, pause_event=None, force_cpu: bool = False):
         self.toolchain = toolchain
         self.status = status
         self.progress = progress
@@ -74,7 +74,7 @@ class Transcriber:
         # Events do multiprocessing e preservam a pausa/cancelamento entre processos.
         self.cancel_event = cancel_event if cancel_event is not None else threading.Event()
         self.pause_event = pause_event if pause_event is not None else threading.Event()
-        self.device, self.compute_type, self.hardware_label = self._detect_hardware()
+        self.device, self.compute_type, self.hardware_label = (("cpu", "int8", "CPU — CUDA interno indisponível (int8)") if force_cpu else self._detect_hardware())
         self.model = None
 
     def cancel(self) -> None:
@@ -144,6 +144,40 @@ class Transcriber:
         self.progress(15)
         self.status(f"Modelo pronto: {self.hardware_label}")
 
+    def _switch_to_cpu(self, model_size: str, reason: Exception) -> None:
+        """Troca de CUDA para CPU quando uma DLL/driver falha durante o uso."""
+        from faster_whisper import WhisperModel
+
+        self.status(f"CUDA indisponível durante a transcrição ({reason}). Alternando para CPU int8…")
+        self.model = None
+        gc.collect()
+        self.device, self.compute_type = "cpu", "int8"
+        self.hardware_label = "CPU — fallback automático (int8)"
+        self.model = WhisperModel(
+            model_size, device="cpu", compute_type="int8", download_root=str(MODEL_DIR),
+            cpu_threads=whisper_threads(), num_workers=1,
+        )
+        self.status(f"Modelo pronto: {self.hardware_label}")
+
+    def _decode(self, audio: Path, opts: TranscriptionOptions, duration: float) -> tuple[list[dict], object]:
+        """Consome o gerador do Whisper; erros de DLL podem ocorrer só aqui."""
+        segments, info = self.model.transcribe(
+            str(audio), language=None if opts.language == "auto" else opts.language,
+            word_timestamps=True, vad_filter=True,
+            vad_parameters={"min_silence_duration_ms": 250, "speech_pad_ms": 50,
+                            "max_speech_duration_s": 6.0},
+            **self._model_options(opts.model_size),
+        )
+        raw: list[dict] = []
+        for item in segments:
+            self._check_interrupt()
+            raw.append({"start": float(item.start), "end": float(item.end),
+                        "text": item.text.strip(), "avg_logprob": item.avg_logprob,
+                        "no_speech_prob": item.no_speech_prob})
+            if duration:
+                self.progress(min(90, max(16, int(item.end * 74 / duration) + 16)))
+        return raw, info
+
     def _duration(self, media: Path) -> float:
         try:
             proc = subprocess.run(
@@ -180,21 +214,17 @@ class Transcriber:
             audio = self._extract_audio(opts.media_path)
             duration = self._duration(opts.media_path)
             self.status(f"Transcrevendo {opts.media_path.name}…")
-            segments, info = self.model.transcribe(
-                str(audio), language=None if opts.language == "auto" else opts.language,
-                word_timestamps=True, vad_filter=True,
-                vad_parameters={"min_silence_duration_ms": 250, "speech_pad_ms": 50,
-                                "max_speech_duration_s": 6.0},
-                **self._model_options(opts.model_size),
-            )
-            raw: list[dict] = []
-            for item in segments:
-                self._check_interrupt()
-                raw.append({"start": float(item.start), "end": float(item.end),
-                            "text": item.text.strip(), "avg_logprob": item.avg_logprob,
-                            "no_speech_prob": item.no_speech_prob})
-                if duration:
-                    self.progress(min(90, max(16, int(item.end * 74 / duration) + 16)))
+            try:
+                raw, info = self._decode(audio, opts, duration)
+            except TranscriptionCancelled:
+                raise
+            except Exception as exc:
+                if self.device != "cuda":
+                    raise
+                # A carga das DLLs CUDA é preguiçosa; erros como
+                # cublas64_12.dll ausente aparecem ao iterar os segmentos.
+                self._switch_to_cpu(opts.model_size, exc)
+                raw, info = self._decode(audio, opts, duration)
             self.status(f"{len(raw)} segmentos brutos · idioma {info.language} ({info.language_probability:.0%})")
             result = self._fix_timing(self._split_segments(self._clean(raw)))
             self._write(opts.output_path, opts.output_format, result, info.language)
@@ -355,8 +385,8 @@ def transcription_process_main(opts: TranscriptionOptions, toolchain: Toolchain,
     install_diagnostics("transcription-worker")
     # O processo spawnado no Windows começa com um sys.path novo. Reativa o
     # runtime validado pelo setup antes de importar CTranslate2/faster-whisper.
-    from .runtime import activate_runtime
-    activate_runtime()
+    from .runtime import prepare_embedded_cuda
+    cuda_problem = prepare_embedded_cuda()
 
     def send(kind: str, value=None) -> None:
         try:
@@ -370,8 +400,10 @@ def transcription_process_main(opts: TranscriptionOptions, toolchain: Toolchain,
         transcriber = Transcriber(
             toolchain, lambda message: send("status", message),
             lambda percent: send("progress", percent), opts.aggressive_filter,
-            cancel_event=cancel_event, pause_event=pause_event,
+            cancel_event=cancel_event, pause_event=pause_event, force_cpu=bool(cuda_problem),
         )
+        if cuda_problem:
+            send("status", f"CUDA interno indisponível ({cuda_problem}). Usando CPU int8…")
         transcriber.run(opts)
     except TranscriptionCancelled:
         log_event("Transcrição auxiliar cancelada pelo usuário")
