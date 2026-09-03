@@ -9,8 +9,7 @@
 Instala e atualiza as próprias dependências, analisa o link, mostra todas as qualidades
 disponíveis e baixa na melhor por padrão.
 
-[![versão](https://img.shields.io/github/v/release/NoThinkpls/baixador-ytdlp?label=vers%C3%A3o&color=0078D4)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
-[![downloads](https://img.shields.io/github/downloads/NoThinkpls/baixador-ytdlp/total?label=downloads&color=2EA043)](https://github.com/NoThinkpls/baixador-ytdlp/releases)
+[![versão](https://img.shields.io/badge/vers%C3%A3o-1.2.0-0078D4)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
 ![plataforma](https://img.shields.io/badge/plataforma-Windows%2010%2F11-0078D4)
 ![licença](https://img.shields.io/badge/licen%C3%A7a-MIT-lightgrey)
 
