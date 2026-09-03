@@ -9,8 +9,10 @@
 Instala e atualiza as próprias dependências, analisa o link, mostra todas as qualidades
 disponíveis e baixa na melhor por padrão.
 
-[![versão](https://img.shields.io/badge/vers%C3%A3o-1.2.0-0078D4)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
+[![versão](https://img.shields.io/badge/vers%C3%A3o-1.2.3-0078D4)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
 ![plataforma](https://img.shields.io/badge/plataforma-Windows%2010%2F11-0078D4)
+![aceleração](https://img.shields.io/badge/legendador-CUDA%20%C2%B7%20NVIDIA%20RTX-76B900?logo=nvidia&logoColor=white)
+![fallback](https://img.shields.io/badge/fallback-CPU%20int8-555555)
 ![licença](https://img.shields.io/badge/licen%C3%A7a-MIT-lightgrey)
 
 ### [⬇ Baixar o instalador](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-setup.exe)
