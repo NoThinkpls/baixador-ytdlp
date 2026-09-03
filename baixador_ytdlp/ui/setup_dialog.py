@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QSizePolicy, QVBoxLayout, QWidget
 from qfluentwidgets import (BodyLabel, CaptionLabel, IndeterminateProgressBar, ProgressBar,
                             PushButton, SubtitleLabel, isDarkTheme)
 
@@ -34,8 +34,10 @@ class SetupDialog(_Base):
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
         self.setWindowTitle(APP_NAME)
-        self.resize(460, 260)
-        self.setFixedSize(460, 260)
+        self.resize(560, 290)
+        self.setMinimumSize(460, 250)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint)
 
         container = QWidget(self)
         layout = QVBoxLayout(container)
@@ -73,6 +75,10 @@ class SetupDialog(_Base):
 
         if hasattr(self, "titleBar"):
             self.titleBar.raise_()
+            for name in ("minBtn", "maxBtn"):
+                button = getattr(self.titleBar, name, None)
+                if button:
+                    button.show()
         self._apply_background()
 
     def _apply_background(self) -> None:
@@ -110,5 +116,6 @@ class SetupDialog(_Base):
 
     def closeEvent(self, event):  # noqa: N802 - assinatura do Qt
         if self.worker.isRunning():
+            self.worker.requestInterruption()
             self.worker.wait(2000)
         super().closeEvent(event)

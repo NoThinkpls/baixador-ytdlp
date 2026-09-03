@@ -6,13 +6,13 @@ frágil em cima da saída humana.
 """
 from __future__ import annotations
 
-import re
 import shlex
 import subprocess
 import threading
-from dataclasses import dataclass, field
+from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterator, Optional
+from typing import Callable, Optional
 
 from .config import Settings
 from .tools import CREATE_NO_WINDOW, Toolchain
@@ -41,6 +41,8 @@ class DownloadOptions:
     audio_format: str = "mp3"
     playlist: bool = False
     title: str = ""
+    section_start: str = ""         # "00:01:30" — vazio = do começo
+    section_end: str = ""           # "00:04:00" — vazio = até o fim
 
 
 @dataclass
@@ -90,8 +92,16 @@ def build_args(opts: DownloadOptions, cfg: Settings, tc: Toolchain) -> list[str]
         if cfg.prefer_h264:
             args += ["-S", "vcodec:h264,res,fps,acodec:aac"]
         if opts.container in ("mp4", "mkv", "webm"):
+            # --merge-output-format já resolve o caso vídeo+áudio separados.
+            # --remux-video só entra para o arquivo único que veio em outro container:
+            # o "container>container" faz o yt-dlp pular o remux quando já está certo.
             args += ["--merge-output-format", opts.container]
-            args += ["--remux-video", opts.container]
+            args += ["--remux-video", f"{opts.container}>{opts.container}"]
+
+    section = _section_range(opts)
+    if section:
+        # Recorte exige um único fluxo por vez; o yt-dlp baixa só o intervalo pedido.
+        args += ["--download-sections", section, "--force-keyframes-at-cuts"]
 
     if cfg.embed_metadata:
         args.append("--embed-metadata")
@@ -118,6 +128,14 @@ def build_args(opts: DownloadOptions, cfg: Settings, tc: Toolchain) -> list[str]
     return args
 
 
+def _section_range(opts: DownloadOptions) -> str:
+    """Monta o argumento de --download-sections a partir do intervalo escolhido."""
+    start, end = opts.section_start.strip(), opts.section_end.strip()
+    if not start and not end:
+        return ""
+    return f"*{start or '0'}-{end or 'inf'}"
+
+
 def preview_command(opts: DownloadOptions, cfg: Settings, tc: Toolchain) -> str:
     """Linha de comando equivalente — útil para auditoria e para reproduzir no terminal."""
     return " ".join(shlex.quote(a) for a in build_args(opts, cfg, tc))
@@ -129,7 +147,8 @@ class DownloadRunner:
     def __init__(self, opts: DownloadOptions, cfg: Settings, tc: Toolchain):
         self.opts, self.cfg, self.tc = opts, cfg, tc
         self.files: list[Path] = []
-        self.log: list[str] = []
+        # deque com teto: o log de erro não cresce sem limite em playlist longa.
+        self.log: deque[str] = deque(maxlen=300)
         self._proc: Optional[subprocess.Popen] = None
         self._cancelled = threading.Event()
 
@@ -164,8 +183,6 @@ class DownloadRunner:
                     self.files.append(path)
             else:
                 self.log.append(line)
-                if len(self.log) > 400:
-                    del self.log[:100]
                 stage = _stage_from_line(line)
                 if stage:
                     prog.stage = stage
@@ -202,27 +219,35 @@ class DownloadRunner:
         prog.stage = ""
 
     def _last_error(self) -> str:
-        errors = [l for l in self.log if l.startswith("ERROR")]
-        if errors:
-            return errors[-1].replace("ERROR: ", "")
+        for line in reversed(self.log):
+            if line.startswith("ERROR"):
+                return line.replace("ERROR: ", "")
         return self.log[-1] if self.log else "O yt-dlp terminou com erro."
+
+    def tail(self, lines: int = 40) -> str:
+        """Últimas linhas da saída — alimenta o botão 'Ver detalhes' na fila."""
+        return "\n".join(list(self.log)[-lines:])
+
+
+_STAGES = {
+    "Merger": "Juntando vídeo e áudio…",
+    "ExtractAudio": "Extraindo o áudio…",
+    "VideoRemuxer": "Remuxando o container…",
+    "EmbedThumbnail": "Embutindo a capa…",
+    "Metadata": "Gravando metadados…",
+    "SponsorBlock": "Consultando o SponsorBlock…",
+    "ModifyChapters": "Removendo trechos patrocinados…",
+    "subtitles": "Baixando legendas…",
+    "SplitChapters": "Separando capítulos…",
+}
 
 
 def _stage_from_line(line: str) -> str:
-    mapping = {
-        "[Merger]": "Juntando vídeo e áudio…",
-        "[ExtractAudio]": "Extraindo o áudio…",
-        "[VideoRemuxer]": "Remuxando o container…",
-        "[EmbedThumbnail]": "Embutindo a capa…",
-        "[Metadata]": "Gravando metadados…",
-        "[SponsorBlock]": "Consultando o SponsorBlock…",
-        "[ModifyChapters]": "Removendo trechos patrocinados…",
-        "[subtitles]": "Baixando legendas…",
-    }
-    for key, text in mapping.items():
-        if line.startswith(key):
-            return text
-    return ""
+    """Uma busca de dicionário por linha, em vez de varrer todos os prefixos."""
+    if not line.startswith("["):
+        return ""
+    end = line.find("]")
+    return _STAGES.get(line[1:end], "") if end > 1 else ""
 
 
 def _to_int(value: str) -> int:

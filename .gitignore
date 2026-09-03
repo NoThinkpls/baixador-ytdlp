@@ -1,0 +1,45 @@
+# Ambiente virtual e artefatos de build — nada disto pertence ao repositório.
+.venv/
+venv/
+env/
+build/
+dist/
+*.spec.bak
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Saída do Inno Setup
+Output/
+*.exe
+*.sha256
+SHA256SUMS.txt
+
+# Binários baixados em tempo de execução (ficam em %LOCALAPPDATA%, mas por garantia)
+yt-dlp.exe
+ffmpeg.exe
+ffprobe.exe
+ffplay.exe
+*.part
+*.old
+*.new
+
+# Editores e sistema
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Logs e configurações locais
+*.log
+settings.json
+tools_state.json
+history.json
+runtime_state.json

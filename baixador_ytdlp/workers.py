@@ -7,7 +7,8 @@ from PySide6.QtCore import QThread, Signal
 
 from .config import Settings
 from .downloader import DownloadOptions, DownloadRunner, Progress, Transcoder
-from .probe import MediaInfo, probe
+from .gpu import GpuInfo, detect
+from .probe import probe
 from .tools import ToolManager, Toolchain
 from .transcription import Transcriber, TranscriptionCancelled, TranscriptionOptions
 
@@ -56,7 +57,7 @@ class DownloadWorker(QThread):
 
     progress = Signal(int, object)          # job_id, Progress
     finished_ok = Signal(int, object)       # job_id, list[Path]
-    failed = Signal(int, str)
+    failed = Signal(int, str, str)          # job_id, mensagem, saída completa
 
     def __init__(self, job_id: int, opts: DownloadOptions, cfg: Settings,
                  tc: Toolchain, parent=None):
@@ -74,7 +75,7 @@ class DownloadWorker(QThread):
         try:
             files = self.runner.run(lambda p: self.progress.emit(self.job_id, p))
             if self.runner.cancelled:
-                self.failed.emit(self.job_id, "Cancelado")
+                self.failed.emit(self.job_id, "Cancelado", "")
                 return
 
             if self.cfg.transcode_enabled and not self.opts.audio_only and files:
@@ -94,7 +95,28 @@ class DownloadWorker(QThread):
 
             self.finished_ok.emit(self.job_id, files)
         except Exception as exc:  # noqa: BLE001
-            self.failed.emit(self.job_id, str(exc))
+            self.failed.emit(self.job_id, str(exc), self.runner.tail())
+
+
+class GpuWorker(QThread):
+    """Detecta NVENC fora da thread da interface.
+
+    A detecção roda `nvidia-smi` e duas vezes o FFmpeg; na thread da UI isso
+    congelava a janela por até alguns segundos logo após a tela de setup.
+    """
+
+    finished_ok = Signal(object)      # GpuInfo
+
+    def __init__(self, ffmpeg: Path, parent=None):
+        super().__init__(parent)
+        self.ffmpeg = ffmpeg
+
+    def run(self) -> None:
+        try:
+            info = detect(self.ffmpeg)
+        except Exception:  # noqa: BLE001 - detecção nunca deve derrubar o app
+            info = GpuInfo()
+        self.finished_ok.emit(info)
 
 
 class TranscriptionWorker(QThread):

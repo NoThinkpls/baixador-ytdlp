@@ -88,15 +88,7 @@ class ProbeError(RuntimeError):
     pass
 
 
-def probe(url: str, ytdlp: Path, cookies_browser: str = "", proxy: str = "",
-          timeout: int = 120) -> MediaInfo:
-    args = [str(ytdlp), "-J", "--no-warnings", "--ignore-config"]
-    if cookies_browser:
-        args += ["--cookies-from-browser", cookies_browser]
-    if proxy:
-        args += ["--proxy", proxy]
-    args.append(url)
-
+def _run_json(args: list[str], timeout: int) -> dict:
     try:
         proc = subprocess.run(
             args, capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -111,19 +103,48 @@ def probe(url: str, ytdlp: Path, cookies_browser: str = "", proxy: str = "",
         raise ProbeError(_friendly(detail))
 
     try:
-        data = json.loads(proc.stdout)
+        return json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
         raise ProbeError("Resposta inválida do yt-dlp.") from exc
+
+
+def _playlist_count(ytdlp: Path, base: list[str], url: str, timeout: int) -> int:
+    """Conta os itens com --flat-playlist: uma requisição, sem extrair formato de cada vídeo."""
+    try:
+        data = _run_json(base + ["-J", "--flat-playlist", url], timeout)
+    except ProbeError:
+        return 0
+    for key in ("playlist_count", "n_entries"):
+        if isinstance(data.get(key), int):
+            return data[key]
+    return len([e for e in (data.get("entries") or []) if e])
+
+
+def probe(url: str, ytdlp: Path, cookies_browser: str = "", proxy: str = "",
+          timeout: int = 120) -> MediaInfo:
+    base = [str(ytdlp), "--no-warnings", "--ignore-config", "--socket-timeout", "20"]
+    if cookies_browser:
+        base += ["--cookies-from-browser", cookies_browser]
+    if proxy:
+        base += ["--proxy", proxy]
+
+    # --playlist-items 1: a análise extrai os formatos de UM vídeo, não dos N da
+    # playlist. Sem isso, uma playlist de 200 itens levava minutos e centenas de
+    # requisições só para montar a tabela de qualidades do primeiro vídeo.
+    data = _run_json(base + ["-J", "--playlist-items", "1", url], timeout)
 
     is_playlist = data.get("_type") == "playlist"
     count = 0
     entry = data
     if is_playlist:
         entries = [e for e in (data.get("entries") or []) if e]
-        count = len(entries)
         if not entries:
             raise ProbeError("A playlist não retornou nenhum vídeo.")
         entry = entries[0]
+        count = next((data[k] for k in ("playlist_count", "n_entries")
+                      if isinstance(data.get(k), int) and data[k] > 1), 0)
+        if count <= 1:
+            count = _playlist_count(ytdlp, base, url, timeout) or len(entries)
 
     return MediaInfo(
         title=entry.get("title") or data.get("title") or "Sem título",
