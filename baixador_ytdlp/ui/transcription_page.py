@@ -36,6 +36,7 @@ class TranscriptionPage(QWidget):
         self.worker: TranscriptionWorker | None = None
         self._paused = False
         self._build_ui()
+        self.setAcceptDrops(True)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -56,9 +57,9 @@ class TranscriptionPage(QWidget):
         form.setVerticalSpacing(12)
 
         self.media_edit = LineEdit(file_card)
-        self.media_edit.setPlaceholderText("Selecione um vídeo ou áudio local")
+        self.media_edit.setPlaceholderText("Selecione ou arraste um vídeo ou áudio para cá")
         self.media_edit.setClearButtonEnabled(True)
-        pick_media = PushButton(FIF.FOLDER, "Selecionar", file_card)
+        pick_media = PushButton(FIF.MEDIA, "Selecionar", file_card)
         pick_media.clicked.connect(self._pick_media)
         media_row = QHBoxLayout()
         media_row.addWidget(self.media_edit, 1)
@@ -68,7 +69,7 @@ class TranscriptionPage(QWidget):
         self.output_edit = LineEdit(file_card)
         self.output_edit.setPlaceholderText("A legenda será criada ao lado da mídia")
         self.output_edit.setClearButtonEnabled(True)
-        pick_output = PushButton(FIF.FOLDER, "Salvar como", file_card)
+        pick_output = PushButton(FIF.SAVE_AS, "Salvar como", file_card)
         pick_output.clicked.connect(self._pick_output)
         output_row = QHBoxLayout()
         output_row.addWidget(self.output_edit, 1)
@@ -126,9 +127,9 @@ class TranscriptionPage(QWidget):
         root.addWidget(status_card)
 
         controls = QHBoxLayout()
-        self.start_btn = PrimaryPushButton(FIF.DOWNLOAD, "Iniciar transcrição", self)
-        self.pause_btn = PushButton("Pausar", self)
-        self.cancel_btn = PushButton("Cancelar", self)
+        self.start_btn = PrimaryPushButton(FIF.MESSAGE, "Iniciar transcrição", self)
+        self.pause_btn = PushButton(FIF.PAUSE, "Pausar", self)
+        self.cancel_btn = PushButton(FIF.CANCEL, "Cancelar", self)
         self.open_btn = PushButton(FIF.FOLDER, "Abrir pasta", self)
         self.start_btn.clicked.connect(self.start)
         self.pause_btn.clicked.connect(self.toggle_pause)
@@ -170,16 +171,26 @@ class TranscriptionPage(QWidget):
 
     def _pick_media(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Selecionar mídia", "", MEDIA_FILTER)
-        if not path:
-            return
+        if path:
+            self.set_media(path)
+
+    def set_media(self, path: str) -> None:
+        """Ponto de entrada usado pela fila, pelo histórico e pelo arrastar-e-soltar."""
         self.media_edit.setText(path)
-        suffix = FORMATS[self.output_format.currentData()][1]
-        self.output_edit.setText(str(Path(path).with_suffix(suffix)))
+        self.output_edit.setText(self._suggested_output(path))
+
+    def _suggested_output(self, media: str = "") -> str:
+        """Caminho sugerido da legenda. Nunca chama with_suffix num caminho vazio."""
+        extension = FORMATS[self.output_format.currentData()][1]
+        source = (media or self.media_edit.text()).strip()
+        if not source:
+            return ""
+        return str(Path(source).with_suffix(extension))
 
     def _pick_output(self) -> None:
         fmt = self.output_format.currentData()
         label, extension = FORMATS[fmt]
-        current = self.output_edit.text() or str(Path(self.media_edit.text()).with_suffix(extension))
+        current = self.output_edit.text().strip() or self._suggested_output()
         path, _ = QFileDialog.getSaveFileName(self, "Salvar legenda", current,
                                               f"{label} (*{extension});;Todos os arquivos (*.*)")
         if path:
@@ -190,6 +201,20 @@ class TranscriptionPage(QWidget):
         self._save("transcription_format", fmt)
         if self.output_edit.text().strip():
             self.output_edit.setText(str(Path(self.output_edit.text()).with_suffix(FORMATS[fmt][1])))
+
+    # ------------------------------------------------------ arrastar e soltar
+    def dragEnterEvent(self, event):  # noqa: N802 - assinatura do Qt
+        urls = event.mimeData().urls() if event.mimeData().hasUrls() else []
+        if urls and Path(urls[0].toLocalFile()).is_file():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):  # noqa: N802 - assinatura do Qt
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if path and Path(path).is_file():
+                self.set_media(path)
+                event.acceptProposedAction()
+                return
 
     def start(self) -> None:
         if self.worker and self.worker.isRunning():
@@ -202,7 +227,8 @@ class TranscriptionPage(QWidget):
             self._warn("Selecione um arquivo de áudio ou vídeo existente.")
             return
         fmt = self.output_format.currentData()
-        output = Path(self.output_edit.text().strip() or media.with_suffix(FORMATS[fmt][1])).with_suffix(FORMATS[fmt][1])
+        output = Path(self.output_edit.text().strip()
+                      or str(media.with_suffix(FORMATS[fmt][1]))).with_suffix(FORMATS[fmt][1])
         self.output_edit.setText(str(output))
         opts = TranscriptionOptions(media, output, self.language.currentData(), self.model.currentData(),
                                     fmt, self.aggressive.isChecked())
@@ -218,6 +244,7 @@ class TranscriptionPage(QWidget):
         self.worker.finished_ok.connect(self._done)
         self.worker.cancelled.connect(self._cancelled)
         self.worker.failed.connect(self._failed)
+        self.worker.finished.connect(self.worker.deleteLater)
         self.worker.start()
 
     def _status(self, message: str) -> None:

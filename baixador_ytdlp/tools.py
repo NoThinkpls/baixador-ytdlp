@@ -12,18 +12,15 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 import urllib.error
 import urllib.request
 import zipfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -43,6 +40,14 @@ USER_AGENT = f"{APP_NAME}/{APP_VERSION} (+https://github.com/yt-dlp/yt-dlp)"
 CREATE_NO_WINDOW = 0x08000000 if IS_WINDOWS else 0
 
 ProgressCB = Callable[[str, int], None]  # (mensagem, percentual 0-100 ou -1 = indeterminado)
+
+
+def _quiet_unlink(path: Path) -> None:
+    """Remove sem propagar erro — arquivo em uso não é motivo para abortar."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def run_hidden(args: list[str], timeout: int = 60) -> subprocess.CompletedProcess:
@@ -75,11 +80,14 @@ class Toolchain:
 class ToolManager:
     """Verifica, instala e atualiza yt-dlp e FFmpeg."""
 
-    def __init__(self, bin_dir: Path = BIN_DIR):
+    def __init__(self, bin_dir: Path = BIN_DIR, runtime_check_hours: int = 24):
         self.bin_dir = bin_dir
         self.state = self._load_state()
-        self.runtime = RuntimeManager()
+        self.runtime = RuntimeManager(check_hours=runtime_check_hours)
         self.runtime_info = RuntimeInfo({}, False)
+        # (caminho, mtime, tamanho) -> versão. Evita repetir `--version`, que
+        # custa de 100 ms a 1 s por binário em disco lento ou com antivírus ativo.
+        self._version_cache: dict[tuple[str, int, int], str] = {}
 
     # ---------------------------------------------------------------- estado
     def _load_state(self) -> dict:
@@ -91,6 +99,17 @@ class ToolManager:
     def _save_state(self) -> None:
         STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
         STATE_PATH.write_text(json.dumps(self.state, indent=2), encoding="utf-8")
+
+    # ------------------------------------------------------- cache de versão
+    def _cached_version(self, path: Path, reader: Callable[[Path], str]) -> str:
+        try:
+            stat = path.stat()
+        except OSError:
+            return ""
+        key = (str(path), int(stat.st_mtime), stat.st_size)
+        if key not in self._version_cache:
+            self._version_cache[key] = reader(path)
+        return self._version_cache[key]
 
     # --------------------------------------------------------------- caminhos
     def _resolve(self, name: str) -> Path:
@@ -153,8 +172,10 @@ class ToolManager:
     # ----------------------------------------------------------------- yt-dlp
     def local_ytdlp_version(self, path: Optional[Path] = None) -> str:
         path = path or self._resolve(YTDLP_EXE)
-        if not path.exists():
-            return ""
+        return self._cached_version(path, self._read_ytdlp_version)
+
+    @staticmethod
+    def _read_ytdlp_version(path: Path) -> str:
         try:
             return run_hidden([str(path), "--version"], timeout=25).stdout.strip()
         except Exception:
@@ -230,8 +251,10 @@ class ToolManager:
     # ----------------------------------------------------------------- FFmpeg
     def local_ffmpeg_version(self, path: Optional[Path] = None) -> str:
         path = path or self._resolve(FFMPEG_EXE)
-        if not path.exists():
-            return ""
+        return self._cached_version(path, self._read_ffmpeg_version)
+
+    @staticmethod
+    def _read_ffmpeg_version(path: Path) -> str:
         try:
             out = run_hidden([str(path), "-hide_banner", "-version"], timeout=25).stdout
             match = re.search(r"ffmpeg version (\S+)", out)
@@ -295,22 +318,23 @@ class ToolManager:
     def _replace(staged: Path, target: Path) -> None:
         """Troca o binário mesmo se o antigo estiver em uso (renomeia e apaga depois)."""
         old = target.with_suffix(target.suffix + ".old")
-        old.unlink(missing_ok=True)
+        _quiet_unlink(old)
         if target.exists():
             try:
                 target.rename(old)
             except OSError:
-                target.unlink(missing_ok=True)
+                _quiet_unlink(target)
         staged.replace(target)
         if not IS_WINDOWS:
             target.chmod(0o755)
-        old.unlink(missing_ok=True)
+        # O .old pode estar travado por um processo ainda vivo; o cleanup da
+        # próxima abertura remove. Falhar aqui perderia a atualização já aplicada.
+        _quiet_unlink(old)
 
     def cleanup(self) -> None:
-        for leftover in self.bin_dir.glob("*.old"):
-            leftover.unlink(missing_ok=True)
-        for leftover in self.bin_dir.glob("*.part"):
-            leftover.unlink(missing_ok=True)
+        for pattern in ("*.old", "*.part", "*.new"):
+            for leftover in self.bin_dir.glob(pattern):
+                _quiet_unlink(leftover)
 
     def ensure_all(self, progress: ProgressCB, force: bool = False) -> Toolchain:
         ensure_dirs()

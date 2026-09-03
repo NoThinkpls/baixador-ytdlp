@@ -1,18 +1,16 @@
 """Página 'Configurações': pastas, qualidade, aparência, GPU e dependências."""
 from __future__ import annotations
 
-from pathlib import Path
-
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QVBoxLayout, QWidget
-from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, CheckBox, ComboBox,
-                            FluentIcon as FIF, InfoBar, InfoBarPosition, LineEdit,
-                            PrimaryPushButton, PushButton, SmoothScrollArea, SpinBox,
-                            StrongBodyLabel, SubtitleLabel, SwitchButton, TitleLabel, setTheme,
-                            Theme)
+from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, ComboBox,
+                            FluentIcon as FIF, LineEdit, PrimaryPushButton, PushButton,
+                            SmoothScrollArea, SpinBox, StrongBodyLabel, SubtitleLabel,
+                            SwitchButton, Theme, TitleLabel, setTheme)
 
 from ..config import Settings
 from ..gpu import GpuInfo, NVENC_LABELS
+from ..hardware import default_fragments, default_parallel_downloads, usable_cores
 
 BROWSERS = [("Não usar cookies", ""), ("Chrome", "chrome"), ("Edge", "edge"),
             ("Firefox", "firefox"), ("Brave", "brave"), ("Opera", "opera")]
@@ -44,12 +42,19 @@ class Row(CardWidget):
 class SettingsPage(QWidget):
     update_requested = Signal()
     theme_changed = Signal(str)
+    download_dir_changed = Signal(str)
 
     def __init__(self, cfg: Settings, parent=None):
         super().__init__(parent)
         self.setObjectName("settingsPage")
         self.cfg = cfg
         self.gpu = GpuInfo()
+        # settings.json é reescrito no máximo uma vez a cada 400 ms, mesmo que o
+        # usuário arraste um SpinBox de ponta a ponta.
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(400)
+        self._save_timer.timeout.connect(self.cfg.save)
         self._build_ui()
 
     # ------------------------------------------------------------------ UI
@@ -71,6 +76,9 @@ class SettingsPage(QWidget):
 
         self._section("Downloads")
         self._folder_row()
+        self._switch_row("Perguntar a pasta em cada download",
+                         "Deixa a caixa 'Escolher a pasta de saída' já marcada na página Baixar.",
+                         "ask_output_dir")
         self._template_row()
         self._combo_row("Formato padrão do vídeo",
                         "Container usado quando você não muda nada na página Baixar.",
@@ -81,9 +89,13 @@ class SettingsPage(QWidget):
                          "Escolhe H.264/AAC em vez do melhor codec. Roda em qualquer TV, "
                          "mas com qualidade um pouco menor no mesmo tamanho.", "prefer_h264")
         self._spin_row("Fragmentos simultâneos",
-                       "Acelera o download de cada vídeo. 8 é um bom equilíbrio.",
+                       f"Acelera o download de cada vídeo. Para os {usable_cores()} núcleos "
+                       f"desta máquina, {default_fragments()} é o equilíbrio calculado; acima "
+                       "disso costuma trocar velocidade por disputa de CPU e disco.",
                        "concurrent_fragments", 1, 32)
-        self._spin_row("Downloads simultâneos", "Quantos itens da fila rodam ao mesmo tempo.",
+        self._spin_row("Downloads simultâneos",
+                       f"Quantos itens da fila rodam ao mesmo tempo (sugestão para esta "
+                       f"máquina: {default_parallel_downloads()}).",
                        "max_parallel_downloads", 1, 6)
         self._line_row("Limite de banda", "Ex.: 5M para 5 MB/s. Vazio = sem limite.",
                        "limit_rate", "sem limite")
@@ -91,10 +103,15 @@ class SettingsPage(QWidget):
         self._section("Conteúdo extra")
         self._switch_row("Embutir capa", "Usa a thumbnail como capa do arquivo.",
                          "embed_thumbnail")
-        self._switch_row("Embutir metadados e capítulos",
-                         "Título, canal, data e marcadores de capítulo.", "embed_metadata")
+        self._switch_row("Embutir metadados",
+                         "Título, canal e data dentro do arquivo.", "embed_metadata")
+        self._switch_row("Embutir capítulos",
+                         "Marcadores de capítulo navegáveis no player.", "embed_chapters")
         self._switch_row("Baixar legendas", "Inclui legendas manuais e automáticas.",
                          "write_subs")
+        self._switch_row("Embutir as legendas no vídeo",
+                         "Grava a legenda dentro do arquivo em vez de deixar um .srt ao lado. "
+                         "Só vale quando 'Baixar legendas' está ligado.", "embed_subs")
         self._line_row("Idiomas das legendas", "Separados por vírgula.", "sub_langs",
                        "pt,pt-BR,en")
         self._switch_row("Remover trechos patrocinados",
@@ -145,6 +162,16 @@ class SettingsPage(QWidget):
                          "Preenche o campo sozinho quando você volta para a janela.",
                          "clipboard_watch")
         self._switch_row("Abrir a pasta ao terminar", "", "open_folder_on_finish")
+        self._switch_row("Mostrar o progresso na barra de tarefas",
+                         "O ícone do app na barra de tarefas do Windows enche conforme o "
+                         "download avança.", "taskbar_progress")
+
+        self._section("Histórico")
+        self._switch_row("Guardar o que foi baixado",
+                         "Alimenta a página Histórico. Fica só na sua máquina.",
+                         "history_enabled")
+        self._spin_row("Itens guardados", "Os mais antigos são descartados.",
+                       "history_limit", 20, 1000)
 
         self._section("Dependências")
         self.versions = CaptionLabel("—", self)
@@ -163,6 +190,10 @@ class SettingsPage(QWidget):
 
         self._switch_row("Atualizar sozinho ao abrir",
                          "Checa e instala novas versões na inicialização.", "auto_update")
+        self._spin_row("Intervalo entre checagens do legendador (horas)",
+                       "Dentro desse prazo, e estando tudo na versão certa, a abertura pula a "
+                       "consulta ao pip — é o que mais pesa na inicialização.",
+                       "runtime_check_hours", 0, 720)
         self.box.addStretch(1)
 
     # ---------------------------------------------------------- construtores
@@ -173,7 +204,7 @@ class SettingsPage(QWidget):
 
     def _set(self, key: str, value) -> None:
         setattr(self.cfg, key, value)
-        self.cfg.save()
+        self._save_timer.start()
 
     def _switch_row(self, title: str, subtitle: str, key: str) -> None:
         switch = SwitchButton(self)
@@ -227,6 +258,7 @@ class SettingsPage(QWidget):
             if path:
                 self._set("download_dir", path)
                 self.folder_label.setText(path)
+                self.download_dir_changed.emit(path)
 
         button.clicked.connect(choose)
         card = CardWidget(self)
@@ -263,6 +295,13 @@ class SettingsPage(QWidget):
                 if self.codec_combo.itemData(i) == self.cfg.transcode_codec:
                     self.codec_combo.setCurrentIndex(i)
                     break
+
+    def hideEvent(self, event):  # noqa: N802 - assinatura do Qt
+        """Não deixa uma alteração recente pendente se o usuário sair da aba."""
+        if self._save_timer.isActive():
+            self._save_timer.stop()
+            self.cfg.save()
+        super().hideEvent(event)
 
     def set_versions(self, ytdlp: str, ffmpeg: str, transcription_runtime: str = "") -> None:
         text = f"yt-dlp {ytdlp or '—'} · FFmpeg {ffmpeg or '—'}"

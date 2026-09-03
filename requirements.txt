@@ -1,6 +1,7 @@
 PySide6>=6.7
 PySide6-Fluent-Widgets>=1.7
 faster-whisper>=1.1,<2
-# O build instala a variante CUDA do PyTorch. Em execução, o app cai para CPU/int8
-# quando CUDA não estiver disponível ou não puder ser inicializado.
-torch>=2.5
+# O motor de transcrição é o CTranslate2 (dependência do faster-whisper).
+# O PyTorch NÃO é necessário: a detecção de CUDA usa ctranslate2 + driver.
+# Em máquinas com GPU, o runtime instala nvidia-cublas-cu12 e nvidia-cudnn-cu12
+# sob demanda, em vez das wheels CUDA completas do PyTorch.

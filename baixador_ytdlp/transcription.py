@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import gc
 import json
-import multiprocessing
 import re
 import subprocess
 import tempfile
@@ -18,6 +17,7 @@ from pathlib import Path
 from typing import Callable
 
 from .config import MODEL_DIR
+from .hardware import whisper_threads
 from .tools import CREATE_NO_WINDOW, Toolchain
 
 StatusCB = Callable[[str], None]
@@ -91,16 +91,28 @@ class Transcriber:
 
     @staticmethod
     def _detect_hardware() -> tuple[str, str, str]:
-        """Usa PyTorch só para detectar CUDA, mantendo o import preguiçoso."""
+        """Pergunta ao CTranslate2, que é quem de fato executa o modelo.
+
+        Antes isso importava o PyTorch inteiro só para ler `cuda.is_available()`.
+        O CTranslate2 já está carregado de qualquer jeito e responde a mesma
+        pergunta em milissegundos — o torch continua sendo aceito como plano B
+        para quem tiver uma instalação antiga.
+        """
         try:
-            import torch
+            import ctranslate2
+            if ctranslate2.get_cuda_device_count() > 0:
+                return "cuda", "float16", "CUDA — GPU NVIDIA detectada"
+        except Exception:
+            pass
+        try:
+            import torch  # opcional; não faz parte do runtime instalado
             if torch.cuda.is_available():
                 name = torch.cuda.get_device_name(0)
                 vram = torch.cuda.get_device_properties(0).total_memory / 1024 ** 3
                 return "cuda", "float16", f"CUDA — {name} ({vram:.1f} GB VRAM)"
         except Exception:
             pass
-        cores = min(multiprocessing.cpu_count(), 8)
+        cores = whisper_threads()
         return "cpu", "int8", f"CPU — até {cores} threads (int8)"
 
     def _load_model(self, model_size: str) -> None:
@@ -111,7 +123,7 @@ class Transcriber:
         kwargs = {"device": self.device, "compute_type": self.compute_type,
                   "download_root": str(MODEL_DIR)}
         if self.device == "cpu":
-            kwargs.update(cpu_threads=min(multiprocessing.cpu_count(), 8), num_workers=1)
+            kwargs.update(cpu_threads=whisper_threads(), num_workers=1)
         try:
             self.model = WhisperModel(model_size, **kwargs)
         except Exception as exc:
@@ -123,7 +135,7 @@ class Transcriber:
             self.hardware_label = "CPU — fallback automático (int8)"
             self.model = WhisperModel(
                 model_size, device="cpu", compute_type="int8", download_root=str(MODEL_DIR),
-                cpu_threads=min(multiprocessing.cpu_count(), 8), num_workers=1,
+                cpu_threads=whisper_threads(), num_workers=1,
             )
         self.progress(15)
         self.status(f"Modelo pronto: {self.hardware_label}")
@@ -189,13 +201,9 @@ class Transcriber:
             if audio:
                 audio.unlink(missing_ok=True)
             self.model = None
+            # Descarregar o modelo já devolve a VRAM no CTranslate2; o gc fecha
+            # as referências restantes sem depender do torch.
             gc.collect()
-            if self.device == "cuda":
-                try:
-                    import torch
-                    torch.cuda.empty_cache()
-                except Exception:
-                    pass
 
     def _model_options(self, model: str) -> dict:
         # Equilibra qualidade e velocidade como no legendador original.

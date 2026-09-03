@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication
 
 from baixador_ytdlp.config import APP_ID, APP_NAME, IS_WINDOWS, LOG_DIR, Settings, ensure_dirs
 from baixador_ytdlp.tools import ToolManager
@@ -20,11 +20,15 @@ def asset(name: str) -> Path:
     return base / "assets" / name
 
 
+_MUTEX = None
+
+
 def single_instance() -> bool:
     """Impede duas cópias do app. Devolve False se já existe uma rodando."""
     if not IS_WINDOWS:
         return True
-    handle = ctypes.windll.kernel32.CreateMutexW(None, False, f"Global\\{APP_ID}")
+    global _MUTEX  # o handle precisa sobreviver a esta função, senão o mutex some
+    _MUTEX = ctypes.windll.kernel32.CreateMutexW(None, False, f"Global\\{APP_ID}")
     return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
 
 
@@ -63,7 +67,7 @@ def main() -> int:
         return 0
 
     cfg = Settings.load()
-    window = MainWindow(cfg, ToolManager(), icon)
+    window = MainWindow(cfg, ToolManager(runtime_check_hours=cfg.runtime_check_hours), icon)
     window.show()
 
     if not window.run_setup(force=False) and window.toolchain is None:
