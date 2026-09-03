@@ -4,39 +4,92 @@
 
 # baixador-ytdlp
 
-**Baixador de vídeo para Windows 11, com interface Fluent, construído sobre o yt-dlp e o FFmpeg.**
+**Baixador de vídeo para Windows 10/11, com interface Fluent, construído sobre o yt-dlp e o FFmpeg.**
 
 Instala e atualiza as próprias dependências, analisa o link, mostra todas as qualidades
 disponíveis e baixa na melhor por padrão.
 
-[![build](https://github.com/NoThinkpls/baixador-ytdlp/actions/workflows/build.yml/badge.svg)](https://github.com/NoThinkpls/baixador-ytdlp/actions/workflows/build.yml)
-[![release](https://img.shields.io/github/v/release/NoThinkpls/baixador-ytdlp?label=vers%C3%A3o)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
-[![downloads](https://img.shields.io/github/downloads/NoThinkpls/baixador-ytdlp/total?label=downloads)](https://github.com/NoThinkpls/baixador-ytdlp/releases)
-![Windows](https://img.shields.io/badge/plataforma-Windows%2010%2F11-0078D4)
+[![versão](https://img.shields.io/github/v/release/NoThinkpls/baixador-ytdlp?label=vers%C3%A3o&color=0078D4)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
+[![downloads](https://img.shields.io/github/downloads/NoThinkpls/baixador-ytdlp/total?label=downloads&color=2EA043)](https://github.com/NoThinkpls/baixador-ytdlp/releases)
+![plataforma](https://img.shields.io/badge/plataforma-Windows%2010%2F11-0078D4)
+![licença](https://img.shields.io/badge/licen%C3%A7a-MIT-lightgrey)
 
 ### [⬇ Baixar o instalador](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-setup.exe)
 
 </div>
 
-<!--
-  Dica: para colocar o print da janela aqui, abra uma issue nova no próprio
-  repositório, arraste a imagem para dentro da caixa de comentário e copie a URL
-  que o GitHub gera. Cole abaixo e feche a issue sem publicar.
-
-  <p align="center"><img src="URL_DA_IMAGEM" width="820" alt="Tela principal"></p>
--->
+<!-- Para colocar um print aqui: abra uma issue nova, arraste a imagem para a caixa de
+     comentário, copie a URL que o GitHub gera e cole abaixo. Feche a issue sem publicar.
+     <p align="center"><img src="URL_DA_IMAGEM" width="820" alt="Tela principal"></p> -->
 
 ---
+
+<div align="center">
+
+[O que ele faz](#o-que-ele-faz) ·
+[Instalação](#instalação) ·
+[Novidades](#novidades-da-120) ·
+[Compilando](#compilando) ·
+[GPU](#sobre-a-gpu) ·
+[Assinatura](#assinatura-digital-e-o-aviso-do-windows) ·
+[Segurança](#notas-de-segurança) ·
+[Estrutura](#estrutura)
+
+</div>
+
+---
+
+## O que ele faz
+
+- **Cuida das dependências sozinho.** Na primeira execução baixa o `yt-dlp` e o `FFmpeg`;
+  nas seguintes verifica atualização e instala sem perguntar, com barra de progresso.
+- **Mostra todas as qualidades.** Depois de analisar o link, uma tabela lista resolução,
+  FPS, codec, tamanho e HDR de cada variante. A melhor já vem selecionada.
+- **Formato à sua escolha.** MP4 por padrão; também MKV, WebM ou "manter original".
+  Modo só-áudio com MP3, M4A, Opus, FLAC ou WAV.
+- **Pasta de saída por download.** Uma caixa de seleção na tela Baixar libera o campo de
+  destino e o botão Procurar; desmarcada, o programa usa a pasta padrão e mostra qual é.
+  A última pasta escolhida fica lembrada.
+- **Recorte por tempo.** Baixa só o trecho pedido (`--download-sections`), com corte em
+  keyframe — não baixa o vídeo inteiro para depois cortar.
+- **Fila com downloads paralelos**, progresso, velocidade, ETA, cancelamento, *tentar de
+  novo* nos itens que falharam e a saída completa do yt-dlp copiável em um clique.
+- **Histórico** do que já foi baixado, com abrir a pasta, gerar legenda e baixar de novo.
+- **Playlists** em subpasta numerada, com histórico opcional para não rebaixar o que já veio.
+- **Progresso na barra de tarefas** do Windows e **atalhos**: `Ctrl+V` cola e analisa,
+  `Ctrl+Enter` baixa, `Esc` cancela a transcrição, `Ctrl+1..4` troca de página.
+- **Extras:** SponsorBlock, legendas embutidas, capa, metadados, capítulos, cookies do
+  navegador para conteúdo com login, detecção de link na área de transferência.
+- **Conversão por GPU (opcional).** NVENC em H.264, HEVC ou AV1 — leia a
+  [seção sobre GPU](#sobre-a-gpu) antes de ligar.
+- **Legendador local.** Transcreve vídeo ou áudio com `faster-whisper`, usando CUDA/float16
+  na NVIDIA quando disponível e CPU/int8 como fallback. Exporta SRT, WebVTT, ASS, TXT e JSON.
+  Inclui VAD, pré-processamento 16 kHz e filtro opcional contra alucinações. Aceita arquivo
+  arrastado para dentro da janela e recebe direto o que veio da fila ou do histórico.
+- **Ajuste automático ao hardware.** Fragmentos simultâneos, downloads em paralelo e threads
+  do Whisper saem dos núcleos realmente disponíveis, em vez de um número fixo.
+
+## Instalação
+
+Baixe o instalador mais recente em **[Releases](../../releases)** e execute.
+
+A instalação é por usuário, sem UAC, e cria o atalho no Menu Iniciar — é isso que faz o
+programa aparecer quando você digita o nome na busca do Windows.
+
+> [!WARNING]
+> **O instalador não é assinado digitalmente.** O Windows vai mostrar *"Windows protegeu o
+> seu computador"* na primeira execução, e alguns antivírus podem reclamar. Isso é esperado.
+> A seção **[Assinatura digital](#assinatura-digital-e-o-aviso-do-windows)** explica por quê,
+> o que fazer e como conferir que o arquivo é autêntico.
 
 ## Novidades da 1.2.0
 
 **Interface**
 
-- **Pasta de saída por download.** Uma caixa de seleção na tela Baixar libera o campo de
-  destino e o botão Procurar. Desmarcada, o programa usa a pasta padrão e mostra qual é.
+- **Pasta de saída por download**, com caixa de seleção na própria tela Baixar.
 - **Ícones da navegação refeitos.** Baixar e Legendar usavam o mesmo ícone, e a Fila usava o
   hambúrguer de menu. Agora cada página carrega o desenho da coisa que ela faz.
-- **Recorte por tempo.** Baixa só o trecho pedido, cortando na origem.
+- **Recorte por tempo**, cortando na origem.
 - **Tentar de novo** nos itens da fila que falharam, com a saída completa do yt-dlp copiável.
 - **Página de histórico** com abrir na pasta, gerar legenda e baixar de novo.
 - **Atalhos de teclado** e progresso no ícone da barra de tarefas.
@@ -44,7 +97,7 @@ disponíveis e baixa na melhor por padrão.
 
 **Desempenho**
 
-- **O PyTorch saiu do pacote** (cerca de 2,5 GB a menos). Detalhes na seção Compilando.
+- **O PyTorch saiu do pacote** — cerca de 2,5 GB a menos. Detalhes em [Compilando](#compilando).
 - **A abertura não consulta mais o pip toda vez.** Cache de 24 h, configurável.
 - **Análise de playlist extrai um vídeo, não os N.** Playlist longa deixou de levar minutos.
 - **Detecção de GPU saiu da thread da interface**, que congelava por segundos após o setup.
@@ -59,50 +112,6 @@ disponíveis e baixa na melhor por padrão.
 - Remux redundante em arquivo que já estava no container certo.
 - O handle do mutex de instância única era uma variável local.
 - QThreads de análise, download e transcrição nunca eram destruídos.
-
-## O que ele faz
-
-- **Cuida das dependências sozinho.** Na primeira execução baixa o `yt-dlp` e o `FFmpeg`;
-  nas seguintes verifica atualização e instala sem perguntar, com barra de progresso.
-- **Mostra todas as qualidades.** Depois de analisar o link, uma tabela lista resolução,
-  FPS, codec, tamanho e HDR de cada variante. A melhor já vem selecionada.
-- **Formato à sua escolha.** MP4 por padrão; também MKV, WebM ou "manter original".
-  Modo só-áudio com MP3, M4A, Opus, FLAC ou WAV.
-- **Pasta de saída por download.** Uma caixa de seleção na própria tela Baixar libera o
-  campo de destino e o botão Procurar; desmarcada, o programa usa a pasta padrão e mostra
-  qual é. A última pasta escolhida fica lembrada.
-- **Recorte por tempo.** Baixa só o trecho pedido (`--download-sections`), com corte em
-  keyframe — não baixa o vídeo inteiro para depois cortar.
-- **Fila com downloads paralelos**, progresso, velocidade, ETA, cancelamento, *tentar de
-  novo* nos itens que falharam e a saída completa do yt-dlp copiável em um clique.
-- **Histórico** do que já foi baixado, com abrir a pasta, gerar legenda e baixar de novo.
-- **Progresso na barra de tarefas** do Windows e **atalhos**: `Ctrl+V` cola e analisa,
-  `Ctrl+Enter` baixa, `Esc` cancela a transcrição, `Ctrl+1..4` troca de página.
-- **Playlists** em subpasta numerada, com histórico opcional para não rebaixar o que já veio.
-- **Extras:** SponsorBlock, legendas embutidas, capa, metadados, capítulos, cookies do
-  navegador para conteúdo com login, detecção de link na área de transferência.
-- **Conversão por GPU (opcional).** NVENC em H.264, HEVC ou AV1 — leia a seção sobre GPU
-  antes de ligar.
-- **Legendador local.** Transcreve vídeo ou áudio com `faster-whisper`, usando CUDA/float16
-  na NVIDIA quando disponível e CPU/int8 como fallback. Exporta SRT, WebVTT, ASS, TXT e JSON.
-  Inclui VAD, pré-processamento 16 kHz e filtro opcional contra alucinações. Aceita arquivo
-  arrastado para dentro da janela e recebe direto o que veio da fila ou do histórico.
-- **Ajuste automático ao hardware.** Fragmentos simultâneos, downloads em paralelo e threads
-  do Whisper saem dos núcleos realmente disponíveis, em vez de um número fixo.
-
-## Instalação
-
-Baixe o instalador mais recente em **[Releases](../../releases)** e execute.
-
-A instalação é por usuário, sem UAC, e cria o atalho no Menu Iniciar — é isso que faz o
-programa aparecer quando você digita o nome na busca do Windows. Também existe a versão
-portátil (a pasta inteira) nos artefatos de cada build.
-
-> ⚠️ **O instalador não é assinado digitalmente.** O Windows vai mostrar
-> *"Windows protegeu o seu computador"* na primeira execução, e alguns antivírus podem
-> reclamar. Isso é esperado — a seção
-> **[Assinatura digital](#assinatura-digital-e-o-aviso-do-windows)** explica exatamente por
-> quê, o que fazer e como conferir que o arquivo é autêntico.
 
 ## Rodando a partir do código
 
@@ -134,27 +143,30 @@ use uma única vez:
 .\build.ps1 -Installer -InstallInnoSetup
 ```
 
-Isso instala o compilador pelo `winget`, cria o setup e grava um arquivo `.sha256` ao
-lado do instalador. O `build.cmd` é uma alternativa que abre o PowerShell com a política
+Isso instala o compilador pelo `winget`, cria o setup e grava um arquivo `.sha256` ao lado
+do instalador. O `build.cmd` é uma alternativa que abre o PowerShell com a política
 temporária adequada, caso o Windows bloqueie a execução direta de `.ps1`.
 
-Ou pelo GitHub Actions, sem instalar nada: qualquer push na `main` compila e publica o
-`.exe` e o setup como artefatos do run. Uma tag `v1.2.0` gera uma release com o instalador
-e os hashes anexados. Se o GitHub exibir “Actions has been disabled for this user”, nenhum
-workflow poderá iniciar até a conta ser reabilitada; nesse caso, use o build local acima.
+O repositório também traz `.github/workflows/build.yml`, que compila e publica a release
+sozinho a cada tag `v*`. Ele só entra em ação em contas com o GitHub Actions habilitado —
+se o GitHub exibir *"Actions has been disabled for this user"*, nenhum workflow inicia e o
+build local acima é o caminho.
 
-> **O PyTorch saiu do pacote.** O `faster-whisper` executa sobre o CTranslate2 — o torch estava
-> lá só para responder "existe CUDA?" e para carregar cuBLAS/cuDNN, custando cerca de 2,5 GB no
-> executável. A detecção agora vem do driver (`nvcuda.dll`) e do próprio CTranslate2, e as
-> bibliotecas CUDA são os pacotes oficiais da NVIDIA (`nvidia-cublas-cu12`, `nvidia-cudnn-cu12`),
-> instalados no runtime do usuário apenas quando existe GPU. Para voltar ao comportamento antigo,
-> basta acrescentar `"torch"` em `PACKAGES`, no `runtime.py`.
+> [!NOTE]
+> **O PyTorch saiu do pacote.** O `faster-whisper` executa sobre o CTranslate2 — o torch
+> estava lá só para responder "existe CUDA?" e para carregar cuBLAS/cuDNN, custando cerca de
+> 2,5 GB no executável. A detecção agora vem do driver (`nvcuda.dll`) e do próprio
+> CTranslate2, e as bibliotecas CUDA são os pacotes oficiais da NVIDIA
+> (`nvidia-cublas-cu12`, `nvidia-cudnn-cu12`), instalados no runtime do usuário apenas
+> quando existe GPU. Para voltar ao comportamento antigo, basta acrescentar `"torch"` em
+> `PACKAGES`, no `runtime.py`.
 >
-> A verificação continua **bloqueante antes de liberar a interface**, como antes, mas agora com
-> cache: se os pacotes estão na versão certa, a variante (CPU/CUDA) bate com a máquina e a última
-> checagem foi dentro do prazo configurado (24 h por padrão, ajustável em Configurações), a
-> abertura pula a consulta ao pip inteira. Se estiver offline, usa a cópia embutida já funcional e
-> informa isso na tela inicial. O yt-dlp e o FFmpeg continuam atualizados no mesmo fluxo.
+> A verificação continua **bloqueante antes de liberar a interface**, como antes, mas agora
+> com cache: se os pacotes estão na versão certa, a variante (CPU/CUDA) bate com a máquina e
+> a última checagem foi dentro do prazo configurado (24 h por padrão, ajustável em
+> Configurações), a abertura pula a consulta ao pip inteira. Se estiver offline, usa a cópia
+> embutida já funcional e informa isso na tela inicial. O yt-dlp e o FFmpeg continuam
+> atualizados no mesmo fluxo.
 
 ## Sobre a GPU
 
@@ -196,42 +208,46 @@ carregador, não o código. É um falso positivo clássico dessa ferramenta.
 Assinar exige um certificado de code signing emitido por uma autoridade certificadora, com
 validação de identidade e custo anual. Três coisas pesaram na decisão:
 
-1. **O caminho barato não está disponível no Brasil.** O *Azure Artifact Signing* (ex-Trusted
-   Signing) da Microsoft custa cerca de US$ 10/mês, dispensa token físico e integra direto com
-   o GitHub Actions — mas a validação de identidade só aceita desenvolvedores individuais nos
-   EUA e Canadá, e organizações numa lista que não inclui o Brasil.
+1. **O caminho barato não está disponível no Brasil.** O *Azure Artifact Signing*
+   (ex-Trusted Signing) da Microsoft custa cerca de US$ 10/mês, dispensa token físico e
+   integra direto com o GitHub Actions — mas a validação de identidade só aceita
+   desenvolvedores individuais nos EUA e Canadá, e organizações numa lista que não inclui
+   o Brasil.
 2. **Certificado EV não pula mais o SmartScreen.** Isso funcionava anos atrás e a própria
    Microsoft documenta que o comportamento acabou. Ou seja: mesmo pagando por um EV
    (US$ 400+/ano), um binário novo continuaria mostrando o aviso.
 3. **A reputação é que remove o aviso, não a assinatura.** O SmartScreen libera um programa
-   depois de acumular downloads limpos ao longo de várias versões, mantendo a mesma identidade
-   de assinatura. Para um projeto pessoal com poucos downloads, isso praticamente não acontece.
+   depois de acumular downloads limpos ao longo de várias versões, mantendo a mesma
+   identidade de assinatura. Para um projeto pessoal com poucos downloads, isso praticamente
+   não acontece.
 
 O que a assinatura *traria* de imediato seria o nome do publicador verificado no lugar de
-"Publicador desconhecido", e menos falso positivo de antivírus. A intenção é resolver isso via
-**[SignPath Foundation](https://signpath.org/)**, que oferece assinatura gratuita para projetos
-open source — quando/se for aprovado, o aviso e esta seção mudam junto.
+"Publicador desconhecido", e menos falso positivo de antivírus. A intenção é resolver isso
+via **[SignPath Foundation](https://signpath.org/)**, que oferece assinatura gratuita para
+projetos open source — quando/se for aprovado, o aviso e esta seção mudam junto.
 
 ### Como conferir que o arquivo é autêntico
 
 Já que não há assinatura, a verificação honesta é o hash. Toda release publica um
-`SHA256SUMS.txt` gerado pelo próprio GitHub Actions, na mesma execução que compilou o
-instalador. Para conferir, no PowerShell:
+`SHA256SUMS.txt` com o hash do instalador. Para conferir, no PowerShell:
 
 ```powershell
 Get-FileHash .\baixador-ytdlp-setup.exe -Algorithm SHA256
 ```
 
 Compare com a linha correspondente do `SHA256SUMS.txt` da release. Batendo, o arquivo é
-byte a byte o que saiu do build público — cujo log fica visível em
-**[Actions](../../actions)**, com todo o processo auditável.
+byte a byte o que foi publicado, e o código-fonte que o originou é o da tag correspondente.
+
+As notas de cada release dizem se ela foi compilada pela automação do repositório ou
+localmente — quando sai do GitHub Actions, o log do build fica público em
+**[Actions](../../actions)** e todo o processo é auditável de fora.
 
 ### Se você não estiver confortável
 
 É uma posição legítima. Duas alternativas:
 
-- **Rode a partir do código** (seção acima): sem executável, sem SmartScreen, e você lê tudo
-  o que executa.
+- **Rode a partir do código** ([seção acima](#rodando-a-partir-do-código)): sem executável,
+  sem SmartScreen, e você lê tudo o que executa.
 - **Não instale em estação corporativa.** Veja a última nota da seção seguinte.
 
 ## Notas de segurança
@@ -245,32 +261,35 @@ byte a byte o que saiu do build público — cujo log fica visível em
   argumento de lista, nunca concatenada em string de shell.
 - `--ignore-config` é passado sempre, para o programa não herdar um `yt-dlp.conf` do
   sistema que mudaria o comportamento sem você perceber.
-- **Um aplicativo que baixa e executa binários em `%LOCALAPPDATA%` tem exatamente a
-  assinatura comportamental que um EDR marca como suspeita.** Em máquina pessoal, tudo
-  bem; em estação com agente corporativo, espere detecção — instale com consciência disso
-  ou não instale.
+
+> [!CAUTION]
+> **Um aplicativo que baixa e executa binários em `%LOCALAPPDATA%` tem exatamente a
+> assinatura comportamental que um EDR marca como suspeita.** Em máquina pessoal, tudo bem;
+> em estação com agente corporativo, espere detecção — instale com consciência disso ou não
+> instale.
 
 ## Estrutura
 
-```
-main.py                     ponto de entrada, instância única, ícone
+```text
+main.py                       ponto de entrada, instância única, ícone
 baixador_ytdlp/
-├── config.py               caminhos e settings.json
-├── tools.py                instala e atualiza yt-dlp e FFmpeg
-├── gpu.py                  detecção de NVENC
-├── probe.py                yt-dlp -J e montagem da lista de qualidades
-├── downloader.py           linha de comando, leitura de progresso, NVENC
-├── transcription.py        Whisper, filtro de qualidade e exportação de legendas
-├── hardware.py             núcleos, RAM e os padrões calculados a partir deles
-├── history.py              histórico dos downloads concluídos (JSON)
-├── taskbar.py              progresso no ícone da barra de tarefas (ITaskbarList3)
-├── runtime.py              bootstrap do runtime de transcrição, com cache
-├── workers.py              QThreads (nada de I/O na thread da interface)
-└── ui/                     setup_dialog, download, fila, legendador, histórico,
-                            configurações e janela
-.github/workflows/build.yml compilação e release automáticas
-installer.iss               receita do Inno Setup
-baixador_ytdlp.spec         receita do PyInstaller
+├── config.py                 caminhos e settings.json
+├── tools.py                  instala e atualiza yt-dlp e FFmpeg
+├── runtime.py                bootstrap do runtime de transcrição, com cache
+├── gpu.py                    detecção de NVENC
+├── hardware.py               núcleos, RAM e os padrões calculados a partir deles
+├── probe.py                  yt-dlp -J e montagem da lista de qualidades
+├── downloader.py             linha de comando, leitura de progresso, NVENC
+├── transcription.py          Whisper, filtro de qualidade e exportação de legendas
+├── history.py                histórico dos downloads concluídos (JSON)
+├── taskbar.py                progresso no ícone da barra de tarefas (ITaskbarList3)
+├── workers.py                QThreads (nada de I/O na thread da interface)
+└── ui/                       setup_dialog, home, queue, transcription, history,
+                              settings e main_window
+.github/workflows/build.yml   compilação e release automáticas
+installer.iss                 receita do Inno Setup
+baixador_ytdlp.spec           receita do PyInstaller
+build.ps1 · build.cmd         build local, com ou sem instalador
 ```
 
 A análise de playlist usa `--playlist-items 1`: a tabela de qualidades precisa dos formatos
@@ -289,6 +308,8 @@ mudança de layout da saída.
 | Binários (yt-dlp, ffmpeg) | `%LOCALAPPDATA%\BaixadorYtdlp\bin` |
 | Configurações | `%LOCALAPPDATA%\BaixadorYtdlp\settings.json` |
 | Histórico | `%LOCALAPPDATA%\BaixadorYtdlp\history.json` |
+| Modelos do Whisper | `%LOCALAPPDATA%\BaixadorYtdlp\models` |
+| Runtime de transcrição | `%LOCALAPPDATA%\BaixadorYtdlp\runtime` |
 | Log de erro fatal | `%LOCALAPPDATA%\BaixadorYtdlp\logs\crash.log` |
 | Vídeos | `Vídeos\baixador-ytdlp` (configurável) |
 
