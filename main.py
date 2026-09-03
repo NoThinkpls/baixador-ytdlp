@@ -2,16 +2,12 @@
 from __future__ import annotations
 
 import ctypes
+import multiprocessing
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication
-
-from baixador_ytdlp.config import APP_ID, APP_NAME, IS_WINDOWS, LOG_DIR, Settings, ensure_dirs
-from baixador_ytdlp.tools import ToolManager
-from baixador_ytdlp.ui.main_window import MainWindow
+from baixador_ytdlp.config import APP_ID, APP_NAME, IS_WINDOWS, Settings, ensure_dirs
+from baixador_ytdlp.diagnostics import install_diagnostics, install_qt_logging, log_event
 
 
 def asset(name: str) -> Path:
@@ -32,22 +28,18 @@ def single_instance() -> bool:
     return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
 
 
-def install_excepthook() -> None:
-    log = LOG_DIR / "crash.log"
-
-    def hook(exc_type, exc, tb):
-        import traceback
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        with open(log, "a", encoding="utf-8") as fh:
-            traceback.print_exception(exc_type, exc, tb, file=fh)
-        traceback.print_exception(exc_type, exc, tb)
-
-    sys.excepthook = hook
-
-
 def main() -> int:
+    # Os imports Qt ficam aqui: o processo auxiliar do multiprocessing entra
+    # por freeze_support antes de carregar qualquer componente de interface.
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QIcon
+    from PySide6.QtWidgets import QApplication
+
+    from baixador_ytdlp.tools import ToolManager
+    from baixador_ytdlp.ui.main_window import MainWindow
+
     ensure_dirs()
-    install_excepthook()
+    install_diagnostics()
 
     if IS_WINDOWS:
         # Agrupa a janela sob o ícone certo na barra de tarefas.
@@ -56,6 +48,7 @@ def main() -> int:
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
+    install_qt_logging()
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(True)
 
@@ -64,6 +57,7 @@ def main() -> int:
     app.setWindowIcon(icon)
 
     if not single_instance():
+        log_event("Encerrando: outra instância já está aberta")
         return 0
 
     cfg = Settings.load()
@@ -71,14 +65,20 @@ def main() -> int:
     window.show()
 
     if not window.run_setup(force=False) and window.toolchain is None:
+        log_event("Encerrando: preparação inicial não foi concluída")
         return 1
 
     if len(sys.argv) > 1 and sys.argv[1].startswith("http"):
         window.home.set_url(sys.argv[1])
         window.home.analyze()
 
-    return app.exec()
+    result = app.exec()
+    log_event("Sessão encerrada normalmente: código=%s", result)
+    return result
 
 
 if __name__ == "__main__":
+    # Obrigatório para que o modo spawn no Windows execute somente o alvo do
+    # processo auxiliar, sem abrir uma segunda janela Qt.
+    multiprocessing.freeze_support()
     raise SystemExit(main())

@@ -12,11 +12,13 @@ import re
 import subprocess
 import tempfile
 import threading
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 from .config import MODEL_DIR
+from .diagnostics import install_diagnostics, log_event, report_exception
 from .hardware import whisper_threads
 from .tools import CREATE_NO_WINDOW, Toolchain
 
@@ -63,13 +65,15 @@ class Transcriber:
     )
 
     def __init__(self, toolchain: Toolchain, status: StatusCB, progress: ProgressCB,
-                 aggressive_filter: bool = False):
+                 aggressive_filter: bool = False, cancel_event=None, pause_event=None):
         self.toolchain = toolchain
         self.status = status
         self.progress = progress
         self.aggressive_filter = aggressive_filter
-        self.cancel_event = threading.Event()
-        self.pause_event = threading.Event()
+        # Em execução normal são Events de thread. No processo isolado, são
+        # Events do multiprocessing e preservam a pausa/cancelamento entre processos.
+        self.cancel_event = cancel_event if cancel_event is not None else threading.Event()
+        self.pause_event = pause_event if pause_event is not None else threading.Event()
         self.device, self.compute_type, self.hardware_label = self._detect_hardware()
         self.model = None
 
@@ -338,3 +342,43 @@ class Transcriber:
         else:
             raise ValueError(f"Formato não suportado: {output_format}")
         path.write_text(text, encoding="utf-8")
+
+
+def transcription_process_main(opts: TranscriptionOptions, toolchain: Toolchain, events,
+                               cancel_event, pause_event) -> None:
+    """Executa o motor nativo fora do processo da interface.
+
+    Esta função fica no nível do módulo para ser serializável pelo modo
+    ``spawn`` do Windows. Qualquer access violation de CTranslate2/CUDA encerra
+    apenas este processo auxiliar; o processo Qt detecta o exit code.
+    """
+    install_diagnostics("transcription-worker")
+    # O processo spawnado no Windows começa com um sys.path novo. Reativa o
+    # runtime validado pelo setup antes de importar CTranslate2/faster-whisper.
+    from .runtime import activate_runtime
+    activate_runtime()
+
+    def send(kind: str, value=None) -> None:
+        try:
+            events.put((kind, value))
+        except Exception as exc:  # noqa: BLE001 - o processo pai pode ter fechado
+            report_exception("envio de evento da transcrição", exc)
+
+    try:
+        log_event("Transcrição auxiliar iniciada: entrada=%s saída=%s modelo=%s",
+                  opts.media_path, opts.output_path, opts.model_size)
+        transcriber = Transcriber(
+            toolchain, lambda message: send("status", message),
+            lambda percent: send("progress", percent), opts.aggressive_filter,
+            cancel_event=cancel_event, pause_event=pause_event,
+        )
+        transcriber.run(opts)
+    except TranscriptionCancelled:
+        log_event("Transcrição auxiliar cancelada pelo usuário")
+        send("cancelled")
+    except Exception as exc:  # noqa: BLE001 - precisa voltar à interface sem fechá-la
+        report_exception("transcrição auxiliar", exc)
+        send("error", {"message": str(exc), "traceback": traceback.format_exc()})
+    else:
+        log_event("Transcrição auxiliar concluída: %s", opts.output_path)
+        send("finished", str(opts.output_path))

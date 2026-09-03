@@ -200,6 +200,7 @@ class MainWindow(FluentWindow):
 
     def closeEvent(self, event):  # noqa: N802 - assinatura do Qt
         self.taskbar.clear(int(self.winId()))
+        self.transcription.shutdown()
         self.queue.stop_all()
         self.history.flush()
         self.cfg.save()
