@@ -1,9 +1,8 @@
-"""Bootstrap seguro do runtime de transcrição.
+"""Bootstrap do runtime de transcrição incluído no instalador.
 
-O aplicativo só libera a interface depois de verificar PyTorch,
-faster-whisper e CTranslate2. A cópia empacotada continua sendo o fallback
-offline: uma atualização falha nunca impede downloads nem deixa o aplicativo
-apontar para um runtime incompleto.
+O Whisper, CTranslate2 e as DLLs CUDA necessárias são empacotados juntos.
+Não há download de dependência de IA na máquina do usuário; o runtime externo
+legado só é usado como último recurso durante desenvolvimento.
 """
 from __future__ import annotations
 
@@ -26,14 +25,20 @@ from .config import IS_WINDOWS, RUNTIME_DIR, ensure_dirs
 ProgressCB = Callable[[str, int], None]
 PYPI_INDEX = "https://pypi.org/simple"
 
-# O faster-whisper roda sobre CTranslate2, não sobre PyTorch. O torch só estava
-# aqui por dois motivos: detectar CUDA e carregar cuBLAS/cuDNN. A detecção agora
-# sai do driver e do próprio CTranslate2; as bibliotecas CUDA vêm dos pacotes
-# oficiais da NVIDIA, que somam algumas centenas de MB no lugar dos ~2,5 GB do
-# torch. Para voltar ao comportamento antigo, basta acrescentar "torch" abaixo.
+# O faster-whisper roda sobre CTranslate2, sem PyTorch. A versão de cuDNN é 8:
+# é a versão requerida pelos wheels CUDA 12 do CTranslate2 para Whisper.
 PACKAGES = ("faster-whisper", "ctranslate2")
-CUDA_PACKAGES = ("nvidia-cublas-cu12", "nvidia-cudnn-cu12")
+CUDA_PACKAGES = (
+    "nvidia-cuda-runtime-cu12==12.4.127",
+    "nvidia-cublas-cu12==12.4.5.8",
+    "nvidia-cudnn-cu12==8.9.7.29",
+)
+CUDA_PACKAGE_NAMES = tuple(package.split("==", 1)[0] for package in CUDA_PACKAGES)
 _DLL_DIRECTORY_HANDLES: list[object] = []  # os.add_dll_directory precisa permanecer vivo
+_DLL_DIRECTORY_PATHS: set[str] = set()
+_CUDA_DLL_HANDLES: list[object] = []
+_CUDA_DLL_PATHS: set[str] = set()
+_CUDA_PRELOAD_ORDER = ("cudart64_12.dll", "cublasLt64_12.dll", "cublas64_12.dll", "cudnn64_8.dll")
 
 
 @dataclass(frozen=True)
@@ -51,15 +56,69 @@ class RuntimeInfo:
         return f"Whisper {whisper} · CTranslate2 {ct2} ({kind})"
 
 
-def _runtime_dll_dirs(runtime_dir: Path) -> tuple[Path, ...]:
-    """Pastas de DLL que o CTranslate2 procura na hora de abrir o backend CUDA."""
-    nvidia = runtime_dir / "nvidia"
+def _cuda_dll_dirs(root: Path) -> tuple[Path, ...]:
+    """Pastas de DLL que o CTranslate2 procura ao abrir o backend CUDA."""
+    nvidia = root / "nvidia"
     return (
-        runtime_dir / "torch" / "lib",          # mantido: instalação antiga ainda funciona
+        root / "torch" / "lib",                  # instalação antiga ainda funciona
+        nvidia / "cuda_runtime" / "bin",
         nvidia / "cublas" / "bin",
         nvidia / "cudnn" / "bin",
-        nvidia / "cuda_runtime" / "bin",
     )
+
+
+def _add_dll_dirs(folders: tuple[Path, ...] | list[Path]) -> None:
+    if not IS_WINDOWS or not hasattr(os, "add_dll_directory"):
+        return
+    for folder in folders:
+        key = str(folder.resolve())
+        if not folder.is_dir() or key in _DLL_DIRECTORY_PATHS:
+            continue
+        try:
+            _DLL_DIRECTORY_HANDLES.append(os.add_dll_directory(str(folder)))
+            _DLL_DIRECTORY_PATHS.add(key)
+        except OSError:
+            pass
+
+
+def activate_embedded_cuda() -> None:
+    """Mantém acessíveis as DLLs CUDA empacotadas ou presentes no venv atual."""
+    roots: list[Path] = []
+    frozen_root = getattr(sys, "_MEIPASS", None)
+    if frozen_root:
+        roots.append(Path(frozen_root))
+    else:
+        roots.extend(Path(item) for item in sys.path if item)
+    folders: list[Path] = []
+    for root in roots:
+        folders.extend(_cuda_dll_dirs(root))
+    _add_dll_dirs(folders)
+
+
+def prepare_embedded_cuda() -> str | None:
+    """Pré-carrega DLLs CUDA pelo caminho absoluto antes do CTranslate2."""
+    activate_embedded_cuda()
+    if not IS_WINDOWS:
+        return None
+    roots = [Path(getattr(sys, "_MEIPASS"))] if getattr(sys, "_MEIPASS", None) else [Path(p) for p in sys.path if p]
+    folders = [folder for root in roots for folder in _cuda_dll_dirs(root) if folder.is_dir()]
+    if folders:
+        os.environ["PATH"] = os.pathsep.join([*(str(p) for p in folders), os.environ.get("PATH", "")])
+    missing: list[str] = []
+    for name in _CUDA_PRELOAD_ORDER:
+        path = next((p / name for p in folders if (p / name).is_file()), None)
+        if path is None:
+            missing.append(name)
+            continue
+        key = str(path.resolve())
+        if key in _CUDA_DLL_PATHS:
+            continue
+        try:
+            _CUDA_DLL_HANDLES.append(ctypes.WinDLL(str(path)))
+            _CUDA_DLL_PATHS.add(key)
+        except OSError as exc:
+            return f"não foi possível carregar {name} incluída no aplicativo: {exc}"
+    return None if not missing else "DLL(s) CUDA ausente(s) no executável: " + ", ".join(missing)
 
 
 def activate_runtime(runtime_dir: Path = RUNTIME_DIR) -> None:
@@ -68,13 +127,7 @@ def activate_runtime(runtime_dir: Path = RUNTIME_DIR) -> None:
     if path in sys.path:
         sys.path.remove(path)
     sys.path.insert(0, path)
-    if IS_WINDOWS and hasattr(os, "add_dll_directory"):
-        for folder in _runtime_dll_dirs(runtime_dir):
-            if folder.is_dir():
-                try:
-                    _DLL_DIRECTORY_HANDLES.append(os.add_dll_directory(str(folder)))
-                except OSError:
-                    pass
+    _add_dll_dirs(_cuda_dll_dirs(runtime_dir))
     importlib.invalidate_caches()
 
 
@@ -107,7 +160,7 @@ def _versions(path: Path | None = None) -> dict[str, str]:
     try:
         distributions = (importlib.metadata.distributions()
                          if path is None else importlib.metadata.distributions(path=[str(path)]))
-        tracked = set(PACKAGES) | set(CUDA_PACKAGES)
+        tracked = set(PACKAGES) | set(CUDA_PACKAGE_NAMES)
         for dist in distributions:
             name = (dist.metadata.get("Name") or "").lower().replace("_", "-")
             if name in tracked:
@@ -120,7 +173,7 @@ def _versions(path: Path | None = None) -> dict[str, str]:
 
 
 class RuntimeManager:
-    """Verifica e atualiza, de forma bloqueante, o motor local do legendador."""
+    """Usa primeiro o motor incluído e só recorre ao runtime legado se necessário."""
 
     def __init__(self, runtime_dir: Path = RUNTIME_DIR, check_hours: int = 24):
         self.runtime_dir = runtime_dir
@@ -197,7 +250,7 @@ class RuntimeManager:
             return False
 
     def _needs_update(self, current: dict[str, str], use_cuda: bool) -> bool:
-        wanted = PACKAGES + (CUDA_PACKAGES if use_cuda else ())
+        wanted = PACKAGES + (CUDA_PACKAGE_NAMES if use_cuda else ())
         # Quando a máquina ganha ou perde GPU, as bibliotecas CUDA entram ou saem
         # na próxima abertura.
         return any(name not in current for name in wanted)
@@ -214,6 +267,20 @@ class RuntimeManager:
     def ensure(self, progress: ProgressCB, force: bool = False) -> RuntimeInfo:
         ensure_dirs()
         use_cuda = _has_nvidia_driver()
+        # O instalador contém o motor e as DLLs CUDA; priorizá-lo impede que
+        # uma cópia antiga/parcial em %LOCALAPPDATA% substitua o pacote validado.
+        deactivate_runtime(self.runtime_dir)
+        if self._available_packages():
+            cuda_problem = prepare_embedded_cuda()
+            if cuda_problem:
+                use_cuda = False
+            embedded = _versions()
+            self.info = RuntimeInfo(embedded, use_cuda, False, "runtime incluído no aplicativo")
+            progress("Motor de transcrição incluído e pronto", 100)
+            return self.info
+
+        # Caminho de desenvolvimento/recuperação para instalações sem o pacote.
+        # Uma build oficial nunca deve chegar aqui.
         before = _versions(self.runtime_dir)
         mode = "CUDA" if use_cuda else "CPU"
         progress(f"Verificando runtime do legendador ({mode})…", -1)
@@ -232,8 +299,8 @@ class RuntimeManager:
 
         pip_output = ""
         try:
-            progress("Instalando ou atualizando PyTorch e o motor Whisper…" if needs_update
-                     else "Checando atualizações de PyTorch e do motor Whisper…", -1)
+            progress("Recuperando o motor de transcrição…" if needs_update
+                     else "Checando o motor de transcrição…", -1)
             code, pip_output = self._pip(self._install_args(use_cuda))
             if code:
                 raise RuntimeError(f"pip terminou com código {code}")
