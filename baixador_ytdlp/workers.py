@@ -1,16 +1,19 @@
 """Threads de trabalho — nada de I/O de rede ou subprocesso na thread da interface."""
 from __future__ import annotations
 
+import multiprocessing
+import queue
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
 from .config import Settings
+from .diagnostics import get_logger, log_event, report_exception
 from .downloader import DownloadOptions, DownloadRunner, Progress, Transcoder
 from .gpu import GpuInfo, detect
 from .probe import probe
 from .tools import ToolManager, Toolchain
-from .transcription import Transcriber, TranscriptionCancelled, TranscriptionOptions
+from .transcription import TranscriptionOptions, transcription_process_main
 
 
 class SetupWorker(QThread):
@@ -26,10 +29,13 @@ class SetupWorker(QThread):
 
     def run(self) -> None:
         try:
+            log_event("Setup iniciado (forçar atualização=%s)", self.force)
             tc = self.manager.ensure_all(lambda msg, pct: self.progress.emit(msg, pct), self.force)
         except Exception as exc:  # noqa: BLE001 — a mensagem vai para a UI
+            report_exception("preparação do ambiente", exc)
             self.failed.emit(str(exc))
         else:
+            log_event("Setup concluído: yt-dlp=%s ffmpeg=%s", tc.ytdlp_version, tc.ffmpeg_version)
             self.finished_ok.emit(tc)
 
 
@@ -45,10 +51,13 @@ class ProbeWorker(QThread):
 
     def run(self) -> None:
         try:
+            log_event("Análise iniciada: %s", self.url)
             info = probe(self.url, self.tc.ytdlp, self.cfg.cookies_browser, self.cfg.proxy)
         except Exception as exc:  # noqa: BLE001
+            report_exception("análise de mídia", exc)
             self.failed.emit(str(exc))
         else:
+            log_event("Análise concluída: %s", self.url)
             self.finished_ok.emit(info)
 
 
@@ -73,6 +82,7 @@ class DownloadWorker(QThread):
 
     def run(self) -> None:
         try:
+            log_event("Download iniciado: job=%s url=%s", self.job_id, self.opts.url)
             files = self.runner.run(lambda p: self.progress.emit(self.job_id, p))
             if self.runner.cancelled:
                 self.failed.emit(self.job_id, "Cancelado", "")
@@ -95,7 +105,10 @@ class DownloadWorker(QThread):
 
             self.finished_ok.emit(self.job_id, files)
         except Exception as exc:  # noqa: BLE001
+            report_exception(f"download do job {self.job_id}", exc)
             self.failed.emit(self.job_id, str(exc), self.runner.tail())
+        else:
+            log_event("Download concluído: job=%s arquivos=%s", self.job_id, len(files))
 
 
 class GpuWorker(QThread):
@@ -114,13 +127,18 @@ class GpuWorker(QThread):
     def run(self) -> None:
         try:
             info = detect(self.ffmpeg)
-        except Exception:  # noqa: BLE001 - detecção nunca deve derrubar o app
+        except Exception as exc:  # noqa: BLE001 - detecção nunca deve derrubar o app
+            get_logger().warning("Detecção de GPU indisponível: %s", exc)
             info = GpuInfo()
         self.finished_ok.emit(info)
 
 
 class TranscriptionWorker(QThread):
-    """Executa Whisper fora da interface e encaminha eventos para a aba Legendar."""
+    """Coordena a transcrição isolada e encaminha eventos para a aba Legendar.
+
+    A interface Qt permanece neste processo. O modelo Whisper/CTranslate2 roda
+    em outro processo, evitando que uma DLL CUDA instável encerre o aplicativo.
+    """
 
     status = Signal(str)
     progress = Signal(int)
@@ -131,24 +149,126 @@ class TranscriptionWorker(QThread):
     def __init__(self, opts: TranscriptionOptions, tc: Toolchain, parent=None):
         super().__init__(parent)
         self.opts, self.tc = opts, tc
-        self.transcriber: Transcriber | None = None
+        self._process = None
+        self._cancel_event = None
+        self._pause_event = None
+        self._force_stopped = False
+        self._cancel_requested = False
+        self._pause_requested = False
 
     def cancel(self) -> None:
-        if self.transcriber:
-            self.transcriber.cancel()
+        self._cancel_requested = True
+        if self._cancel_event is not None:
+            self._cancel_event.set()
 
     def pause(self, paused: bool) -> None:
-        if self.transcriber:
-            self.transcriber.pause(paused)
+        self._pause_requested = paused
+        if self._pause_event is None:
+            return
+        if paused:
+            self._pause_event.set()
+        else:
+            self._pause_event.clear()
+
+    def force_stop(self) -> None:
+        """Interrompe o filho só no encerramento da janela, se ele não respondeu."""
+        self._force_stopped = True
+        self.cancel()
+        process = self._process
+        if process is not None and process.is_alive():
+            log_event("Forçando encerramento do processo de transcrição")
+            process.terminate()
+
+    def _handle_event(self, event) -> tuple[str, object] | None:
+        kind, value = event
+        if kind == "status":
+            self.status.emit(str(value))
+        elif kind == "progress":
+            self.progress.emit(max(0, min(100, int(value))))
+        elif kind in {"finished", "cancelled", "error"}:
+            return kind, value
+        else:
+            get_logger().warning("Evento desconhecido do processo de transcrição: %r", event)
+        return None
 
     def run(self) -> None:
+        process = None
+        events = None
+        terminal: tuple[str, object] | None = None
         try:
-            self.transcriber = Transcriber(
-                self.tc, self.status.emit, self.progress.emit, self.opts.aggressive_filter)
-            self.transcriber.run(self.opts)
-        except TranscriptionCancelled:
-            self.cancelled.emit()
+            context = multiprocessing.get_context("spawn")
+            self._cancel_event = context.Event()
+            self._pause_event = context.Event()
+            if self._cancel_requested:
+                self._cancel_event.set()
+            if self._pause_requested:
+                self._pause_event.set()
+            events = context.Queue()
+            process = context.Process(
+                name="baixador-ytdlp-transcription",
+                target=transcription_process_main,
+                args=(self.opts, self.tc, events, self._cancel_event, self._pause_event),
+            )
+            self._process = process
+            log_event("Iniciando processo isolado do legendador")
+            process.start()
+
+            while process.is_alive():
+                try:
+                    event = events.get(timeout=0.15)
+                except queue.Empty:
+                    continue
+                except (EOFError, OSError):
+                    # O filho pode ter caído em código nativo antes de fechar
+                    # o pipe de eventos de forma limpa.
+                    break
+                received = self._handle_event(event)
+                if received is not None:
+                    terminal = received
+
+            process.join()
+            # Eventos escritos logo antes de o filho sair ainda podem estar no pipe.
+            while True:
+                try:
+                    event = events.get_nowait()
+                except queue.Empty:
+                    break
+                except (EOFError, OSError):
+                    break
+                received = self._handle_event(event)
+                if received is not None:
+                    terminal = received
+
+            if terminal is None:
+                if self._cancel_event.is_set() or self._cancel_requested or self._force_stopped:
+                    terminal = ("cancelled", None)
+                else:
+                    code = process.exitcode
+                    raise RuntimeError(
+                        "O motor de transcrição encerrou inesperadamente "
+                        f"(código {code}). O aplicativo continuou aberto; consulte native-fault.log."
+                    )
+
+            kind, value = terminal
+            if kind == "cancelled":
+                self.cancelled.emit()
+            elif kind == "error":
+                message = value.get("message", "Falha desconhecida no motor de transcrição")
+                trace = value.get("traceback", "")
+                get_logger().error("Falha recebida do processo de transcrição:\n%s", trace.rstrip())
+                self.failed.emit(message)
+            else:
+                self.finished_ok.emit(str(value))
         except Exception as exc:  # noqa: BLE001
+            report_exception("coordenação da transcrição", exc)
             self.failed.emit(str(exc))
-        else:
-            self.finished_ok.emit(str(self.opts.output_path))
+        finally:
+            if process is not None:
+                if process.is_alive():
+                    process.terminate()
+                    process.join(2)
+                self._process = None
+                process.close()
+            if events is not None:
+                events.close()
+                events.join_thread()

@@ -13,6 +13,7 @@ from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, ComboBox,
                             TitleLabel)
 
 from ..config import Settings
+from ..diagnostics import log_event
 from ..transcription import FORMATS, TranscriptionOptions
 from ..workers import TranscriptionWorker
 
@@ -238,14 +239,17 @@ class TranscriptionPage(QWidget):
         self.start_btn.setEnabled(False)
         self.pause_btn.setEnabled(True)
         self.cancel_btn.setEnabled(True)
-        self.worker = TranscriptionWorker(opts, self.toolchain, self)
-        self.worker.status.connect(self._status)
-        self.worker.progress.connect(self.progress.setValue)
-        self.worker.finished_ok.connect(self._done)
-        self.worker.cancelled.connect(self._cancelled)
-        self.worker.failed.connect(self._failed)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.worker.start()
+        worker = TranscriptionWorker(opts, self.toolchain, self)
+        self.worker = worker
+        worker.status.connect(self._status)
+        worker.progress.connect(self.progress.setValue)
+        worker.finished_ok.connect(self._done)
+        worker.cancelled.connect(self._cancelled)
+        worker.failed.connect(self._failed)
+        worker.finished.connect(self._clear_finished_worker)
+        worker.finished.connect(worker.deleteLater)
+        log_event("Transcrição solicitada pela interface: %s", media)
+        worker.start()
 
     def _status(self, message: str) -> None:
         self.log.appendPlainText(message)
@@ -272,6 +276,12 @@ class TranscriptionPage(QWidget):
         InfoBar.success("Transcrição concluída", f"Legenda salva em {Path(path).name}", duration=6000,
                         position=InfoBarPosition.TOP_RIGHT, parent=self.window())
 
+    def _clear_finished_worker(self) -> None:
+        """Não retém uma referência Qt já destruída entre duas execuções."""
+        worker = self.sender()
+        if worker is self.worker:
+            self.worker = None
+
     def _cancelled(self) -> None:
         self._finish_controls()
         self._status("Transcrição cancelada.")
@@ -288,6 +298,17 @@ class TranscriptionPage(QWidget):
         self.pause_btn.setText("Pausar")
         self.cancel_btn.setEnabled(False)
         self._paused = False
+
+    def shutdown(self) -> None:
+        """Finaliza o worker antes de o Qt destruir a janela principal."""
+        worker = self.worker
+        if worker is None or not worker.isRunning():
+            return
+        self._status("Encerrando transcrição antes de fechar o aplicativo…")
+        worker.cancel()
+        if not worker.wait(5000):
+            worker.force_stop()
+            worker.wait(2000)
 
     def open_output_folder(self) -> None:
         path = Path(self.output_edit.text().strip() or self.media_edit.text().strip())
