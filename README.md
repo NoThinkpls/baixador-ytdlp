@@ -9,7 +9,7 @@
 Instala e atualiza as próprias dependências, analisa o link, mostra todas as qualidades
 disponíveis e baixa na melhor por padrão.
 
-[![versão](https://img.shields.io/badge/vers%C3%A3o-1.3.0-0078D4)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
+[![versão](https://img.shields.io/badge/vers%C3%A3o-1.3.1-0078D4)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
 ![plataforma](https://img.shields.io/badge/plataforma-Windows%2010%2F11-0078D4)
 ![aceleração](https://img.shields.io/badge/legendador-CUDA%20%C2%B7%20NVIDIA%20RTX-76B900?logo=nvidia&logoColor=white)
 ![fallback](https://img.shields.io/badge/fallback-CPU%20int8-555555)
@@ -29,7 +29,7 @@ disponíveis e baixa na melhor por padrão.
 
 [O que ele faz](#o-que-ele-faz) ·
 [Instalação](#instalação) ·
-[Novidades](#novidades-da-130) ·
+[Novidades](#novidades-da-131) ·
 [YouTube](#youtube-o-que-realmente-é-preciso) ·
 [Compilando](#compilando) ·
 [GPU](#sobre-a-gpu) ·
@@ -88,6 +88,15 @@ programa aparecer quando você digita o nome na busca do Windows.
 > seu computador"* na primeira execução, e alguns antivírus podem reclamar. Isso é esperado.
 > A seção **[Assinatura digital](#assinatura-digital-e-o-aviso-do-windows)** explica por quê,
 > o que fazer e como conferir que o arquivo é autêntico.
+
+## Novidades da 1.3.1
+
+- **Redimensionamento realmente acessível.** O teste de borda agora é tratado
+  diretamente pela janela no Windows, antes dos controles da title bar Fluent. Assim,
+  os quatro cantos e todas as laterais respondem ao mouse, inclusive os cantos direitos.
+- **Build oficial pelo GitHub Actions.** O fluxo de desenvolvimento passa a validar cada
+  push em `main`; uma tag `vX.Y.Z` gera automaticamente instalador, build portátil,
+  hashes e a GitHub Release.
 
 ## Novidades da 1.3.0
 
@@ -179,29 +188,13 @@ Requer Python 3.11 ou superior.
 
 ## Compilando
 
-Na sua máquina:
+As builds oficiais são geradas pelo **GitHub Actions**. Um push em `main` executa a
+validação e disponibiliza os artefatos do workflow. Para publicar uma versão, crie e envie
+a tag `vX.Y.Z`; ela gera o instalador versionado, a cópia de nome fixo, o build portátil,
+o `SHA256SUMS.txt` e a GitHub Release.
 
-```powershell
-.\build.ps1              # gera dist\baixador-ytdlp\baixador-ytdlp.exe
-.\build.ps1 -Installer   # gera também dist\installer\BaixadorYtdlp-1.3.0-setup.exe
-```
-
-O `-Installer` localiza o [Inno Setup 6](https://jrsoftware.org/isdl.php) tanto em
-`Program Files` quanto em `Program Files (x86)`. Se ele ainda não estiver instalado,
-use uma única vez:
-
-```powershell
-.\build.ps1 -Installer -InstallInnoSetup
-```
-
-Isso instala o compilador pelo `winget`, cria o setup e grava um arquivo `.sha256` ao lado
-do instalador. O `build.cmd` é uma alternativa que abre o PowerShell com a política
-temporária adequada, caso o Windows bloqueie a execução direta de `.ps1`.
-
-O repositório também traz `.github/workflows/build.yml`, que compila e publica a release
-sozinho a cada tag `v*`. Ele só entra em ação em contas com o GitHub Actions habilitado —
-se o GitHub exibir *"Actions has been disabled for this user"*, nenhum workflow inicia e o
-build local acima é o caminho.
+Não é necessário compilar localmente para distribuir uma versão. Os scripts
+`build.ps1` e `build.cmd` permanecem apenas como apoio ao desenvolvimento.
 
 > [!NOTE]
 > **O PyTorch saiu do pacote.** O `faster-whisper` executa sobre o CTranslate2 — o torch
