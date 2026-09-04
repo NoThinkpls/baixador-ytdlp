@@ -29,6 +29,7 @@ FORMATS = {
     "srt": ("SRT — compatível com players", ".srt"),
     "vtt": ("WebVTT — ideal para web", ".vtt"),
     "ass": ("ASS — estilo avançado", ".ass"),
+    "karaoke": ("ASS karaoke — palavras sincronizadas", ".ass"),
     "txt": ("Texto simples", ".txt"),
     "json": ("JSON — segmentos e timestamps", ".json"),
 }
@@ -171,8 +172,18 @@ class Transcriber:
         raw: list[dict] = []
         for item in segments:
             self._check_interrupt()
+            words = []
+            for word in getattr(item, "words", None) or ():
+                word_text = (getattr(word, "word", "") or "").strip()
+                if word_text:
+                    words.append({
+                        "text": word_text,
+                        "start": float(getattr(word, "start", None) or item.start),
+                        "end": float(getattr(word, "end", None) or item.end),
+                    })
             raw.append({"start": float(item.start), "end": float(item.end),
-                        "text": item.text.strip(), "avg_logprob": item.avg_logprob,
+                        "text": item.text.strip(), "words": words,
+                        "avg_logprob": item.avg_logprob,
                         "no_speech_prob": item.no_speech_prob})
             if duration:
                 self.progress(min(90, max(16, int(item.end * 74 / duration) + 16)))
@@ -270,16 +281,31 @@ class Transcriber:
         return ((item.get("avg_logprob") is not None and item["avg_logprob"] < log_limit) or
                 (item.get("no_speech_prob") is not None and item["no_speech_prob"] > speech_limit))
 
+    def _normalize_text(self, value: str) -> str:
+        value = re.sub(r"[^\w\s\.,!?;:\-\'\"()]", "", value, flags=re.UNICODE)
+        return re.sub(r"\s+", " ", value).strip()
+
     def _clean(self, segments: list[dict]) -> list[dict]:
         cleaned = []
         for item in segments:
             self._check_interrupt()
             if self._is_hallucination(item):
                 continue
-            text = re.sub(r"[^\w\s\.,!?;:\-\'\"()]", "", item["text"], flags=re.UNICODE)
-            text = re.sub(r"\s+", " ", text).strip()
-            if text:
-                cleaned.append({"start": item["start"], "end": item["end"], "text": text})
+            text = self._normalize_text(item["text"])
+            if not text:
+                continue
+            words = []
+            for word in item.get("words") or ():
+                word_text = self._normalize_text(str(word.get("text") or ""))
+                if word_text:
+                    words.append({
+                        "text": word_text,
+                        "start": float(word.get("start", item["start"])),
+                        "end": float(word.get("end", item["end"])),
+                    })
+            cleaned.append({
+                "start": item["start"], "end": item["end"], "text": text, "words": words,
+            })
         self.status(f"Filtro de qualidade: {len(segments) - len(cleaned)} segmentos removidos")
         return cleaned
 
@@ -296,10 +322,47 @@ class Transcriber:
             lines.append(current)
         return lines
 
+    def _split_word_segment(self, segment: dict) -> list[dict]:
+        """Agrupa timestamps de palavras sem inventar uma nova linha do tempo."""
+        result: list[dict] = []
+        group: list[dict] = []
+        char_count = 0
+
+        def flush() -> None:
+            nonlocal group, char_count
+            if not group:
+                return
+            text = " ".join(word["text"] for word in group)
+            lines = self._lines(text)
+            result.append({
+                "start": max(segment["start"], group[0]["start"]),
+                "end": min(segment["end"], group[-1]["end"]),
+                "text": "\n".join(lines[:self.max_lines]),
+                "words": group,
+            })
+            group = []
+            char_count = 0
+
+        for word in segment["words"]:
+            if group:
+                elapsed = word["end"] - group[0]["start"]
+                sentence_break = group[-1]["text"].endswith((".", "!", "?"))
+                if char_count + len(word["text"]) + 1 > self.max_chars_per_line * self.max_lines or (
+                    sentence_break and elapsed >= self.min_duration
+                ):
+                    flush()
+            group.append(word)
+            char_count += len(word["text"]) + (1 if len(group) > 1 else 0)
+        flush()
+        return result
+
     def _split_segments(self, segments: list[dict]) -> list[dict]:
         result = []
         for segment in segments:
             self._check_interrupt()
+            if segment.get("words"):
+                result.extend(self._split_word_segment(segment))
+                continue
             text, start, end = segment["text"], segment["start"], segment["end"]
             chunks = [x.strip() for x in re.split(r"(?<=[.!?])\s+", text) if x.strip()]
             if len(chunks) == 1:
@@ -315,7 +378,7 @@ class Transcriber:
                                 len(chunk.replace("\n", " ")) / self.chars_per_second))
                     proportional = (end - start) * len(chunk.replace("\n", " ")) / total
                     chunk_end = min(end, cursor + max(self.min_duration, (ideal + proportional) / 2))
-                result.append({"start": cursor, "end": chunk_end, "text": chunk})
+                result.append({"start": cursor, "end": chunk_end, "text": chunk, "words": []})
                 cursor = chunk_end
         return result
 
@@ -325,6 +388,9 @@ class Transcriber:
                 item["start"] = segments[index - 1]["end"] + self.min_gap
             if item["end"] <= item["start"]:
                 item["end"] = item["start"] + self.min_duration
+            if item.get("words"):
+                item["words"][0]["start"] = max(item["words"][0]["start"], item["start"])
+                item["words"][-1]["end"] = min(item["words"][-1]["end"], item["end"])
         return segments
 
     @staticmethod
@@ -344,26 +410,53 @@ class Transcriber:
             text = "WEBVTT\n\n" + "\n\n".join(
                 f"{self._timestamp(s['start'], '.')} --> {self._timestamp(s['end'], '.')}\n{s['text']}"
                 for s in segments) + "\n"
-        elif output_format == "ass":
-            header = ("[Script Info]\nTitle: Baixador YT-DLP\nScriptType: v4.00+\n\n"
-                      "[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,"
-                      "OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,"
-                      "Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n"
-                      "Style: Default,Arial,42,&H00FFFFFF,&H000000FF,&H00101010,&H80000000,0,0,0,0,"
-                      "100,100,0,0,1,2,1,2,32,32,28,1\n\n[Events]\n"
-                      "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n")
+        elif output_format in ("ass", "karaoke"):
+            style_name = "Karaoke" if output_format == "karaoke" else "Default"
+            header = (
+                "[Script Info]\nTitle: Baixador YT-DLP\nScriptType: v4.00+\n\n"
+                "[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,"
+                "OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,"
+                "Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n"
+                "Style: Default,Arial,42,&H00FFFFFF,&H000000FF,&H00101010,&H80000000,0,0,0,0,"
+                "100,100,0,0,1,2,1,2,32,32,28,1\n"
+                "Style: Karaoke,Arial,52,&H00FFFFFF,&H0000D7FF,&H00101010,&H80000000,1,0,0,0,"
+                "100,100,0,0,1,3,1,2,32,32,70,1\n\n[Events]\n"
+                "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n"
+            )
+
             def ass_time(value: float) -> str:
                 hundredths = round(value * 100)
                 hours, rest = divmod(hundredths, 360000)
                 minutes, rest = divmod(rest, 6000)
                 secs, cs = divmod(rest, 100)
                 return f"{hours}:{minutes:02}:{secs:02}.{cs:02}"
+
+            def ass_escape(value: str) -> str:
+                return value.replace("\\", "\\\\").replace("{", r"\{").replace("}", r"\}").replace("\n", r"\N")
+
+            def karaoke_text(segment: dict) -> str:
+                words = segment.get("words") or []
+                if not words:
+                    return ass_escape(segment["text"])
+                chunks = []
+                for index, word in enumerate(words):
+                    start = max(segment["start"], float(word["start"]))
+                    end = min(segment["end"], float(word["end"]))
+                    if index + 1 < len(words):
+                        end = min(end, float(words[index + 1]["start"]))
+                    duration = max(1, round((end - start) * 100))
+                    chunks.append(f"{{\\kf{duration}}}{ass_escape(word['text'])}")
+                return " ".join(chunks)
+
             rows = []
             for segment in segments:
-                subtitle_text = segment["text"].replace("\n", "\\N")
+                subtitle_text = (
+                    karaoke_text(segment) if output_format == "karaoke"
+                    else ass_escape(segment["text"])
+                )
                 rows.append(
                     f"Dialogue: 0,{ass_time(segment['start'])},{ass_time(segment['end'])},"
-                    f"Default,,0,0,0,,{subtitle_text}")
+                    f"{style_name},,0,0,0,,{subtitle_text}")
             text = header + "\n".join(rows) + "\n"
         elif output_format == "txt":
             text = "\n".join(s["text"].replace("\n", " ") for s in segments) + "\n"
