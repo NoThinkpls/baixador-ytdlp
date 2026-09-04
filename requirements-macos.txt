@@ -1,0 +1,4 @@
+PySide6>=6.7
+PySide6-Fluent-Widgets>=1.7
+faster-whisper>=1.1,<2
+# No macOS/Apple Silicon, CTranslate2 usa CPU/NEON. CUDA é exclusiva da build Windows.

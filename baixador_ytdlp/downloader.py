@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from .config import Settings
+from .config import IS_WINDOWS, Settings
 from .cookies import cookie_args
 from .tools import CREATE_NO_WINDOW, Toolchain
 from .diagnostics import log_event
@@ -77,8 +77,9 @@ def build_args(opts: DownloadOptions, cfg: Settings, tc: Toolchain) -> list[str]
         "--concurrent-fragments", str(max(1, cfg.concurrent_fragments)),
         "--retries", "10", "--fragment-retries", "10",
         "--no-overwrites", "--continue",
-        "--windows-filenames",
     ]
+    if IS_WINDOWS:
+        args.append("--windows-filenames")
 
     if opts.playlist:
         args += ["--yes-playlist"]
@@ -271,8 +272,7 @@ def _to_float(value: str) -> float:
 
 # --------------------------------------------------------------------- NVENC
 class Transcoder:
-    """Reencoda com NVENC. Só faz sentido para compatibilidade ou economia de espaço:
-    todo reencode é uma perda de qualidade em relação ao arquivo original."""
+    """Reencoda via NVENC no Windows ou VideoToolbox no Apple Silicon."""
 
     def __init__(self, tc: Toolchain, cfg: Settings):
         self.tc, self.cfg = tc, cfg
@@ -298,25 +298,39 @@ class Transcoder:
     def build_args(self, src: Path, dst: Path, hwaccel: bool = True) -> list[str]:
         codec = self.cfg.transcode_codec
         args = [str(self.tc.ffmpeg), "-hide_banner", "-loglevel", "error", "-y"]
-        if hwaccel:
+        is_nvenc = codec.endswith("_nvenc")
+        is_videotoolbox = codec.endswith("_videotoolbox")
+        if hwaccel and is_nvenc:
             args += ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
-        args += ["-i", str(src),
-                "-c:v", codec,
+        elif hwaccel and is_videotoolbox:
+            args += ["-hwaccel", "videotoolbox"]
+        args += ["-i", str(src), "-c:v", codec]
+        if is_nvenc:
+            args += [
                 "-preset", self.cfg.transcode_preset,
                 "-rc", "vbr", "-cq", str(self.cfg.transcode_cq), "-b:v", "0",
-                "-c:a", "copy", "-c:s", "copy", "-map", "0",
-                "-movflags", "+faststart",
-                "-progress", "pipe:1", "-nostats", str(dst)]
+            ]
+        elif is_videotoolbox:
+            quality = max(1, min(100, self.cfg.transcode_cq * 3))
+            args += ["-q:v", str(quality), "-b:v", "0"]
+        else:
+            raise DownloadError("O encoder acelerado selecionado não é suportado.")
+        args += [
+            "-c:a", "copy", "-c:s", "copy", "-map", "0",
+            "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(dst),
+        ]
         return args
 
     def run(self, src: Path, on_progress: Callable[[float], None]) -> Path:
         total = self.duration(src)
-        suffix = {"h264_nvenc": "h264", "hevc_nvenc": "hevc", "av1_nvenc": "av1"}
-        dst = src.with_name(f"{src.stem} [{suffix.get(self.cfg.transcode_codec, 'gpu')}]{src.suffix}")
-
-        # 1ª tentativa: decodifica e encoda na GPU. Se o codec de entrada não for
-        # suportado pelo NVDEC, repete decodificando na CPU e encodando na GPU.
-        for attempt, hwaccel in enumerate((True, False)):
+        codec = self.cfg.transcode_codec
+        suffix = {
+            "h264_nvenc": "h264", "hevc_nvenc": "hevc", "av1_nvenc": "av1",
+            "h264_videotoolbox": "h264", "hevc_videotoolbox": "hevc",
+        }
+        dst = src.with_name(f"{src.stem} [{suffix.get(codec, 'acelerado')}]{src.suffix}")
+        attempts = (True, False) if codec.endswith("_nvenc") else (True,)
+        for attempt, hwaccel in enumerate(attempts):
             args = self.build_args(src, dst, hwaccel=hwaccel)
             self._proc = subprocess.Popen(
                 args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -333,11 +347,10 @@ class Transcoder:
             if self._cancelled.is_set():
                 dst.unlink(missing_ok=True)
                 raise DownloadError("Conversão cancelada.")
-            if attempt == 1:
+            if attempt == len(attempts) - 1:
                 err = (self._proc.stderr.read() if self._proc.stderr else "") or ""
                 dst.unlink(missing_ok=True)
-                raise DownloadError(f"Falha na conversão por GPU: {err.strip()[:300]}")
-
+                raise DownloadError(f"Falha na conversão acelerada: {err.strip()[:300]}")
         on_progress(100.0)
         if self.cfg.transcode_replace:
             src.unlink(missing_ok=True)

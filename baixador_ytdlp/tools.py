@@ -34,6 +34,7 @@ from .runtime import RuntimeInfo, RuntimeManager
 YTDLP_EXE = "yt-dlp.exe" if IS_WINDOWS else "yt-dlp"
 FFMPEG_EXE = "ffmpeg.exe" if IS_WINDOWS else "ffmpeg"
 FFPROBE_EXE = "ffprobe.exe" if IS_WINDOWS else "ffprobe"
+YTDLP_ASSET = "yt-dlp.exe" if IS_WINDOWS else ("yt-dlp_macos" if sys.platform == "darwin" else "yt-dlp")
 
 # O yt-dlp precisa de um runtime JavaScript para resolver o desafio JS do YouTube.
 # Sem ele, a resposta do player volta UNPLAYABLE e o erro exibido é
@@ -47,6 +48,9 @@ DENO_RELEASE_API = "https://api.github.com/repos/denoland/deno/releases/latest"
 YTDLP_RELEASE_API = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
 FFMPEG_RELEASE_API = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest"
 FFMPEG_ASSET = "ffmpeg-master-latest-win64-gpl.zip"
+# Builds estáticas para macOS; os IDs dos assets são gravados como no fluxo Windows
+# quando o fornecedor não publica um arquivo de checksums separado.
+MAC_FFMPEG_RELEASE_API = "https://api.github.com/repos/descriptinc/ffmpeg-ffprobe-static/releases/latest"
 USER_AGENT = f"{APP_NAME}/{APP_VERSION} (+https://github.com/yt-dlp/yt-dlp)"
 
 # Esconde a janela preta do console em cada subprocesso no Windows.
@@ -146,6 +150,14 @@ class ToolManager:
         local = self.bin_dir / name
         if local.exists():
             return local
+        # Um binário que já vem na aplicação congelada tem precedência sobre o
+        # PATH do sistema, mas nunca é alterado em lugar: atualizações vão para
+        # a pasta de dados do usuário.
+        frozen_root = getattr(sys, "_MEIPASS", None)
+        if frozen_root:
+            bundled = Path(frozen_root) / "bin" / name
+            if bundled.is_file():
+                return bundled
         found = shutil.which(name)
         return Path(found) if found else local
 
@@ -230,13 +242,13 @@ class ToolManager:
                             sums[parts[1].lstrip("*")] = parts[0].lower()
             except Exception:
                 pass
-        return tag, assets.get(YTDLP_EXE, ""), sums
+        return tag, assets.get(YTDLP_ASSET, ""), sums
 
     def ensure_ytdlp(self, progress: ProgressCB, force: bool = False) -> None:
         target = self.bin_dir / YTDLP_EXE
         current = self.local_ytdlp_version(target)
 
-        if not IS_WINDOWS and not target.exists():
+        if sys.platform not in ("win32", "darwin") and not target.exists():
             if shutil.which("yt-dlp"):
                 progress("yt-dlp encontrado no sistema", 100)
                 return
@@ -268,7 +280,7 @@ class ToolManager:
         staged = self.bin_dir / f"{YTDLP_EXE}.new"
         self._download(url, staged, progress, f"Baixando yt-dlp {tag}")
 
-        expected = sums.get(YTDLP_EXE)
+        expected = sums.get(YTDLP_ASSET)
         if expected:
             progress("Conferindo a integridade do yt-dlp…", -1)
             got = self._sha256(staged)
@@ -295,9 +307,72 @@ class ToolManager:
         except Exception:
             return ""
 
+    def _mac_ffmpeg_assets(self) -> tuple[str, dict[str, dict]]:
+        """Obtém os binários estáticos de FFmpeg/ffprobe para a arquitetura atual."""
+        machine = platform.machine().lower()
+        arch = "arm64" if machine in ("arm64", "aarch64") else "x64"
+        with self._request(MAC_FFMPEG_RELEASE_API) as resp:
+            data = json.load(resp)
+        assets = {str(asset.get("name")): asset for asset in data.get("assets", [])}
+        names = (f"ffmpeg-darwin-{arch}", f"ffprobe-darwin-{arch}")
+        if not all(name in assets for name in names):
+            raise RuntimeError(f"A release não trouxe FFmpeg/ffprobe para macOS {arch}.")
+        return str(data.get("tag_name") or ""), {name: assets[name] for name in names}
+
+    def _ensure_macos_ffmpeg(self, progress: ProgressCB, force: bool = False) -> None:
+        target = self.bin_dir / FFMPEG_EXE
+        current = self.local_ffmpeg_version(target)
+        if current and not force and not self._should_check("ffmpeg", 168):
+            progress(f"FFmpeg {current} (verificado recentemente)", 100)
+            return
+
+        progress("Consultando o FFmpeg para macOS…", -1)
+        try:
+            tag, assets = self._mac_ffmpeg_assets()
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, RuntimeError) as exc:
+            if current:
+                progress(f"Sem rede para checar atualização — usando FFmpeg {current}", 100)
+                return
+            raise RuntimeError(f"Não foi possível baixar o FFmpeg para macOS: {exc}") from exc
+
+        stamp = ":".join(
+            [tag, *(f"{asset.get('id')}:{asset.get('updated_at', '')}" for asset in assets.values())]
+        )
+        self._mark_checked("ffmpeg")
+        if current and self.state.get("ffmpeg_stamp") == stamp and not force:
+            progress(f"FFmpeg {current} já está atualizado", 100)
+            self._save_state()
+            return
+
+        arch = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "x64"
+        targets = {
+            f"ffmpeg-darwin-{arch}": FFMPEG_EXE,
+            f"ffprobe-darwin-{arch}": FFPROBE_EXE,
+        }
+        for asset_name, target_name in targets.items():
+            staged = self.bin_dir / f"{target_name}.new"
+            self._download(
+                str(assets[asset_name]["browser_download_url"]),
+                staged,
+                progress,
+                f"Baixando {target_name} para macOS",
+            )
+            self._replace(staged, self.bin_dir / target_name)
+
+        # O fornecedor publica artefatos estáticos no GitHub, mas não um
+        # SHA-256 separado. Preservamos o id/versionamento do asset para detectar
+        # qualquer troca posterior antes da próxima atualização.
+        self.state["ffmpeg_stamp"] = stamp
+        self._save_state()
+        progress("FFmpeg para macOS instalado", 100)
+
     def ensure_ffmpeg(self, progress: ProgressCB, force: bool = False) -> None:
         target = self.bin_dir / FFMPEG_EXE
         current = self.local_ffmpeg_version(target)
+
+        if sys.platform == "darwin":
+            self._ensure_macos_ffmpeg(progress, force)
+            return
 
         if not IS_WINDOWS and not target.exists():
             if shutil.which("ffmpeg"):

@@ -95,9 +95,9 @@ class Settings:
     history_enabled: bool = True
     history_limit: int = 200
     runtime_check_hours: int = 24    # intervalo entre checagens do runtime do Whisper
-    # Transcodificação opcional por GPU (NVENC)
+    # Transcodificação opcional por GPU (NVENC no Windows, VideoToolbox no macOS)
     transcode_enabled: bool = False
-    transcode_codec: str = "hevc_nvenc"   # h264_nvenc | hevc_nvenc | av1_nvenc
+    transcode_codec: str = "hevc_nvenc"   # NVENC ou VideoToolbox, conforme a plataforma
     transcode_cq: int = 20
     transcode_preset: str = "p5"
     transcode_replace: bool = False       # apagar o original após converter

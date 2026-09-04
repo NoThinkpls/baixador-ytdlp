@@ -4,13 +4,13 @@
 
 # baixador-ytdlp
 
-**Baixador de vídeo para Windows 10/11, com interface Fluent, construído sobre o yt-dlp e o FFmpeg.**
+**Baixador de vídeo para Windows 10/11 e macOS Apple Silicon, com interface Fluent, construído sobre o yt-dlp e o FFmpeg.**
 
 Instala e atualiza as próprias dependências, analisa o link, mostra todas as qualidades
 disponíveis e baixa na melhor por padrão.
 
 [![versão](https://img.shields.io/badge/vers%C3%A3o-1.4.0-0078D4)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
-![plataforma](https://img.shields.io/badge/plataforma-Windows%2010%2F11-0078D4)
+![plataforma](https://img.shields.io/badge/plataforma-Windows%2010%2F11%20%C2%B7%20macOS%20Apple%20Silicon-0078D4)
 ![aceleração](https://img.shields.io/badge/legendador-CUDA%20%C2%B7%20NVIDIA%20RTX-76B900?logo=nvidia&logoColor=white)
 ![fallback](https://img.shields.io/badge/fallback-CPU%20int8-555555)
 ![licença](https://img.shields.io/badge/licen%C3%A7a-MIT-lightgrey)
@@ -29,6 +29,7 @@ disponíveis e baixa na melhor por padrão.
 
 [O que ele faz](#o-que-ele-faz) ·
 [Instalação](#instalação) ·
+[macOS](#macos-apple-silicon) ·
 [Novidades](#novidades-da-140) ·
 [Atualizações](#atualizações-do-aplicativo) ·
 [YouTube](#youtube-o-que-realmente-é-preciso) ·
@@ -101,6 +102,26 @@ programa aparecer quando você digita o nome na busca do Windows.
 > A seção **[Assinatura digital](#assinatura-digital-e-o-aviso-do-windows)** explica por quê,
 > o que fazer e como conferir que o arquivo é autêntico.
 
+## macOS Apple Silicon
+
+A pipeline também gera um pacote `BaixadorYtdlp-<versão>-macos-arm64.zip`, destinado a
+Macs com M1, M2, M3 e M4 (macOS 14 ou mais recente). Descompacte e mova
+`baixador-ytdlp.app` para **Aplicativos**. A primeira execução pode exigir confirmar a abertura
+nas configurações de Privacidade e Segurança enquanto o certificado Developer ID e a notarização
+ainda não estiverem configurados na conta Apple.
+
+No primeiro uso, o app baixa o `yt-dlp_macos` oficial e os binários estáticos `ffmpeg`/`ffprobe`
+para `~/Library/Application Support/BaixadorYtdlp/bin`, sem alterar pastas do sistema. O Deno
+também é baixado para a arquitetura correta. A checagem/instalação automática da **versão do
+aplicativo** permanece disponível no instalador Windows; no macOS, a atualização do `.app` será
+manual até a etapa de assinatura e notarização.
+
+### Desempenho no Apple Silicon
+
+A transcrição usa CTranslate2 em CPU com instruções NEON e número de threads ajustado aos núcleos
+disponíveis. O CTranslate2 não fornece backend Metal/MPS para o Whisper, portanto não prometemos
+uso da GPU do M1–M4 para essa etapa. Para transcodificação, quando o FFmpeg disponibilizar
+VideoToolbox, as opções H.264 e HEVC aceleradas aparecem em **Configurações**.
 ## Novidades da 1.4.0
 
 - **Verificador de atualização do aplicativo.** Configurável em *Configurações* e sem
@@ -117,6 +138,8 @@ programa aparecer quando você digita o nome na busca do Windows.
   compactar, transformar em Shorts verticais e queimar legendas usando FFmpeg em segundo plano.
 - **Legendas estilo karaoke.** O Whisper preserva os timestamps por palavra e pode gerar ASS
   com destaque progressivo, pronto para queimar no vídeo pela página de Ferramentas.
+- **macOS Apple Silicon.** GitHub Actions agora gera o `.app` arm64 para M1–M4, com runtime
+  de download próprio e VideoToolbox quando o FFmpeg o disponibiliza.
 
 ## Atualizações do aplicativo
 
