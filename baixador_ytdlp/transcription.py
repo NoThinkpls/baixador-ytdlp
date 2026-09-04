@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import gc
 import json
+import platform
 import re
 import subprocess
 import tempfile
@@ -118,6 +119,8 @@ class Transcriber:
         except Exception:
             pass
         cores = whisper_threads()
+        if sys.platform == "darwin" and platform.machine().lower() in ("arm64", "aarch64"):
+            return "cpu", "int8", f"Apple Silicon — CPU/NEON em até {cores} threads (int8)"
         return "cpu", "int8", f"CPU — até {cores} threads (int8)"
 
     def _load_model(self, model_size: str) -> None:
