@@ -48,11 +48,13 @@ def main() -> int:
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
+    from baixador_ytdlp.ui.appearance import apply_apple_discord_appearance
+    apply_apple_discord_appearance(app)
     install_qt_logging()
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(True)
 
-    icon_path = asset("icon.ico")
+    icon_path = asset("icon.ico" if IS_WINDOWS else "icon.png")
     icon = QIcon(str(icon_path)) if icon_path.exists() else QIcon()
     app.setWindowIcon(icon)
 

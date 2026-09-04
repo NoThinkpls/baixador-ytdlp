@@ -159,10 +159,29 @@ jobs:
           echo "Versão: $version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Preparar o ícone macOS
+        run: |
+          iconset="build/baixador-ytdlp.iconset"
+          rm -rf "$iconset"
+          mkdir -p "$iconset"
+          sips -z 16 16 assets/icon.png --out "$iconset/icon_16x16.png"
+          sips -z 32 32 assets/icon.png --out "$iconset/icon_16x16@2x.png"
+          sips -z 32 32 assets/icon.png --out "$iconset/icon_32x32.png"
+          sips -z 64 64 assets/icon.png --out "$iconset/icon_32x32@2x.png"
+          sips -z 128 128 assets/icon.png --out "$iconset/icon_128x128.png"
+          sips -z 256 256 assets/icon.png --out "$iconset/icon_128x128@2x.png"
+          sips -z 256 256 assets/icon.png --out "$iconset/icon_256x256.png"
+          sips -z 512 512 assets/icon.png --out "$iconset/icon_256x256@2x.png"
+          sips -z 512 512 assets/icon.png --out "$iconset/icon_512x512.png"
+          sips -z 1024 1024 assets/icon.png --out "$iconset/icon_512x512@2x.png"
+          iconutil -c icns "$iconset" -o build/baixador-ytdlp.icns
+
       - name: Compilar o aplicativo .app
         run: |
           python -m PyInstaller main.py \
             --noconfirm --clean --windowed --name baixador-ytdlp \
+            --osx-bundle-identifier com.nothinkpls.baixadorytdlp \
+            --icon build/baixador-ytdlp.icns \
             --collect-all faster_whisper \
             --collect-all ctranslate2 \
             --collect-all av \
@@ -181,18 +200,32 @@ jobs:
       - name: Empacotar o aplicativo
         run: |
           mkdir -p dist/installer
+          app="dist/baixador-ytdlp.app"
           archive="dist/installer/BaixadorYtdlp-${{ steps.ver.outputs.version }}-macos-arm64.zip"
-          ditto -c -k --sequesterRsrc --keepParent dist/baixador-ytdlp.app "$archive"
+          dmg="dist/installer/BaixadorYtdlp-${{ steps.ver.outputs.version }}-macos-arm64.dmg"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
+
+          # O DMG entrega o padrão esperado no macOS: abrir e arrastar o app para Aplicativos.
+          staging="build/dmg-root"
+          rm -rf "$staging"
+          mkdir -p "$staging"
+          cp -R "$app" "$staging/baixador-ytdlp.app"
+          ln -s /Applications "$staging/Applications"
+          hdiutil create -volname "Baixador YT-DLP" -srcfolder "$staging" -ov -format UDZO "$dmg"
+          hdiutil verify "$dmg"
+
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             cp "$archive" dist/installer/baixador-ytdlp-macos-arm64.zip
+            cp "$dmg" dist/installer/baixador-ytdlp-macos-arm64.dmg
           fi
-          shasum -a 256 dist/installer/*.zip > dist/installer/SHA256SUMS-macos.txt
+          shasum -a 256 dist/installer/*.dmg dist/installer/*.zip > dist/installer/SHA256SUMS-macos.txt
 
       - name: Publicar o aplicativo macOS
         uses: actions/upload-artifact@v4
         with:
           name: baixador-ytdlp-macos-arm64-${{ steps.ver.outputs.version }}
           path: |
+            dist/installer/*.dmg
             dist/installer/*.zip
             dist/installer/SHA256SUMS-macos.txt
           retention-days: 30
@@ -219,6 +252,7 @@ jobs:
           name: baixador-ytdlp ${{ github.ref_name }}
           files: |
             release-assets/*.exe
+            release-assets/*.dmg
             release-assets/*.zip
             release-assets/SHA256SUMS*.txt
           generate_release_notes: true

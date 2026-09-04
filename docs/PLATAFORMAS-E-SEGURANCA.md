@@ -12,9 +12,12 @@ Get-FileHash .\\baixador-ytdlp-setup.exe -Algorithm SHA256
 
 ## macOS Apple Silicon
 
-A compilação para macOS é arm64 e destina-se a Macs M1, M2, M3 e M4 com macOS 14 ou mais recente. Descompacte o arquivo, mova `baixador-ytdlp.app` para **Aplicativos** e abra-o.
+A compilação para macOS é arm64 e destina-se a Macs M1, M2, M3 e M4 com macOS 14 ou mais recente.
 
-Enquanto a assinatura Developer ID e a notarização não estiverem configuradas, o macOS pode pedir uma confirmação adicional em **Privacidade e Segurança**. A atualização automática do aplicativo permanece exclusiva do instalador Windows; no macOS, baixe a nova versão manualmente pela Release.
+- **DMG (instalação normal):** abra o arquivo, arraste `baixador-ytdlp.app` para o atalho **Applications** e ejete o disco.
+- **ZIP portable:** descompacte e abra `baixador-ytdlp.app` de qualquer pasta, sem instalar.
+
+Enquanto a assinatura Developer ID e a notarização não estiverem configuradas, o macOS pode pedir uma confirmação adicional em **Privacidade e Segurança**. A atualização automática do aplicativo permanece exclusiva do instalador Windows; no macOS, baixe a nova versão manualmente pela Release. A interface usa a SF Pro já presente no macOS, sem incluir ou redistribuir fontes da Apple.
 
 ## Desempenho
 

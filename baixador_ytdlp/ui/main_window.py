@@ -17,6 +17,7 @@ from ..taskbar import TaskbarProgress
 from ..tools import ToolManager
 from ..updater import AppUpdater, ReleaseInfo
 from ..workers import AppUpdateCheckWorker, AppUpdateDownloadWorker, GpuWorker
+from .appearance import apply_apple_discord_appearance
 from .history_page import HistoryPage
 from .media_tools_page import MediaToolsPage
 from .home_page import HomePage
@@ -79,12 +80,13 @@ class MainWindow(FluentWindow):
         if icon:
             self.setWindowIcon(icon)
         setTheme({"light": Theme.LIGHT, "dark": Theme.DARK}.get(self.cfg.theme, Theme.AUTO))
-        if self.cfg.mica:
+        self._refresh_appearance()
+        if self.cfg.mica and sys.platform.startswith("win"):
             try:
                 self.setMicaEffectEnabled(True)
             except Exception:
                 pass
-        self.navigationInterface.setExpandWidth(200)
+        self.navigationInterface.setExpandWidth(224)
         # qframelesswindow expõe estes controles no Windows; os guards preservam
         # compatibilidade com versões que adotem uma title bar diferente.
         title_bar = getattr(self, "titleBar", None)
@@ -158,10 +160,17 @@ class MainWindow(FluentWindow):
         self.settings.update_requested.connect(lambda: self.run_setup(force=True))
         self.settings.app_update_requested.connect(lambda: self._check_app_update(force=True))
         self.settings.download_dir_changed.connect(self.home.refresh_default_folder)
+        self.settings.theme_changed.connect(self._refresh_appearance)
         self.update_banner.update_requested.connect(self._download_app_update)
         self.update_banner.dismissed.connect(self._dismiss_app_update)
         # A tela aparece imediatamente; a consulta de rede começa depois, em thread própria.
         QTimer.singleShot(700, self._check_app_update)
+
+
+    def _refresh_appearance(self, _theme: str = "") -> None:
+        app = QApplication.instance()
+        if app is not None:
+            apply_apple_discord_appearance(app)
 
 
     # ------------------------------------------------------- atualização app
