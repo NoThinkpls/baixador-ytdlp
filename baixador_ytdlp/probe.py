@@ -58,6 +58,7 @@ class FormatRow:
     ext: str
     size: str
     note: str
+    estimated_size: int = 0
     height: int = 0
     video_only: bool = False
     audio_only: bool = False
@@ -379,6 +380,7 @@ def build_rows(info: dict) -> list[FormatRow]:
                 ext=fmt.get("ext") or "?",
                 size=human_size(size),
                 note=" · ".join(notes),
+                estimated_size=int(size or 0),
                 height=height,
                 video_only=acodec == "none",
             ))
@@ -392,6 +394,7 @@ def build_rows(info: dict) -> list[FormatRow]:
                 ext=fmt.get("ext") or "?",
                 size=human_size(size),
                 note=fmt.get("format_note") or "",
+                estimated_size=int(size or 0),
                 audio_only=True,
             ))
 
