@@ -2,23 +2,27 @@
 """Receita do PyInstaller. Uso: pyinstaller baixador_ytdlp.spec --noconfirm"""
 from PyInstaller.utils.hooks import collect_all
 
-# O faster-whisper roda sobre CTranslate2. O PyTorch não entra mais no pacote:
-# eram ~2,5 GB embarcados para responder uma única pergunta ("tem CUDA?"), que
-# agora o próprio CTranslate2 responde.
+# O faster-whisper roda sobre CTranslate2. As bibliotecas CUDA entram no
+# instalador: o usuário precisa apenas do driver NVIDIA, não do toolkit CUDA.
 fw_datas, fw_binaries, fw_hidden = collect_all('faster_whisper')
 ct_datas, ct_binaries, ct_hidden = collect_all('ctranslate2')
 av_datas, av_binaries, av_hidden = collect_all('av')
 pip_datas, pip_binaries, pip_hidden = collect_all('pip')
+cudart_datas, cudart_binaries, cudart_hidden = collect_all('nvidia.cuda_runtime')
+cublas_datas, cublas_binaries, cublas_hidden = collect_all('nvidia.cublas')
+cudnn_datas, cudnn_binaries, cudnn_hidden = collect_all('nvidia.cudnn')
 
 block_cipher = None
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=fw_binaries + ct_binaries + av_binaries + pip_binaries,
-    datas=[('assets/icon.ico', 'assets')] + fw_datas + ct_datas + av_datas + pip_datas,
+    binaries=(fw_binaries + ct_binaries + av_binaries + pip_binaries + cudart_binaries
+              + cublas_binaries + cudnn_binaries),
+    datas=([('assets/icon.ico', 'assets')] + fw_datas + ct_datas + av_datas + pip_datas
+           + cudart_datas + cublas_datas + cudnn_datas),
     hiddenimports=(['qfluentwidgets', 'qframelesswindow'] + fw_hidden + ct_hidden + av_hidden
-                   + pip_hidden),
+                   + pip_hidden + cudart_hidden + cublas_hidden + cudnn_hidden),
     hookspath=[],
     runtime_hooks=['pyinstaller_runtime.py'],
     excludes=[

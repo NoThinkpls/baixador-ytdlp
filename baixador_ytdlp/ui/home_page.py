@@ -15,7 +15,7 @@ from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, CheckBox, Combo
 
 from ..config import Settings
 from ..downloader import DownloadOptions
-from ..probe import MediaInfo
+from ..probe import MediaInfo, kill_running
 from ..workers import ProbeWorker
 
 CONTAINERS = [("MP4 (recomendado)", "mp4"), ("MKV (nunca reconverte)", "mkv"),
@@ -295,6 +295,20 @@ class HomePage(QWidget):
         self.worker.finished_ok.connect(self._on_info)
         self.worker.failed.connect(self._on_probe_error)
         self.worker.start()
+
+    def shutdown(self) -> None:
+        """Encerra a análise em andamento antes da janela fechar.
+
+        Sem isto, fechar o app durante uma análise destrói uma QThread ainda em
+        execução: o Qt chama qFatal e o processo morre com fast-fail (0xc0000409),
+        sem gravar traceback nenhum.
+        """
+        if not (self.worker and self.worker.isRunning()):
+            return
+        kill_running()
+        if not self.worker.wait(5000):
+            self.worker.terminate()
+            self.worker.wait(1000)
 
     def _reset_analyze_button(self) -> None:
         self.busy.hide()

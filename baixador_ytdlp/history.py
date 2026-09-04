@@ -14,24 +14,66 @@ from pathlib import Path
 from .config import HISTORY_PATH
 
 
+DOWNLOAD = "download"
+TRANSCRIPTION = "transcription"
+
+
 @dataclass
 class HistoryEntry:
     title: str
-    url: str
+    url: str = ""
     path: str = ""
     files: int = 1
     audio_only: bool = False
     container: str = ""
     when: float = field(default_factory=time.time)
+    kind: str = DOWNLOAD          # download | transcription
+    folder_path: str = ""         # pasta de saída, guardada à parte do arquivo
+    source: str = ""              # transcrição: a mídia que a originou
 
     @property
     def date_label(self) -> str:
         return time.strftime("%d/%m/%Y %H:%M", time.localtime(self.when))
 
     @property
+    def is_transcription(self) -> bool:
+        return self.kind == TRANSCRIPTION
+
+    @property
     def folder(self) -> Path:
+        """Pasta do item. Guardada explicitamente porque o caminho do arquivo
+        pode apontar para um temporário que o yt-dlp já apagou."""
+        if self.folder_path:
+            return Path(self.folder_path)
         target = Path(self.path)
         return target.parent if target.suffix else target
+
+    def existing_file(self) -> Path | None:
+        """O arquivo, se ele ainda estiver lá. Confere no disco, não na memória."""
+        if not self.path:
+            return None
+        target = Path(self.path)
+        try:
+            return target if target.is_file() else None
+        except OSError:
+            return None
+
+    def existing_source(self) -> Path | None:
+        """A mídia de origem de uma transcrição, se ainda existir."""
+        if not self.source:
+            return None
+        target = Path(self.source)
+        try:
+            return target if target.is_file() else None
+        except OSError:
+            return None
+
+    def existing_folder(self) -> Path | None:
+        folder = self.folder
+        try:
+            return folder if folder.is_dir() else None
+        except OSError:
+            return None
 
 
 class History:

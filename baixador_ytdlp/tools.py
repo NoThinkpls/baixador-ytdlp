@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import platform
+import sys
 import re
 import shutil
 import subprocess
@@ -25,11 +28,21 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .config import APP_NAME, APP_VERSION, BIN_DIR, IS_WINDOWS, STATE_PATH, ensure_dirs
+from .diagnostics import get_logger
 from .runtime import RuntimeInfo, RuntimeManager
 
 YTDLP_EXE = "yt-dlp.exe" if IS_WINDOWS else "yt-dlp"
 FFMPEG_EXE = "ffmpeg.exe" if IS_WINDOWS else "ffmpeg"
 FFPROBE_EXE = "ffprobe.exe" if IS_WINDOWS else "ffprobe"
+
+# O yt-dlp precisa de um runtime JavaScript para resolver o desafio JS do YouTube.
+# Sem ele, a resposta do player volta UNPLAYABLE e o erro exibido é
+# "The page needs to be reloaded" — que não tem nada a ver com cookies.
+# Versões mínimas aceitas pelo yt-dlp (utils/_jsruntime.py): deno 2.3, bun 1.2.11,
+# node 22, quickjs 2023-12-09. O Deno é um executável único, então é o que baixamos.
+DENO_EXE = "deno.exe" if IS_WINDOWS else "deno"
+DENO_MIN_VERSION = (2, 3, 0)
+DENO_RELEASE_API = "https://api.github.com/repos/denoland/deno/releases/latest"
 
 YTDLP_RELEASE_API = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
 FFMPEG_RELEASE_API = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest"
@@ -71,10 +84,27 @@ class Toolchain:
     bin_dir: Path
     ytdlp_version: str = ""
     ffmpeg_version: str = ""
+    deno: Path | None = None
+    deno_version: str = ""
 
     @property
     def ok(self) -> bool:
         return self.ytdlp.exists() and self.ffmpeg.exists()
+
+    @property
+    def has_js_runtime(self) -> bool:
+        return bool(self.deno and self.deno.exists())
+
+    def env(self) -> dict:
+        """Ambiente para os subprocessos do yt-dlp, com o runtime JS no PATH.
+
+        O yt-dlp procura deno/node/bun no PATH. Como o Deno fica na pasta de
+        binários do aplicativo, ela precisa entrar no PATH do processo filho —
+        sem poluir o PATH do sistema.
+        """
+        env = os.environ.copy()
+        env["PATH"] = str(self.bin_dir) + os.pathsep + env.get("PATH", "")
+        return env
 
 
 class ToolManager:
@@ -128,6 +158,9 @@ class ToolManager:
         )
         tc.ytdlp_version = self.local_ytdlp_version(tc.ytdlp)
         tc.ffmpeg_version = self.local_ffmpeg_version(tc.ffmpeg)
+        deno = self._resolve(DENO_EXE)
+        tc.deno_version = self.local_deno_version(deno)
+        tc.deno = deno if tc.deno_version else None
         return tc
 
     # ------------------------------------------------------------- utilidades
@@ -313,6 +346,122 @@ class ToolManager:
         self._save_state()
         progress("FFmpeg atualizado", 100)
 
+    # ------------------------------------------------------------------- Deno
+    def local_deno_version(self, path: Optional[Path] = None) -> str:
+        path = path or self._resolve(DENO_EXE)
+        return self._cached_version(path, self._read_deno_version)
+
+    @staticmethod
+    def _read_deno_version(path: Path) -> str:
+        try:
+            out = run_hidden([str(path), "--version"], timeout=25).stdout
+            match = re.search(r"deno (\d+\.\d+\.\d+)", out)
+            return match.group(1) if match else ""
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _deno_asset_name() -> str:
+        """Nome do artefato do Deno para a arquitetura desta máquina."""
+        machine = platform.machine().lower()
+        arch = "aarch64" if machine in ("arm64", "aarch64") else "x86_64"
+        if IS_WINDOWS:
+            return f"deno-{arch}-pc-windows-msvc.zip"
+        if sys.platform == "darwin":
+            return f"deno-{arch}-apple-darwin.zip"
+        return f"deno-{arch}-unknown-linux-gnu.zip"
+
+    @staticmethod
+    def _version_ok(version: str, minimum: tuple[int, ...]) -> bool:
+        try:
+            return tuple(int(p) for p in version.split(".")[:3]) >= minimum
+        except ValueError:
+            return False
+
+    def ensure_deno(self, progress: ProgressCB, force: bool = False) -> None:
+        """Instala o runtime JavaScript exigido pelo yt-dlp para o YouTube.
+
+        Falhar aqui não impede o aplicativo de abrir: sites que não exigem
+        desafio JS continuam funcionando. Por isso os erros viram aviso, e não
+        exceção.
+        """
+        target = self.bin_dir / DENO_EXE
+        current = self.local_deno_version(target)
+
+        if current and self._version_ok(current, DENO_MIN_VERSION) and not force \
+                and not self._should_check("deno", 168):  # 7 dias
+            progress(f"Runtime JavaScript: Deno {current}", 100)
+            return
+
+        progress("Consultando o runtime JavaScript (Deno)…", -1)
+        asset_name = self._deno_asset_name()
+        try:
+            with self._request(DENO_RELEASE_API) as resp:
+                data = json.load(resp)
+            assets = {a["name"]: a for a in data.get("assets", [])}
+            asset = assets[asset_name]
+        except (KeyError, ValueError, urllib.error.URLError, TimeoutError, OSError) as exc:
+            # Isto falhava em silêncio: sem rede, com a API do GitHub limitando
+            # requisições ou sem o pacote da plataforma, o Deno simplesmente não
+            # era instalado e o YouTube quebrava sem deixar rastro no log.
+            get_logger().warning("Deno: não deu para consultar %s (%s: %s); pacote %s",
+                                 DENO_RELEASE_API, type(exc).__name__, exc, asset_name)
+            if current:
+                progress(f"Sem rede para checar o Deno — usando {current}", 100)
+                return
+            progress(f"Runtime JavaScript indisponível ({exc}). O YouTube pode falhar.", 100)
+            return
+
+        self._mark_checked("deno")
+        tag = (data.get("tag_name") or "").lstrip("v")
+        if current and tag and current == tag and not force:
+            progress(f"Deno {current} já está atualizado", 100)
+            self._save_state()
+            return
+
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                zip_path = Path(tmpdir) / asset_name
+                self._download(asset["browser_download_url"], zip_path, progress,
+                               f"Baixando o runtime JavaScript (Deno {tag})")
+
+                expected = self._remote_sha256(assets.get(asset_name + ".sha256sum"))
+                if expected:
+                    progress("Conferindo a integridade do Deno…", -1)
+                    if self._sha256(zip_path) != expected:
+                        raise RuntimeError("hash SHA-256 do Deno não confere")
+
+                progress("Extraindo o Deno…", -1)
+                with zipfile.ZipFile(zip_path) as zf:
+                    member = next((m for m in zf.namelist()
+                                   if Path(m).name.lower() == DENO_EXE), None)
+                    if not member:
+                        raise RuntimeError(f"{DENO_EXE} não veio no pacote")
+                    staged = self.bin_dir / f"{DENO_EXE}.new"
+                    with zf.open(member) as src:
+                        staged.write_bytes(src.read())
+                self._replace(staged, target)
+        except Exception as exc:  # noqa: BLE001 - runtime JS é opcional
+            get_logger().warning("Deno: falha ao instalar %s (%s: %s)",
+                                 asset_name, type(exc).__name__, exc, exc_info=True)
+            progress(f"Não deu para instalar o Deno ({exc}). O YouTube pode falhar.", 100)
+            return
+
+        self.state["deno_version"] = tag
+        self._save_state()
+        get_logger().info("Deno %s instalado em %s", tag, target)
+        progress(f"Runtime JavaScript instalado: Deno {tag}", 100)
+
+    def _remote_sha256(self, asset: Optional[dict]) -> str:
+        """Lê o .sha256sum publicado ao lado do artefato."""
+        if not asset:
+            return ""
+        try:
+            with self._request(asset["browser_download_url"], accept="text/plain") as resp:
+                return resp.read().decode("utf-8", "replace").split()[0].strip().lower()
+        except Exception:
+            return ""
+
     # ------------------------------------------------------------------ misc
     @staticmethod
     def _replace(staged: Path, target: Path) -> None:
@@ -342,8 +491,9 @@ class ToolManager:
         progress("Preparando o ambiente…", -1)
         self.ensure_ytdlp(progress, force)
         self.ensure_ffmpeg(progress, force)
-        # Nenhuma tela funcional é liberada antes desta atualização: PyTorch e
-        # faster-whisper ainda não foram importados, então arquivos/DLLs não ficam presos.
+        self.ensure_deno(progress, force)
+        # O motor do legendador vem no instalador. A checagem apenas ativa suas
+        # DLLs e preserva o fallback seguro para desenvolvimento.
         self.runtime_info = self.runtime.ensure(progress, force)
         tc = self.toolchain()
         if not tc.ok:

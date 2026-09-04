@@ -1,6 +1,8 @@
 """Página 'Configurações': pastas, qualidade, aparência, GPU e dependências."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, ComboBox,
@@ -9,11 +11,24 @@ from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, ComboBox,
                             SwitchButton, Theme, TitleLabel, setTheme)
 
 from ..config import Settings
+from ..cookies import EXPORT_INSTRUCTIONS
 from ..gpu import GpuInfo, NVENC_LABELS
 from ..hardware import default_fragments, default_parallel_downloads, usable_cores
 
-BROWSERS = [("Não usar cookies", ""), ("Chrome", "chrome"), ("Edge", "edge"),
-            ("Firefox", "firefox"), ("Brave", "brave"), ("Opera", "opera")]
+# A ordem e os rótulos são deliberados: no Windows só o Firefox funciona de fato.
+# Os demais são navegadores Chromium, que desde o Chrome 127 não liberam mais os
+# cookies para processos externos (App-Bound Encryption).
+# Apenas navegadores que o yt-dlp REALMENTE aceita em --cookies-from-browser:
+# brave, chrome, chromium, edge, firefox, opera, safari, vivaldi, whale.
+# "librewolf" estava aqui por engano e o yt-dlp recusava com "unsupported browser".
+BROWSERS = [("Não usar cookies", ""),
+            ("Firefox — funciona", "firefox"),
+            ("Chrome — não funciona no Windows", "chrome"),
+            ("Edge — não funciona no Windows", "edge"),
+            ("Brave — não funciona no Windows", "brave"),
+            ("Chromium — não funciona no Windows", "chromium"),
+            ("Vivaldi — não funciona no Windows", "vivaldi"),
+            ("Opera — não funciona no Windows", "opera")]
 THEMES = [("Seguir o Windows", "auto"), ("Claro", "light"), ("Escuro", "dark")]
 PRESETS = [("p1 — mais rápido", "p1"), ("p4 — equilibrado", "p4"),
            ("p5 — recomendado", "p5"), ("p7 — mais lento e melhor", "p7")]
@@ -117,10 +132,16 @@ class SettingsPage(QWidget):
         self._switch_row("Remover trechos patrocinados",
                          "Usa o SponsorBlock para cortar patrocínio e autopromoção.",
                          "sponsorblock")
+        self._cookies_file_row()
         self._combo_row("Cookies do navegador",
-                        "Necessário para conteúdo com login ou restrição de idade. "
-                        "O yt-dlp lê o perfil local do navegador.",
+                        "Só é usado quando não há arquivo cookies.txt. No Windows funciona "
+                        "apenas com Firefox e derivados — os navegadores Chromium criptografam "
+                        "os cookies de um jeito que nenhum programa externo consegue abrir.",
                         BROWSERS, "cookies_browser")
+        self._line_row("Ajustes do extrator (avançado)",
+                       "Repassado ao yt-dlp como --extractor-args. Vazio na dúvida. "
+                       "Ex.: youtube:player_client=default,web_safari",
+                       "extractor_args", "vazio")
 
         self._section("GPU e conversão")
         self.gpu_label = CaptionLabel("Detectando a GPU…", self)
@@ -246,6 +267,101 @@ class SettingsPage(QWidget):
         edit.setText(str(getattr(self.cfg, key)))
         edit.editingFinished.connect(lambda k=key, e=edit: self._set(k, e.text().strip()))
         self.box.addWidget(Row(title, subtitle, edit, self))
+
+    def _cookies_file_row(self) -> None:
+        """Arquivo cookies.txt: caminho, seletor e o passo a passo de exportação."""
+        card = CardWidget(self)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(8)
+
+        texts = QVBoxLayout()
+        texts.setSpacing(1)
+        texts.addWidget(BodyLabel("Arquivo cookies.txt (recomendado)", card))
+        caption = CaptionLabel(
+            "É o caminho que o YouTube aceita de forma confiável. Tem prioridade sobre o "
+            "navegador e o conteúdo nunca é copiado para os logs.", card)
+        caption.setWordWrap(True)
+        texts.addWidget(caption)
+        layout.addLayout(texts)
+
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        self.cookies_edit = LineEdit(card)
+        self.cookies_edit.setPlaceholderText("Nenhum arquivo selecionado")
+        self.cookies_edit.setText(str(self.cfg.cookies_file))
+        self.cookies_edit.setClearButtonEnabled(True)
+        self.cookies_edit.editingFinished.connect(
+            lambda: self._set_cookies_file(self.cookies_edit.text().strip()))
+
+        pick = PushButton(FIF.FOLDER, "Escolher", card)
+        pick.clicked.connect(self._pick_cookies_file)
+
+        # Ajuda embutida, não modal. Um diálogo modal aqui já travou o aplicativo:
+        # o MessageBox do Fluent fixa a altura na construção e reflowa o texto a
+        # cada resize, então um texto longo empurra os botões para fora do cartão
+        # e a máscara modal deixa a tela inteira inacessível.
+        self.howto_btn = PushButton(FIF.HELP, "Como exportar", card)
+        self.howto_btn.setCheckable(True)
+        self.howto_btn.toggled.connect(self._toggle_cookie_help)
+
+        row.addWidget(self.cookies_edit, 1)
+        row.addWidget(pick)
+        row.addWidget(self.howto_btn)
+        layout.addLayout(row)
+
+        self.cookies_status = CaptionLabel("", card)
+        self.cookies_status.setWordWrap(True)
+        layout.addWidget(self.cookies_status)
+
+        self.cookies_help = CaptionLabel(EXPORT_INSTRUCTIONS, card)
+        self.cookies_help.setWordWrap(True)
+        self.cookies_help.hide()
+        layout.addWidget(self.cookies_help)
+
+        self._refresh_cookies_status()
+        self.box.addWidget(card)
+
+    def _set_cookies_file(self, path: str) -> None:
+        self._set("cookies_file", path)
+        self._refresh_cookies_status()
+
+    def _pick_cookies_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Selecionar cookies.txt", self.cfg.cookies_file or "",
+            "Cookies Netscape (*.txt);;Todos os arquivos (*.*)")
+        if path:
+            self.cookies_edit.setText(path)
+            self._set_cookies_file(path)
+
+    def _refresh_cookies_status(self) -> None:
+        """Valida o arquivo na hora de escolher, não na hora de baixar."""
+        path = (self.cfg.cookies_file or "").strip()
+        if not path:
+            self.cookies_status.setText("")
+            return
+        target = Path(path)
+        if not target.is_file():
+            self.cookies_status.setText("⚠ Arquivo não encontrado neste caminho.")
+            return
+        try:
+            head = target.read_text(encoding="utf-8", errors="replace")[:4096]
+        except OSError as exc:
+            self.cookies_status.setText(f"⚠ Não deu para ler o arquivo: {exc}")
+            return
+        if "netscape http cookie file" not in head.lower() and "\t" not in head:
+            self.cookies_status.setText(
+                "⚠ Não parece um cookies.txt no formato Netscape. Reexporte com uma "
+                "extensão que gere esse formato.")
+            return
+        domains = "youtube.com" in head or "google.com" in head
+        self.cookies_status.setText(
+            "✓ Arquivo válido, com cookies do YouTube." if domains
+            else "✓ Formato válido, mas sem cookies de youtube.com — confira a exportação.")
+
+    def _toggle_cookie_help(self, shown: bool) -> None:
+        self.cookies_help.setVisible(shown)
+        self.howto_btn.setText("Ocultar ajuda" if shown else "Como exportar")
 
     def _folder_row(self) -> None:
         button = PushButton(FIF.FOLDER, "Escolher", self)

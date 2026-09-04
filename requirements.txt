@@ -1,7 +1,9 @@
 PySide6>=6.7
 PySide6-Fluent-Widgets>=1.7
 faster-whisper>=1.1,<2
-# O motor de transcrição é o CTranslate2 (dependência do faster-whisper).
-# O PyTorch NÃO é necessário: a detecção de CUDA usa ctranslate2 + driver.
-# Em máquinas com GPU, o runtime instala nvidia-cublas-cu12 e nvidia-cudnn-cu12
-# sob demanda, em vez das wheels CUDA completas do PyTorch.
+# Runtime CUDA incluído no instalador. O CTranslate2 para CUDA 12 requer
+# cuBLAS e, em modelos de fala, cuDNN 8. As versões são fixadas para impedir
+# que uma atualização automática do pip traga cuDNN 9 incompatível.
+nvidia-cuda-runtime-cu12==12.4.127
+nvidia-cublas-cu12==12.4.5.8
+nvidia-cudnn-cu12==8.9.7.29

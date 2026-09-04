@@ -11,7 +11,7 @@ from .hardware import default_fragments, default_parallel_downloads
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.2.3"
+APP_VERSION = "1.3.0"
 IS_WINDOWS = sys.platform.startswith("win")
 
 
@@ -73,6 +73,8 @@ class Settings:
     concurrent_fragments: int = field(default_factory=default_fragments)
     max_parallel_downloads: int = field(default_factory=default_parallel_downloads)
     cookies_browser: str = ""        # "", chrome, edge, firefox, brave...
+    cookies_file: str = ""           # cookies.txt Netscape; tem prioridade sobre o navegador
+    extractor_args: str = ""         # ex.: youtube:player_client=default,web_safari
     filename_template: str = "%(title).180B [%(id)s].%(ext)s"
     archive_enabled: bool = False    # não rebaixar o que já foi baixado
     theme: str = "auto"              # auto | light | dark

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QFileDialog, QFormLayout, QGridLayout, QHBoxLayout,
                                QPlainTextEdit, QProgressBar, QVBoxLayout, QWidget)
@@ -29,6 +29,9 @@ MEDIA_FILTER = ("Mídias (*.mp4 *.mkv *.mov *.avi *.webm *.m4v *.flv *.wmv *.mpe
 
 
 class TranscriptionPage(QWidget):
+    # saída (a legenda) e origem (a mídia) — alimentam o histórico
+    transcription_finished = Signal(str, str)
+
     def __init__(self, cfg: Settings, parent=None):
         super().__init__(parent)
         self.setObjectName("transcriptionPage")
@@ -273,6 +276,7 @@ class TranscriptionPage(QWidget):
 
     def _done(self, path: str) -> None:
         self._finish_controls()
+        self.transcription_finished.emit(path, self.media_edit.text().strip())
         InfoBar.success("Transcrição concluída", f"Legenda salva em {Path(path).name}", duration=6000,
                         position=InfoBarPosition.TOP_RIGHT, parent=self.window())
 

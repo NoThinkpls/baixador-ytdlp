@@ -9,7 +9,7 @@
 Instala e atualiza as próprias dependências, analisa o link, mostra todas as qualidades
 disponíveis e baixa na melhor por padrão.
 
-[![versão](https://img.shields.io/badge/vers%C3%A3o-1.2.3-0078D4)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
+[![versão](https://img.shields.io/badge/vers%C3%A3o-1.3.0-0078D4)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
 ![plataforma](https://img.shields.io/badge/plataforma-Windows%2010%2F11-0078D4)
 ![aceleração](https://img.shields.io/badge/legendador-CUDA%20%C2%B7%20NVIDIA%20RTX-76B900?logo=nvidia&logoColor=white)
 ![fallback](https://img.shields.io/badge/fallback-CPU%20int8-555555)
@@ -29,7 +29,8 @@ disponíveis e baixa na melhor por padrão.
 
 [O que ele faz](#o-que-ele-faz) ·
 [Instalação](#instalação) ·
-[Novidades](#novidades-da-120) ·
+[Novidades](#novidades-da-130) ·
+[YouTube](#youtube-o-que-realmente-é-preciso) ·
 [Compilando](#compilando) ·
 [GPU](#sobre-a-gpu) ·
 [Assinatura](#assinatura-digital-e-o-aviso-do-windows) ·
@@ -55,12 +56,17 @@ disponíveis e baixa na melhor por padrão.
   keyframe — não baixa o vídeo inteiro para depois cortar.
 - **Fila com downloads paralelos**, progresso, velocidade, ETA, cancelamento, *tentar de
   novo* nos itens que falharam e a saída completa do yt-dlp copiável em um clique.
-- **Histórico** do que já foi baixado, com abrir a pasta, gerar legenda e baixar de novo.
+- **Histórico** dos downloads **e** das transcrições, cada tipo com o seu conjunto de
+  ações: abrir a pasta, gerar legenda, baixar de novo, abrir a legenda, transcrever de novo.
 - **Playlists** em subpasta numerada, com histórico opcional para não rebaixar o que já veio.
 - **Progresso na barra de tarefas** do Windows e **atalhos**: `Ctrl+V` cola e analisa,
   `Ctrl+Enter` baixa, `Esc` cancela a transcrição, `Ctrl+1..4` troca de página.
-- **Extras:** SponsorBlock, legendas embutidas, capa, metadados, capítulos, cookies do
-  navegador para conteúdo com login, detecção de link na área de transferência.
+- **Runtime JavaScript incluso.** O YouTube exige resolver um desafio JS, e o yt-dlp
+  precisa de um interpretador externo para isso. O programa instala o **Deno** sozinho,
+  com verificação SHA-256 — leia [YouTube](#youtube-o-que-realmente-é-preciso).
+- **Extras:** SponsorBlock, legendas embutidas, capa, metadados, capítulos, cookies
+  (arquivo `cookies.txt` ou navegador) para conteúdo com login, detecção de link na
+  área de transferência.
 - **Conversão por GPU (opcional).** NVENC em H.264, HEVC ou AV1 — leia a
   [seção sobre GPU](#sobre-a-gpu) antes de ligar.
 - **Legendador local.** Transcreve vídeo ou áudio com `faster-whisper`, usando CUDA/float16
@@ -83,36 +89,80 @@ programa aparecer quando você digita o nome na busca do Windows.
 > A seção **[Assinatura digital](#assinatura-digital-e-o-aviso-do-windows)** explica por quê,
 > o que fazer e como conferir que o arquivo é autêntico.
 
-## Novidades da 1.2.0
+## Novidades da 1.3.0
+
+**O YouTube voltou a funcionar**
+
+- **Deno instalado automaticamente.** A causa real das falhas do YouTube não eram os
+  cookies: desde 2025 o yt-dlp precisa de um runtime JavaScript externo para resolver o
+  desafio da página, e sem ele o vídeo vem como `UNPLAYABLE` com a mensagem enganosa
+  *"The page needs to be reloaded"*. O programa agora instala o Deno em `bin\`, confere o
+  SHA-256 publicado ao lado do artefato e registra no log quando não consegue.
+- **Mensagens de erro que dizem a verdade.** Sete casos distintos, cada um com o que fazer.
+  A versão anterior mandava ativar cookies do navegador para qualquer erro que contivesse a
+  palavra "cookie" — inclusive o de robô, cujo remédio é outro.
+- **Arquivo `cookies.txt`**, com seletor, validação do formato Netscape na hora e o
+  procedimento de exportação em janela anônima explicado na própria tela.
+- **Chromium é recusado com explicação.** Desde o Chrome 127 o App-Bound Encryption impede
+  qualquer programa externo de ler os cookies no Windows. A lista de navegadores agora
+  corresponde à que o yt-dlp aceita de fato — o `librewolf`, por exemplo, saiu.
 
 **Interface**
 
-- **Pasta de saída por download**, com caixa de seleção na própria tela Baixar.
-- **Ícones da navegação refeitos.** Baixar e Legendar usavam o mesmo ícone, e a Fila usava o
-  hambúrguer de menu. Agora cada página carrega o desenho da coisa que ela faz.
-- **Recorte por tempo**, cortando na origem.
-- **Tentar de novo** nos itens da fila que falharam, com a saída completa do yt-dlp copiável.
-- **Página de histórico** com abrir na pasta, gerar legenda e baixar de novo.
-- **Atalhos de teclado** e progresso no ícone da barra de tarefas.
-- **Fila → Legendar** em um clique, e arrastar-e-soltar na aba de transcrição.
+- **Os quatro cantos da janela redimensionam.** A borda de arrasto era de 5 px, o que com
+  escala de 125% do Windows vira 2–3 px reais e torna os cantos inalcançáveis.
+- **Histórico com downloads e transcrições**, cada um com o seu selo e as suas ações.
+  "Mostrar na pasta" e "Gerar legenda" viviam desligados porque o caminho gravado era o
+  primeiro arquivo impresso pelo yt-dlp, que costuma ser um temporário apagado na mesclagem.
+  O estado dos botões agora é lido do disco no momento de desenhar o cartão.
+- **Ícone da Fila diferenciado** do hambúrguer que abre o menu lateral.
+- **Detalhes do erro em janela rolável.** A caixa de diálogo anterior fixava a altura na
+  construção mas refluía o texto ao redimensionar, empurrando os botões para fora do cartão:
+  com máscara modal por cima, o aplicativo ficava inalcançável e só saía pelo Gerenciador
+  de Tarefas.
 
-**Desempenho**
+**Estabilidade**
 
-- **O PyTorch saiu do pacote** — cerca de 2,5 GB a menos. Detalhes em [Compilando](#compilando).
-- **A abertura não consulta mais o pip toda vez.** Cache de 24 h, configurável.
-- **Análise de playlist extrai um vídeo, não os N.** Playlist longa deixou de levar minutos.
-- **Detecção de GPU saiu da thread da interface**, que congelava por segundos após o setup.
-- **Padrões calculados a partir da máquina** — fragmentos, downloads simultâneos e threads do
-  Whisper saem dos núcleos realmente disponíveis.
+- **Cancelar interrompe de verdade.** Os subprocessos do yt-dlp agora são rastreados e
+  mortos com a árvore inteira de filhos; antes, matar só o pai deixava netos segurando os
+  canos e o programa esperava indefinidamente.
+- **Fechar durante uma análise não derruba mais o programa.** A QThread era destruída ainda
+  rodando, o que no Qt vira `qFatal` e encerramento imediato do processo.
+- **CUDA volta a ser usado na transcrição.** O carregador de DLLs agora detecta cuDNN 8 ou 9
+  conforme o que foi realmente empacotado, em vez de exigir nomes fixos e cair calado na CPU.
+- **Log do Deno.** Falha de rede ou limite da API do GitHub deixava o runtime sem instalar
+  sem deixar rastro nenhum.
 
-**Correções**
+**Novidades da 1.2.0, ainda válidas**
 
-- "Salvar como" sem mídia escolhida derrubava a aba Legendar.
-- A URL gravada no histórico vinha do campo da tela, não do download concluído.
-- `embed_chapters` e `embed_subs` existiam nas configurações sem controle na interface.
-- Remux redundante em arquivo que já estava no container certo.
-- O handle do mutex de instância única era uma variável local.
-- QThreads de análise, download e transcrição nunca eram destruídos.
+- Pasta de saída por download, recorte por tempo, *tentar de novo* na fila, atalhos de
+  teclado e progresso no ícone da barra de tarefas.
+- PyTorch fora do pacote (~2,5 GB a menos), cache de 24 h na verificação de dependências,
+  análise de playlist com `--playlist-items 1`, detecção de GPU fora da thread da interface
+  e padrões calculados a partir do hardware.
+
+## YouTube: o que realmente é preciso
+
+Na maior parte dos vídeos, **nada** — basta o Deno, que o programa instala sozinho.
+
+Cookies só entram em dois casos: conteúdo restrito (idade, privado, membros) e o erro
+*"Sign in to confirm you're not a bot"*, que aparece quando o YouTube desconfia do IP.
+Nesses casos, o caminho que funciona no Windows é o arquivo `cookies.txt`:
+
+1. Instale uma extensão que exporte cookies no formato Netscape.
+2. Abra uma janela **anônima** e faça login no YouTube.
+3. Na mesma aba, vá para `youtube.com/robots.txt`.
+4. Exporte os cookies de `youtube.com` e **feche a janela anônima em seguida**.
+5. Aponte o arquivo em **Configurações → Arquivo cookies.txt**.
+
+A janela anônima não é superstição: o YouTube rotaciona os cookies de sessões abertas, então
+os que você tira do navegador do dia a dia costumam chegar já inválidos. Fechar a janela sem
+reabrir o YouTube congela a sessão exportada.
+
+Ler cookies direto do Chrome, Edge, Brave, Opera ou Vivaldi **não funciona no Windows** desde
+o Chrome 127: a chave fica sob App-Bound Encryption e a DPAPI só a devolve para o próprio
+processo do navegador. Não é limitação deste programa nem do yt-dlp. O Firefox e derivados
+continuam funcionando.
 
 ## Rodando a partir do código
 
@@ -133,7 +183,7 @@ Na sua máquina:
 
 ```powershell
 .\build.ps1              # gera dist\baixador-ytdlp\baixador-ytdlp.exe
-.\build.ps1 -Installer   # gera também dist\installer\BaixadorYtdlp-1.2.0-setup.exe
+.\build.ps1 -Installer   # gera também dist\installer\BaixadorYtdlp-1.3.0-setup.exe
 ```
 
 O `-Installer` localiza o [Inno Setup 6](https://jrsoftware.org/isdl.php) tanto em
@@ -275,14 +325,16 @@ localmente — quando sai do GitHub Actions, o log do build fica público em
 main.py                       ponto de entrada, instância única, ícone
 baixador_ytdlp/
 ├── config.py                 caminhos e settings.json
-├── tools.py                  instala e atualiza yt-dlp e FFmpeg
+├── tools.py                  instala e atualiza yt-dlp, FFmpeg e Deno
 ├── runtime.py                bootstrap do runtime de transcrição, com cache
 ├── gpu.py                    detecção de NVENC
 ├── hardware.py               núcleos, RAM e os padrões calculados a partir deles
 ├── probe.py                  yt-dlp -J e montagem da lista de qualidades
 ├── downloader.py             linha de comando, leitura de progresso, NVENC
 ├── transcription.py          Whisper, filtro de qualidade e exportação de legendas
-├── history.py                histórico dos downloads concluídos (JSON)
+├── cookies.py                estratégia de cookies e o porquê do App-Bound Encryption
+├── diagnostics.py            logs, hook de exceção e captura de falha nativa
+├── history.py                histórico de downloads e transcrições (JSON)
 ├── taskbar.py                progresso no ícone da barra de tarefas (ITaskbarList3)
 ├── workers.py                QThreads (nada de I/O na thread da interface)
 └── ui/                       setup_dialog, home, queue, transcription, history,
@@ -306,7 +358,7 @@ mudança de layout da saída.
 
 | O quê | Caminho |
 |---|---|
-| Binários (yt-dlp, ffmpeg) | `%LOCALAPPDATA%\BaixadorYtdlp\bin` |
+| Binários (yt-dlp, ffmpeg, deno) | `%LOCALAPPDATA%\BaixadorYtdlp\bin` |
 | Configurações | `%LOCALAPPDATA%\BaixadorYtdlp\settings.json` |
 | Histórico | `%LOCALAPPDATA%\BaixadorYtdlp\history.json` |
 | Modelos do Whisper | `%LOCALAPPDATA%\BaixadorYtdlp\models` |

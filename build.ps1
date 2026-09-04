@@ -79,9 +79,8 @@ function Invoke-Python {
 Write-Host '> Instalando dependências' -ForegroundColor Cyan
 Invoke-Python @('-m', 'pip', 'install', '--upgrade', 'pip')
 Invoke-Python @('-m', 'pip', 'install', '-r', 'requirements.txt', 'pyinstaller')
-# Sem PyTorch: o Whisper roda sobre CTranslate2 e as bibliotecas CUDA
-# (nvidia-cublas-cu12, nvidia-cudnn-cu12) são baixadas na máquina do usuário
-# apenas quando existe uma GPU NVIDIA.
+# Sem PyTorch: o Whisper roda sobre CTranslate2. As DLLs CUDA compatíveis
+# (runtime, cuBLAS e cuDNN 8) entram no instalador e não são baixadas pelo app.
 
 Write-Host '> Compilando' -ForegroundColor Cyan
 Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
@@ -90,6 +89,21 @@ Invoke-Python @('-m', 'PyInstaller', 'baixador_ytdlp.spec', '--noconfirm')
 $exe = Join-Path $PSScriptRoot 'dist\baixador-ytdlp\baixador-ytdlp.exe'
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
     throw "O PyInstaller terminou sem gerar $exe"
+}
+
+# Falha o build se alguma DLL carregada tardiamente pelo CTranslate2 ficar fora
+# do pacote. Isso evita publicar uma build que só descobre a falta na inferência.
+$requiredCudaDlls = @(
+    'cudart64_12.dll', 'cublas64_12.dll', 'cublasLt64_12.dll',
+    'cudnn64_8.dll', 'cudnn_ops_infer64_8.dll', 'cudnn_cnn_infer64_8.dll'
+)
+$missingCudaDlls = foreach ($dll in $requiredCudaDlls) {
+    if (-not (Get-ChildItem -Path (Join-Path $PSScriptRoot 'dist\baixador-ytdlp') -Filter $dll -File -Recurse -ErrorAction SilentlyContinue)) {
+        $dll
+    }
+}
+if ($missingCudaDlls) {
+    throw "A build não incluiu as DLLs CUDA obrigatórias: $($missingCudaDlls -join ', ')"
 }
 Write-Host "> Pronto: $exe" -ForegroundColor Green
 
