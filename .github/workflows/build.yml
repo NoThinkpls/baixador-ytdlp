@@ -80,17 +80,28 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "ISCC falhou com código $LASTEXITCODE" }
           Get-ChildItem dist\installer
 
-      - name: Criar a cópia de nome fixo
+      - name: Empacotar a versão portátil
+        run: |
+          $archive = "dist\installer\BaixadorYtdlp-${{ steps.ver.outputs.version }}-portable-windows.zip"
+          Compress-Archive -Path 'dist\baixador-ytdlp\*' -DestinationPath $archive -CompressionLevel Optimal -Force
+          if (-not (Test-Path $archive -PathType Leaf)) { throw "Arquivo portátil não gerado: $archive" }
+
+      - name: Criar cópias de download estável
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          # Permite um link de download que nunca quebra:
+          # Estes nomes são usados pelos botões do README:
           # /releases/latest/download/baixador-ytdlp-setup.exe
-          $src = Get-ChildItem dist\installer\BaixadorYtdlp-*-setup.exe | Select-Object -First 1
-          Copy-Item $src.FullName dist\installer\baixador-ytdlp-setup.exe
+          # /releases/latest/download/baixador-ytdlp-portable-windows.zip
+          $installer = Get-ChildItem dist\installer\BaixadorYtdlp-*-setup.exe | Select-Object -First 1
+          $portable = Get-ChildItem dist\installer\BaixadorYtdlp-*-portable-windows.zip | Select-Object -First 1
+          if (-not $installer -or -not $portable) { throw "Pacotes Windows não encontrados para criar os aliases de download" }
+          Copy-Item $installer.FullName dist\installer\baixador-ytdlp-setup.exe -Force
+          Copy-Item $portable.FullName dist\installer\baixador-ytdlp-portable-windows.zip -Force
 
       - name: Gerar os hashes
         run: |
-          Get-ChildItem dist\installer\*.exe | ForEach-Object {
+          Set-Content -Path dist\installer\SHA256SUMS.txt -Value $null
+          Get-ChildItem dist\installer -File | Where-Object { $_.Extension -in '.exe', '.zip' } | ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
             "$hash  $($_.Name)" | Tee-Object -Append dist\installer\SHA256SUMS.txt
           }
@@ -108,6 +119,7 @@ jobs:
           name: baixador-ytdlp-setup-${{ steps.ver.outputs.version }}
           path: |
             dist/installer/*.exe
+            dist/installer/*.zip
             dist/installer/SHA256SUMS.txt
           retention-days: 30
 
@@ -171,14 +183,17 @@ jobs:
           mkdir -p dist/installer
           archive="dist/installer/BaixadorYtdlp-${{ steps.ver.outputs.version }}-macos-arm64.zip"
           ditto -c -k --sequesterRsrc --keepParent dist/baixador-ytdlp.app "$archive"
-          shasum -a 256 "$archive" > dist/installer/SHA256SUMS-macos.txt
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            cp "$archive" dist/installer/baixador-ytdlp-macos-arm64.zip
+          fi
+          shasum -a 256 dist/installer/*.zip > dist/installer/SHA256SUMS-macos.txt
 
       - name: Publicar o aplicativo macOS
         uses: actions/upload-artifact@v4
         with:
           name: baixador-ytdlp-macos-arm64-${{ steps.ver.outputs.version }}
           path: |
-            dist/installer/BaixadorYtdlp-*-macos-arm64.zip
+            dist/installer/*.zip
             dist/installer/SHA256SUMS-macos.txt
           retention-days: 30
 
