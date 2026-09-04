@@ -80,20 +80,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "ISCC falhou com código $LASTEXITCODE" }
           Get-ChildItem dist\installer
 
+      - name: Criar a cópia de nome fixo
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          # Permite um link de download que nunca quebra:
+          # /releases/latest/download/baixador-ytdlp-setup.exe
+          $src = Get-ChildItem dist\installer\BaixadorYtdlp-*-setup.exe | Select-Object -First 1
+          Copy-Item $src.FullName dist\installer\baixador-ytdlp-setup.exe
+
       - name: Gerar os hashes
         run: |
           Get-ChildItem dist\installer\*.exe | ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
             "$hash  $($_.Name)" | Tee-Object -Append dist\installer\SHA256SUMS.txt
           }
-
-      - name: Criar a cópia de nome fixo
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          # Permite um link de download que nunca quebra:
-          # /releases/latest/download/baixador-ytdlp-setup.exe
-          $src = Get-ChildItem dist\installer\baixador-ytdlp-*-setup.exe | Select-Object -First 1
-          Copy-Item $src.FullName dist\installer\baixador-ytdlp-setup.exe
 
       - name: Publicar a versão portátil
         uses: actions/upload-artifact@v4

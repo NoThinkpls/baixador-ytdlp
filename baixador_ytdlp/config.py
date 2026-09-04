@@ -11,7 +11,7 @@ from .hardware import default_fragments, default_parallel_downloads
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.4.0"
 IS_WINDOWS = sys.platform.startswith("win")
 
 
@@ -30,6 +30,7 @@ BIN_DIR = DATA_DIR / "bin"
 LOG_DIR = DATA_DIR / "logs"
 MODEL_DIR = DATA_DIR / "models"
 RUNTIME_DIR = DATA_DIR / "runtime"
+UPDATE_DIR = DATA_DIR / "updates"
 SETTINGS_PATH = DATA_DIR / "settings.json"
 STATE_PATH = DATA_DIR / "tools_state.json"
 HISTORY_PATH = DATA_DIR / "history.json"
@@ -79,8 +80,11 @@ class Settings:
     archive_enabled: bool = False    # não rebaixar o que já foi baixado
     theme: str = "auto"              # auto | light | dark
     mica: bool = True
+    # Atualizações do aplicativo: a checagem é automática, mas instalação é sempre confirmada.
     auto_update: bool = True
     update_check_hours: int = 12
+    app_update_checked_at: float = 0.0
+    update_dismissed_version: str = ""
     clipboard_watch: bool = True
     open_folder_on_finish: bool = False
     limit_rate: str = ""             # ex.: "5M"
@@ -123,5 +127,5 @@ class Settings:
 
 
 def ensure_dirs() -> None:
-    for path in (DATA_DIR, BIN_DIR, LOG_DIR, MODEL_DIR, RUNTIME_DIR):
+    for path in (DATA_DIR, BIN_DIR, LOG_DIR, MODEL_DIR, RUNTIME_DIR, UPDATE_DIR):
         path.mkdir(parents=True, exist_ok=True)

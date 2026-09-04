@@ -56,6 +56,7 @@ class Row(CardWidget):
 
 class SettingsPage(QWidget):
     update_requested = Signal()
+    app_update_requested = Signal()
     theme_changed = Signal(str)
     download_dir_changed = Signal(str)
 
@@ -197,7 +198,7 @@ class SettingsPage(QWidget):
         self._section("Dependências")
         self.versions = CaptionLabel("—", self)
         self.versions.setWordWrap(True)
-        update_btn = PrimaryPushButton(FIF.UPDATE, "Verificar agora", self)
+        update_btn = PrimaryPushButton(FIF.UPDATE, "Verificar componentes", self)
         update_btn.clicked.connect(self.update_requested.emit)
         deps_card = CardWidget(self)
         deps_layout = QHBoxLayout(deps_card)
@@ -209,8 +210,24 @@ class SettingsPage(QWidget):
         deps_layout.addWidget(update_btn)
         self.box.addWidget(deps_card)
 
-        self._switch_row("Atualizar sozinho ao abrir",
-                         "Checa e instala novas versões na inicialização.", "auto_update")
+        self._section("Atualizações do aplicativo")
+        app_update_btn = PrimaryPushButton(FIF.UPDATE, "Verificar agora", self)
+        app_update_btn.clicked.connect(self.app_update_requested.emit)
+        app_update_card = CardWidget(self)
+        app_update_layout = QHBoxLayout(app_update_card)
+        app_update_layout.setContentsMargins(16, 12, 16, 12)
+        app_update_texts = QVBoxLayout()
+        app_update_texts.addWidget(BodyLabel("Nova versão disponível?", app_update_card))
+        app_update_texts.addWidget(CaptionLabel(
+            "Consulta as Releases do GitHub e avisa na faixa inferior.", app_update_card))
+        app_update_layout.addLayout(app_update_texts, 1)
+        app_update_layout.addWidget(app_update_btn)
+        self.box.addWidget(app_update_card)
+        self._switch_row("Verificar novas versões ao abrir",
+                         "Apenas procura atualizações. O download e a instalação só começam "
+                         "quando você confirmar no aviso inferior.", "auto_update")
+        self._spin_row("Intervalo entre checagens de atualização (horas)",
+                       "Use 0 para consultar em toda abertura.", "update_check_hours", 0, 720)
         self._spin_row("Intervalo entre checagens do legendador (horas)",
                        "Dentro desse prazo, e estando tudo na versão certa, a abertura pula a "
                        "consulta ao pip — é o que mais pesa na inicialização.",
