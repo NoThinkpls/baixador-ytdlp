@@ -90,9 +90,15 @@ class AppUpdater:
             (asset for asset in assets if asset.get("name") == "SHA256SUMS.txt"),
             None,
         )
+        if not assets:
+            raise UpdateError(
+                f"A versão {tag} foi encontrada, mas os arquivos ainda estão sendo publicados. "
+                "Aguarde alguns minutos e tente novamente."
+            )
         if not installer or not checksums:
             raise UpdateError(
-                "A release não contém o instalador versionado e o arquivo SHA256SUMS.txt."
+                "A release ainda não possui o instalador versionado e o SHA256SUMS.txt. "
+                "Aguarde a publicação terminar e tente novamente."
             )
 
         installer_url = str(installer.get("browser_download_url") or "")

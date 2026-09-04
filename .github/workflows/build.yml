@@ -98,6 +98,23 @@ jobs:
           Copy-Item $installer.FullName dist\installer\baixador-ytdlp-setup.exe -Force
           Copy-Item $portable.FullName dist\installer\baixador-ytdlp-portable-windows.zip -Force
 
+      - name: Validar referências públicas do README
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $readme = Get-Content README.md -Raw
+          $required = @(
+            'baixador-ytdlp-setup.exe',
+            'baixador-ytdlp-portable-windows.zip',
+            'baixador-ytdlp-macos-arm64.dmg',
+            'baixador-ytdlp-macos-arm64.zip'
+          )
+          $missing = $required | Where-Object {
+            $readme -notmatch [regex]::Escape("releases/latest/download/$_")
+          }
+          if ($missing) {
+            throw "README sem os links de download estáveis: $($missing -join ', ')"
+          }
+
       - name: Gerar os hashes
         run: |
           Set-Content -Path dist\installer\SHA256SUMS.txt -Value $null
@@ -245,6 +262,29 @@ jobs:
           pattern: baixador-ytdlp-*
           path: release-assets
           merge-multiple: true
+
+      - name: Validar os ativos da Release
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          required=(
+            "BaixadorYtdlp-${version}-setup.exe"
+            "baixador-ytdlp-setup.exe"
+            "BaixadorYtdlp-${version}-portable-windows.zip"
+            "baixador-ytdlp-portable-windows.zip"
+            "BaixadorYtdlp-${version}-macos-arm64.dmg"
+            "baixador-ytdlp-macos-arm64.dmg"
+            "BaixadorYtdlp-${version}-macos-arm64.zip"
+            "baixador-ytdlp-macos-arm64.zip"
+            "SHA256SUMS.txt"
+            "SHA256SUMS-macos.txt"
+          )
+          for asset in "${required[@]}"; do
+            test -f "release-assets/$asset" || {
+              echo "::error::Arquivo obrigatório não encontrado: $asset"
+              exit 1
+            }
+          done
 
       - name: Criar a release
         uses: softprops/action-gh-release@v2

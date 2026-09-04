@@ -15,6 +15,8 @@ Baixe vídeos e áudios, transcreva localmente e faça ajustes de mídia em uma 
 | Mac com M1, M2, M3 ou M4 | Instalação normal: abra o DMG e arraste para Aplicativos | [Baixar instalador para macOS](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-macos-arm64.dmg) |
 | Mac com M1, M2, M3 ou M4 | Usar sem instalar: descompacte e abra o app | [Baixar versão portable para macOS](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-macos-arm64.zip) |
 
+> Os quatro links acima usam os aliases estáveis da Release mais recente. A automação bloqueia uma publicação de tag se algum link ou arquivo obrigatório estiver ausente.
+
 Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no [GitHub Actions](../../actions) terminar antes de baixar: é ela que anexa os arquivos à Release.
 
 ## O que o aplicativo oferece

@@ -13,6 +13,8 @@ As builds oficiais são geradas pelo GitHub Actions. Um push em `main` valida os
 
 Os arquivos `SHA256SUMS.txt` e `SHA256SUMS-macos.txt` acompanham os pacotes. Os aliases estáveis fazem os links `/releases/latest/download/...` continuarem válidos mesmo com uma versão nova.
 
+Em uma tag, o workflow também confere se os quatro aliases aparecem no README e se todos os pacotes e hashes chegaram à etapa de Release. Assim, um erro de empacotamento impede a publicação de uma Release sem downloads.
+
 ## Como publicar
 
 1. Atualize a versão do aplicativo quando houver mudança distribuída.
