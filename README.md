@@ -81,7 +81,8 @@ disponíveis e baixa na melhor por padrão.
 - **Ferramentas locais de mídia.** Recorta trechos, extrai MP3, remuxa sem recompressão,
   comprime para MP4, cria vídeo 9:16 para Shorts e queima legendas — sem enviar arquivos.
 - **Legendador local.** Transcreve vídeo ou áudio com `faster-whisper`, usando CUDA/float16
-  na NVIDIA quando disponível e CPU/int8 como fallback. Exporta SRT, WebVTT, ASS, TXT e JSON.
+  na NVIDIA quando disponível e CPU/int8 como fallback. Exporta SRT, WebVTT, ASS, ASS karaoke
+  (com palavras sincronizadas), TXT e JSON.
   Inclui VAD, pré-processamento 16 kHz e filtro opcional contra alucinações. Aceita arquivo
   arrastado para dentro da janela e recebe direto o que veio da fila ou do histórico.
 - **Ajuste automático ao hardware.** Fragmentos simultâneos, downloads em paralelo e threads
@@ -114,6 +115,8 @@ programa aparecer quando você digita o nome na busca do Windows.
   antecipado quando a estimativa conhecida de download não cabe no espaço livre.
 - **Ferramentas locais de mídia.** Nova página para recortar, extrair áudio, remuxar,
   compactar, transformar em Shorts verticais e queimar legendas usando FFmpeg em segundo plano.
+- **Legendas estilo karaoke.** O Whisper preserva os timestamps por palavra e pode gerar ASS
+  com destaque progressivo, pronto para queimar no vídeo pela página de Ferramentas.
 
 ## Atualizações do aplicativo
 
