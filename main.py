@@ -48,8 +48,10 @@ def main() -> int:
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
-    from baixador_ytdlp.ui.appearance import apply_apple_discord_appearance
-    apply_apple_discord_appearance(app)
+    # A folha de estilo entra antes de qualquer janela: assim a tela de
+    # preparação já abre com a identidade visual do aplicativo.
+    from baixador_ytdlp.ui import theme
+    theme.apply(app)
     install_qt_logging()
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(True)

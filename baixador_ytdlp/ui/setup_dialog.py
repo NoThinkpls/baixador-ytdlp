@@ -1,14 +1,14 @@
 """Tela de inicialização: verifica e atualiza as dependências antes de abrir o app."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QDialog, QSizePolicy, QVBoxLayout, QWidget
-from qfluentwidgets import (BodyLabel, CaptionLabel, IndeterminateProgressBar, ProgressBar,
-                            PushButton, SubtitleLabel, isDarkTheme)
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from ..config import APP_NAME, APP_VERSION
 from ..tools import ToolManager
 from ..workers import SetupWorker
+from . import theme
+from .components import Body, BusyBar, Button, Headline, Muted, ProgressBar, Title
 
 try:  # o qfluentwidgets já traz o qframelesswindow
     from qframelesswindow import FramelessDialog as _Base
@@ -34,56 +34,72 @@ class SetupDialog(_Base):
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
         self.setWindowTitle(APP_NAME)
-        self.resize(560, 290)
-        self.setMinimumSize(460, 250)
+        self.resize(560, 286)
+        self.setMinimumSize(480, 260)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint)
 
         container = QWidget(self)
+        container.setObjectName("setupBody")
+        container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(32, 40, 32, 28)
+        layout.setContentsMargins(36, 44, 36, 30)
         layout.setSpacing(10)
 
-        self.title = SubtitleLabel(APP_NAME, container)
-        self.subtitle = CaptionLabel(
-            f"versão {APP_VERSION} · o programa será liberado após atualizar todas as dependências",
-            container)
-        self.status = BodyLabel("Iniciando…", container)
-        self.status.setWordWrap(True)
+        brand = QHBoxLayout()
+        brand.setSpacing(12)
+        self.icon = QLabel(container)
+        self.icon.setFixedSize(38, 38)
+        window_icon = self.windowIcon()
+        if not window_icon.isNull():
+            self.icon.setPixmap(window_icon.pixmap(QSize(38, 38)))
+        else:
+            self.icon.hide()
+        brand.addWidget(self.icon)
+        self.title = Title(APP_NAME, container)
+        brand.addWidget(self.title)
+        brand.addStretch(1)
+        layout.addLayout(brand)
 
-        self.spinner = IndeterminateProgressBar(container)
-        self.bar = ProgressBar(container)
-        self.bar.setRange(0, 100)
-        self.bar.hide()
-
-        self.retry = PushButton("Tentar de novo", container)
-        self.retry.clicked.connect(self.start)
-        self.retry.hide()
-
-        layout.addWidget(self.title)
+        self.subtitle = Muted(
+            f"Versão {APP_VERSION}. O aplicativo abre assim que as dependências "
+            "estiverem conferidas.", container)
         layout.addWidget(self.subtitle)
-        layout.addSpacing(18)
+        layout.addSpacing(20)
+
+        self.status = Body("Iniciando…", container, wrap=True)
+        self.status.setFont(theme.headline())
         layout.addWidget(self.status)
+
+        self.spinner = BusyBar(container)
+        self.bar = ProgressBar(container)
+        self.bar.hide()
         layout.addWidget(self.spinner)
         layout.addWidget(self.bar)
+
         layout.addStretch(1)
+
+        self.retry = Button("Tentar de novo", "refresh", "secondary", container)
+        self.retry.hide()
         layout.addWidget(self.retry, 0, Qt.AlignmentFlag.AlignRight)
+        self.retry.clicked.connect(self.start)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(container)
 
-        if hasattr(self, "titleBar"):
-            self.titleBar.raise_()
+        title_bar = getattr(self, "titleBar", None)
+        if title_bar is not None:
+            title_bar.raise_()
             for name in ("minBtn", "maxBtn"):
-                button = getattr(self.titleBar, name, None)
+                button = getattr(title_bar, name, None)
                 if button:
                     button.show()
         self._apply_background()
 
     def _apply_background(self) -> None:
-        color = "#202020" if isDarkTheme() else "#f3f3f3"
-        self.setStyleSheet(f"SetupDialog {{ background-color: {color}; }}")
+        self.setStyleSheet(
+            f"SetupDialog, #setupBody {{ background-color: {theme.color('base')}; }}")
 
     # ------------------------------------------------------------- fluxo
     def start(self) -> None:

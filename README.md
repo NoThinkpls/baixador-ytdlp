@@ -27,6 +27,28 @@ Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no 
 - Ferramentas locais para recortar, extrair áudio, compactar, criar Shorts e queimar legendas.
 - Atualização opcional no Windows, conferida por SHA-256 antes de abrir o instalador.
 
+## Interface
+
+A partir da versão 1.4.3 a interface tem linguagem visual própria, sem o Fluent
+Design da Microsoft — inclusive no Windows.
+
+- **Estrutura Discord.** Barra lateral com seções em caixa alta, indicador do
+  item ativo na borda e o atalho de teclado visível em cada item.
+- **Controles Apple.** Interruptores em cápsula, listas agrupadas (um bloco
+  arredondado por assunto, com fios finos entre as linhas) e a hierarquia
+  tipográfica das Human Interface Guidelines.
+- **Ícones próprios.** Conjunto de traço fino desenhado para o projeto e
+  colorido em tempo de execução, então nada some no tema claro ou no escuro.
+- **Tema claro e escuro** com troca imediata, acompanhando o sistema quando a
+  opção é “Seguir o sistema”.
+- **Avisos que não atrapalham:** aparecem no alto do conteúdo, longe dos botões
+  do cabeçalho, e somem sozinhos.
+
+A tipografia pede SF Pro quando ela existe na máquina e cai em Inter e Segoe UI
+quando não existe — o projeto não distribui fontes proprietárias. As cores, os
+raios e a escala tipográfica ficam em `baixador_ytdlp/ui/theme.py`, que é a
+única fonte de verdade visual do aplicativo.
+
 ## Documentação
 
 - [Guia de uso](docs/GUIA-DE-USO.md)

@@ -1,17 +1,16 @@
 """Faixa inferior não intrusiva para uma atualização disponível."""
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout
-
-from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, FluentIcon as FIF,
-                            PrimaryPushButton, PushButton)
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
 from ..updater import ReleaseInfo
+from . import icons, theme
+from .components import Button, Headline, Muted, PrimaryButton
 
 
-class UpdateBanner(CardWidget):
-    """Mostra estado da atualização sem bloquear a página que a pessoa está usando."""
+class UpdateBanner(QFrame):
+    """Mostra o estado da atualização sem bloquear a página que a pessoa está usando."""
 
     update_requested = Signal()
     dismissed = Signal()
@@ -20,23 +19,28 @@ class UpdateBanner(CardWidget):
         super().__init__(parent)
         self._release: ReleaseInfo | None = None
         self.setObjectName("appUpdateBanner")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(20, 12, 16, 12)
-        layout.setSpacing(12)
+        layout.setContentsMargins(18, 12, 14, 12)
+        layout.setSpacing(14)
+
+        badge = QLabel(self)
+        badge.setFixedSize(22, 22)
+        badge.setPixmap(icons.pixmap("update", theme.color("accent"), 20))
+        layout.addWidget(badge, 0, Qt.AlignmentFlag.AlignVCenter)
 
         texts = QVBoxLayout()
         texts.setSpacing(2)
-        self.title = BodyLabel("Atualização disponível", self)
-        self.details = CaptionLabel("", self)
-        self.details.setWordWrap(True)
+        self.title = Headline("Atualização disponível", self)
+        self.details = Muted("", self)
         texts.addWidget(self.title)
         texts.addWidget(self.details)
         layout.addLayout(texts, 1)
 
-        self.update_button = PrimaryPushButton(FIF.UPDATE, "Atualizar", self)
+        self.update_button = PrimaryButton("Atualizar", "update", self)
         self.update_button.clicked.connect(self.update_requested)
-        self.dismiss_button = PushButton(FIF.CLOSE, "Agora não", self)
+        self.dismiss_button = Button("Agora não", "", "ghost", self)
         self.dismiss_button.clicked.connect(self.dismissed)
         layout.addWidget(self.update_button)
         layout.addWidget(self.dismiss_button)
