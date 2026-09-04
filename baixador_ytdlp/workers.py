@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import multiprocessing
 import queue
+import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -12,6 +14,7 @@ from .config import Settings
 from .diagnostics import get_logger, log_event, report_exception
 from .downloader import DownloadOptions, DownloadRunner, Progress, Transcoder
 from .gpu import GpuInfo, detect
+from .media_tools import MediaToolError, MediaToolOptions, build_command
 from .probe import probe
 from .tools import ToolManager, Toolchain
 from .updater import AppUpdater, ReleaseInfo
@@ -106,6 +109,60 @@ class AppUpdateDownloadWorker(QThread):
             self.failed.emit(str(exc))
         else:
             self.finished_ok.emit(str(path))
+
+
+class MediaToolWorker(QThread):
+    """Executa FFmpeg para edição local e permite cancelamento sem bloquear a UI."""
+
+    progress = Signal(str)
+    finished_ok = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, options: MediaToolOptions, tc: Toolchain, parent=None):
+        super().__init__(parent)
+        self.options = options
+        self.tc = tc
+        self._cancelled = threading.Event()
+        self._process: subprocess.Popen | None = None
+
+    def cancel(self) -> None:
+        self._cancelled.set()
+        process = self._process
+        if process and process.poll() is None:
+            try:
+                process.terminate()
+            except OSError:
+                pass
+
+    def run(self) -> None:
+        try:
+            command = build_command(self.options, self.tc)
+            self.options.destination.parent.mkdir(parents=True, exist_ok=True)
+            self.progress.emit("Processando com FFmpeg…")
+            self._process = subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=getattr(__import__("subprocess"), "CREATE_NO_WINDOW", 0),
+            )
+            _, stderr = self._process.communicate()
+            if self._cancelled.is_set():
+                raise MediaToolError("Operação cancelada.")
+            if self._process.returncode:
+                detail = (stderr or "").strip().splitlines()
+                raise MediaToolError(detail[-1] if detail else "O FFmpeg encerrou com erro.")
+            if not self.options.destination.is_file():
+                raise MediaToolError("O FFmpeg terminou sem gerar o arquivo esperado.")
+        except Exception as exc:  # noqa: BLE001
+            report_exception("ferramenta local de mídia", exc)
+            self.failed.emit(str(exc))
+        else:
+            self.finished_ok.emit(str(self.options.destination))
+        finally:
+            self._process = None
 
 
 class ProbeWorker(QThread):

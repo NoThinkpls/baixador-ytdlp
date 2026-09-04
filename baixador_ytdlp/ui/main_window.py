@@ -18,6 +18,7 @@ from ..tools import ToolManager
 from ..updater import AppUpdater, ReleaseInfo
 from ..workers import AppUpdateCheckWorker, AppUpdateDownloadWorker, GpuWorker
 from .history_page import HistoryPage
+from .media_tools_page import MediaToolsPage
 from .home_page import HomePage
 from .queue_page import QueuePage
 from .settings_page import SettingsPage
@@ -49,6 +50,7 @@ class MainWindow(FluentWindow):
         self.home = HomePage(cfg, self)
         self.queue = QueuePage(cfg, self)
         self.transcription = TranscriptionPage(cfg, self)
+        self.media_tools = MediaToolsPage(cfg, self)
         self.history_page = HistoryPage(cfg, self.history, self)
         self.settings = SettingsPage(cfg, self)
         self.update_banner = UpdateBanner(self)
@@ -102,6 +104,7 @@ class MainWindow(FluentWindow):
         self.addSubInterface(self.home, FIF.CLOUD_DOWNLOAD, "Baixar")
         self.addSubInterface(self.queue, FIF.TILES, "Fila")
         self.addSubInterface(self.transcription, FIF.MESSAGE, "Legendar")
+        self.addSubInterface(self.media_tools, FIF.SYNC, "Ferramentas")
         self.addSubInterface(self.history_page, FIF.HISTORY, "Histórico")
         self.addSubInterface(self.settings, FIF.SETTING, "Configurações",
                              position=NavigationItemPosition.BOTTOM)
@@ -120,7 +123,7 @@ class MainWindow(FluentWindow):
         self._content_container = content
 
     def _init_shortcuts(self) -> None:
-        pages = (self.home, self.queue, self.transcription, self.history_page)
+        pages = (self.home, self.queue, self.transcription, self.media_tools, self.history_page)
         for index, page in enumerate(pages, start=1):
             QShortcut(QKeySequence(f"Ctrl+{index}"), self,
                       activated=lambda p=page: self.switchTo(p))
@@ -286,6 +289,7 @@ class MainWindow(FluentWindow):
         self.home.set_toolchain(toolchain)
         self.queue.set_toolchain(toolchain)
         self.transcription.set_toolchain(toolchain)
+        self.media_tools.set_toolchain(toolchain)
         runtime = self.manager.runtime_info.summary
         js = (f"Deno {toolchain.deno_version}" if toolchain.has_js_runtime
               else "sem runtime JavaScript — o YouTube vai falhar")
@@ -446,6 +450,7 @@ class MainWindow(FluentWindow):
         self.taskbar.clear(int(self.winId()))
         self.home.shutdown()
         self.transcription.shutdown()
+        self.media_tools.shutdown()
         self.queue.stop_all()
         self.history.flush()
         self.cfg.save()
