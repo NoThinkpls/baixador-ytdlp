@@ -11,13 +11,14 @@ from qfluentwidgets import isDarkTheme
 def _system_font() -> QFont:
     """Prefere a tipografia nativa de cada sistema, com fallback seguro."""
     font = QFont()
+    # A mesma hierarquia tipográfica é solicitada nos dois sistemas. A SF Pro
+    # é usada quando já existe na máquina; ela não é distribuída pelo projeto.
     if sys.platform == "darwin":
-        # SF Pro já faz parte do macOS; não é redistribuída pelo aplicativo.
-        font.setFamilies(["SF Pro Text", ".AppleSystemUIFont", "Helvetica Neue"])
+        font.setFamilies(["SF Pro Text", "SF Pro Display", ".AppleSystemUIFont", "Helvetica Neue"])
     elif sys.platform.startswith("win"):
-        font.setFamilies(["Segoe UI Variable Text", "Segoe UI", "Arial"])
+        font.setFamilies(["SF Pro Text", "SF Pro Display", "Segoe UI Variable Text", "Segoe UI", "Arial"])
     else:
-        font.setFamilies(["Inter", "Noto Sans", "Sans Serif"])
+        font.setFamilies(["SF Pro Text", "SF Pro Display", "Inter", "Noto Sans", "Sans Serif"])
     font.setPointSize(10)
     font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     return font
