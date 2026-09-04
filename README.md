@@ -9,7 +9,7 @@
 Instala e atualiza as próprias dependências, analisa o link, mostra todas as qualidades
 disponíveis e baixa na melhor por padrão.
 
-[![versão](https://img.shields.io/badge/vers%C3%A3o-1.3.1-0078D4)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
+[![versão](https://img.shields.io/badge/vers%C3%A3o-1.4.0-0078D4)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
 ![plataforma](https://img.shields.io/badge/plataforma-Windows%2010%2F11-0078D4)
 ![aceleração](https://img.shields.io/badge/legendador-CUDA%20%C2%B7%20NVIDIA%20RTX-76B900?logo=nvidia&logoColor=white)
 ![fallback](https://img.shields.io/badge/fallback-CPU%20int8-555555)
@@ -29,7 +29,8 @@ disponíveis e baixa na melhor por padrão.
 
 [O que ele faz](#o-que-ele-faz) ·
 [Instalação](#instalação) ·
-[Novidades](#novidades-da-131) ·
+[Novidades](#novidades-da-140) ·
+[Atualizações](#atualizações-do-aplicativo) ·
 [YouTube](#youtube-o-que-realmente-é-preciso) ·
 [Compilando](#compilando) ·
 [GPU](#sobre-a-gpu) ·
@@ -45,6 +46,9 @@ disponíveis e baixa na melhor por padrão.
 
 - **Cuida das dependências sozinho.** Na primeira execução baixa o `yt-dlp` e o `FFmpeg`;
   nas seguintes verifica atualização e instala sem perguntar, com barra de progresso.
+- **Atualização segura do aplicativo.** Ao abrir, consulta a Release mais recente em segundo
+  plano. Quando há versão nova, uma faixa inferior deixa você atualizar ou dispensar o aviso.
+  O instalador só é baixado após sua confirmação e passa por SHA-256 antes de abrir.
 - **Mostra todas as qualidades.** Depois de analisar o link, uma tabela lista resolução,
   FPS, codec, tamanho e HDR de cada variante. A melhor já vem selecionada.
 - **Formato à sua escolha.** MP4 por padrão; também MKV, WebM ou "manter original".
@@ -89,7 +93,27 @@ programa aparecer quando você digita o nome na busca do Windows.
 > A seção **[Assinatura digital](#assinatura-digital-e-o-aviso-do-windows)** explica por quê,
 > o que fazer e como conferir que o arquivo é autêntico.
 
-## Novidades da 1.3.1
+## Novidades da 1.4.0
+
+- **Verificador de atualização do aplicativo.** Configurável em *Configurações* e sem
+  interromper o uso: a consulta à Release do GitHub roda fora da interface, e uma faixa
+  inferior oferece **Atualizar** ou **Agora não**.
+- **Atualização com conferência de integridade.** O programa usa o instalador versionado da
+  própria release e compara o arquivo baixado ao `SHA256SUMS.txt` publicado junto dela antes
+  de permitir sua execução. Não há instalação silenciosa.
+- **Checagem manual.** Em *Configurações → Atualizações do aplicativo*, **Verificar agora**
+  ignora o intervalo configurado.
+
+## Atualizações do aplicativo
+
+No Windows, deixe **Verificar novas versões ao abrir** ligado para receber o aviso quando uma
+Release mais nova estiver disponível. A configuração controla apenas a consulta; o download e
+a instalação nunca começam sozinhos.
+
+Ao clicar em **Atualizar**, o app baixa `BaixadorYtdlp-<versão>-setup.exe`, confere o SHA-256
+contra o arquivo publicado na mesma Release e só então abre o instalador do Inno Setup. Caso
+prefira seguir trabalhando, **Agora não** fecha o aviso apenas para aquela versão; uma versão
+posterior volta a ser exibida. A checagem manual fica em *Configurações*.
 
 - **Redimensionamento realmente acessível.** O teste de borda agora é tratado
   diretamente pela janela no Windows, antes dos controles da title bar Fluent. Assim,

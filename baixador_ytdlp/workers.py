@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import multiprocessing
 import queue
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
@@ -13,6 +14,7 @@ from .downloader import DownloadOptions, DownloadRunner, Progress, Transcoder
 from .gpu import GpuInfo, detect
 from .probe import probe
 from .tools import ToolManager, Toolchain
+from .updater import AppUpdater, ReleaseInfo
 from .transcription import TranscriptionOptions, transcription_process_main
 
 
@@ -37,6 +39,73 @@ class SetupWorker(QThread):
         else:
             log_event("Setup concluído: yt-dlp=%s ffmpeg=%s", tc.ytdlp_version, tc.ffmpeg_version)
             self.finished_ok.emit(tc)
+
+
+class AppUpdateCheckWorker(QThread):
+    """Consulta a release mais recente sem travar a interface."""
+
+    finished_ok = Signal(object, float)  # ReleaseInfo | None, instante da consulta
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        *,
+        enabled: bool,
+        last_checked_at: float,
+        interval_hours: int,
+        dismissed_version: str,
+        force: bool = False,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.enabled = enabled
+        self.last_checked_at = last_checked_at
+        self.interval_hours = max(0, interval_hours)
+        self.dismissed_version = dismissed_version
+        self.force = force
+
+    def run(self) -> None:
+        try:
+            now = time.time()
+            elapsed = now - self.last_checked_at
+            if (not self.force and (
+                not self.enabled or elapsed < self.interval_hours * 3600
+            )):
+                self.finished_ok.emit(None, 0.0)
+                return
+
+            release = AppUpdater().find_update()
+            if (release and not self.force
+                    and release.version == self.dismissed_version):
+                release = None
+            self.finished_ok.emit(release, now)
+        except Exception as exc:  # noqa: BLE001
+            report_exception("verificação de atualização do aplicativo", exc)
+            self.failed.emit(str(exc))
+
+
+class AppUpdateDownloadWorker(QThread):
+    """Baixa e valida o instalador selecionado em segundo plano."""
+
+    progress = Signal(int, int)
+    finished_ok = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, release: ReleaseInfo, parent=None):
+        super().__init__(parent)
+        self.release = release
+
+    def run(self) -> None:
+        try:
+            path = AppUpdater().download(
+                self.release,
+                lambda received, total: self.progress.emit(received, total),
+            )
+        except Exception as exc:  # noqa: BLE001
+            report_exception("download de atualização do aplicativo", exc)
+            self.failed.emit(str(exc))
+        else:
+            self.finished_ok.emit(str(path))
 
 
 class ProbeWorker(QThread):

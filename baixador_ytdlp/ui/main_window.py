@@ -5,9 +5,9 @@ import re
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QIcon, QKeySequence, QShortcut
-from PySide6.QtWidgets import QApplication, QSizePolicy
+from PySide6.QtWidgets import QApplication, QSizePolicy, QVBoxLayout, QWidget
 from qfluentwidgets import (FluentIcon as FIF, FluentWindow, InfoBar, InfoBarPosition,
                             NavigationItemPosition, Theme, setTheme)
 
@@ -15,15 +15,17 @@ from ..config import APP_NAME, APP_VERSION, Settings
 from ..history import DOWNLOAD, TRANSCRIPTION, History, HistoryEntry
 from ..taskbar import TaskbarProgress
 from ..tools import ToolManager
-from ..workers import GpuWorker
+from ..updater import AppUpdater, ReleaseInfo
+from ..workers import AppUpdateCheckWorker, AppUpdateDownloadWorker, GpuWorker
 from .history_page import HistoryPage
 from .home_page import HomePage
 from .queue_page import QueuePage
 from .settings_page import SettingsPage
 from .setup_dialog import SetupDialog
 from .transcription_page import TranscriptionPage
+from .update_banner import UpdateBanner
 
-URL_RE = re.compile(r"https?://\\S+")
+URL_RE = re.compile(r"https?://\S+")
 WM_NCHITTEST = 0x0084
 HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT = 10, 11, 12, 13, 14
 HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT = 15, 16, 17
@@ -37,6 +39,9 @@ class MainWindow(FluentWindow):
         self.toolchain = None
         self._last_clipboard = ""
         self._gpu_worker: GpuWorker | None = None
+        self._app_update_check: AppUpdateCheckWorker | None = None
+        self._app_update_download: AppUpdateDownloadWorker | None = None
+        self._available_update: ReleaseInfo | None = None
         self.taskbar = TaskbarProgress()
 
         self.history = History(limit=max(20, cfg.history_limit)).load()
@@ -46,9 +51,11 @@ class MainWindow(FluentWindow):
         self.transcription = TranscriptionPage(cfg, self)
         self.history_page = HistoryPage(cfg, self.history, self)
         self.settings = SettingsPage(cfg, self)
+        self.update_banner = UpdateBanner(self)
 
         self._init_window(icon)
         self._init_navigation()
+        self._init_update_banner()
         self._init_shortcuts()
         self._wire()
 
@@ -99,6 +106,19 @@ class MainWindow(FluentWindow):
         self.addSubInterface(self.settings, FIF.SETTING, "Configurações",
                              position=NavigationItemPosition.BOTTOM)
 
+
+    def _init_update_banner(self) -> None:
+        """Reserva uma faixa inferior sem sobrepor o conteúdo das páginas."""
+        self.widgetLayout.removeWidget(self.stackedWidget)
+        content = QWidget(self)
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+        content_layout.addWidget(self.stackedWidget, 1)
+        content_layout.addWidget(self.update_banner, 0)
+        self.widgetLayout.addWidget(content, 1)
+        self._content_container = content
+
     def _init_shortcuts(self) -> None:
         pages = (self.home, self.queue, self.transcription, self.history_page)
         for index, page in enumerate(pages, start=1):
@@ -132,7 +152,125 @@ class MainWindow(FluentWindow):
         self.history_page.transcribe_requested.connect(self._on_transcribe)
         self.transcription.transcription_finished.connect(self._on_transcribed)
         self.settings.update_requested.connect(lambda: self.run_setup(force=True))
+        self.settings.app_update_requested.connect(lambda: self._check_app_update(force=True))
         self.settings.download_dir_changed.connect(self.home.refresh_default_folder)
+        self.update_banner.update_requested.connect(self._download_app_update)
+        self.update_banner.dismissed.connect(self._dismiss_app_update)
+        # A tela aparece imediatamente; a consulta de rede começa depois, em thread própria.
+        QTimer.singleShot(700, self._check_app_update)
+
+
+    # ------------------------------------------------------- atualização app
+    def _check_app_update(self, force: bool = False) -> None:
+        if self._app_update_check and self._app_update_check.isRunning():
+            return
+        worker = AppUpdateCheckWorker(
+            enabled=self.cfg.auto_update,
+            last_checked_at=self.cfg.app_update_checked_at,
+            interval_hours=self.cfg.update_check_hours,
+            dismissed_version=self.cfg.update_dismissed_version,
+            force=force,
+            parent=self,
+        )
+        self._app_update_check = worker
+        worker.finished_ok.connect(
+            lambda release, checked_at, manual=force:
+            self._on_app_update_checked(release, checked_at, manual)
+        )
+        worker.failed.connect(
+            lambda message, manual=force: self._on_app_update_check_failed(message, manual)
+        )
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(lambda w=worker: self._clear_update_check_worker(w))
+        worker.start()
+
+    def _clear_update_check_worker(self, worker: AppUpdateCheckWorker) -> None:
+        if self._app_update_check is worker:
+            self._app_update_check = None
+
+    def _on_app_update_checked(
+        self,
+        release: ReleaseInfo | None,
+        checked_at: float,
+        manual: bool,
+    ) -> None:
+        if checked_at:
+            self.cfg.app_update_checked_at = checked_at
+            self.cfg.save()
+        if release:
+            self._available_update = release
+            self.update_banner.show_release(release)
+            return
+        if manual:
+            InfoBar.info(
+                "Atualização",
+                "Você já está usando a versão mais recente.",
+                duration=5000,
+                position=InfoBarPosition.TOP_RIGHT,
+                parent=self,
+            )
+
+    def _on_app_update_check_failed(self, message: str, manual: bool) -> None:
+        # Na abertura, uma indisponibilidade temporária de rede não interrompe o trabalho.
+        if manual:
+            InfoBar.error(
+                "Não foi possível verificar atualizações",
+                message,
+                duration=7000,
+                position=InfoBarPosition.TOP_RIGHT,
+                parent=self,
+            )
+
+    def _dismiss_app_update(self) -> None:
+        if self._available_update:
+            self.cfg.update_dismissed_version = self._available_update.version
+            self.cfg.save()
+        self.update_banner.hide()
+
+    def _download_app_update(self) -> None:
+        release = self._available_update or self.update_banner.release
+        if not release or (self._app_update_download and self._app_update_download.isRunning()):
+            return
+        worker = AppUpdateDownloadWorker(release, self)
+        self._app_update_download = worker
+        worker.progress.connect(self.update_banner.show_download_progress)
+        worker.finished_ok.connect(self._on_app_update_ready)
+        worker.failed.connect(self._on_app_update_download_failed)
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(lambda w=worker: self._clear_update_download_worker(w))
+        worker.start()
+
+    def _clear_update_download_worker(self, worker: AppUpdateDownloadWorker) -> None:
+        if self._app_update_download is worker:
+            self._app_update_download = None
+
+    def _on_app_update_ready(self, installer: str) -> None:
+        try:
+            AppUpdater.launch_installer(Path(installer))
+        except Exception as exc:  # noqa: BLE001
+            self._on_app_update_download_failed(str(exc))
+            return
+        self.update_banner.details.setText(
+            "Atualização validada. O instalador foi aberto; fechando o aplicativo…"
+        )
+        InfoBar.success(
+            "Atualização pronta",
+            "O instalador validado foi aberto.",
+            duration=4000,
+            position=InfoBarPosition.TOP_RIGHT,
+            parent=self,
+        )
+        QTimer.singleShot(900, QApplication.quit)
+
+    def _on_app_update_download_failed(self, message: str) -> None:
+        self.update_banner.show_error(message)
+        InfoBar.error(
+            "Atualização não concluída",
+            message,
+            duration=7000,
+            position=InfoBarPosition.TOP_RIGHT,
+            parent=self,
+        )
 
     # --------------------------------------------------------------- fluxo
     def run_setup(self, force: bool = False) -> bool:
