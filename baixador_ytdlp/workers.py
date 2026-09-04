@@ -52,7 +52,9 @@ class ProbeWorker(QThread):
     def run(self) -> None:
         try:
             log_event("Análise iniciada: %s", self.url)
-            info = probe(self.url, self.tc.ytdlp, self.cfg.cookies_browser, self.cfg.proxy)
+            info = probe(self.url, self.tc.ytdlp, self.cfg.cookies_browser,
+                         self.cfg.cookies_file, self.cfg.proxy,
+                         extractor_args=self.cfg.extractor_args, env=self.tc.env())
         except Exception as exc:  # noqa: BLE001
             report_exception("análise de mídia", exc)
             self.failed.emit(str(exc))

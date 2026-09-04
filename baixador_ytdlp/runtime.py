@@ -25,20 +25,48 @@ from .config import IS_WINDOWS, RUNTIME_DIR, ensure_dirs
 ProgressCB = Callable[[str, int], None]
 PYPI_INDEX = "https://pypi.org/simple"
 
-# O faster-whisper roda sobre CTranslate2, sem PyTorch. A versão de cuDNN é 8:
-# é a versão requerida pelos wheels CUDA 12 do CTranslate2 para Whisper.
+# O faster-whisper roda sobre CTranslate2, sem PyTorch.
+#
+# As versões abaixo são as que funcionam na build atual e NÃO devem ser trocadas
+# sem recompilar o executável: as DLLs de CUDA são embarcadas pelo PyInstaller a
+# partir do que estiver instalado na máquina de build. Fixar aqui uma versão de
+# cuDNN diferente da que foi embutida faz o carregador procurar nomes que não
+# existem no pacote e cair para CPU em silêncio.
 PACKAGES = ("faster-whisper", "ctranslate2")
 CUDA_PACKAGES = (
     "nvidia-cuda-runtime-cu12==12.4.127",
     "nvidia-cublas-cu12==12.4.5.8",
     "nvidia-cudnn-cu12==8.9.7.29",
 )
-CUDA_PACKAGE_NAMES = tuple(package.split("==", 1)[0] for package in CUDA_PACKAGES)
+
+
+def _requirement_name(requirement: str) -> str:
+    """Nome puro do pacote, sem o especificador de versão."""
+    for separator in (">=", "<=", "==", "~=", ">", "<", "!="):
+        requirement = requirement.split(separator, 1)[0]
+    return requirement.strip()
+
+
+PACKAGE_NAMES = tuple(_requirement_name(item) for item in PACKAGES)
+CUDA_PACKAGE_NAMES = tuple(_requirement_name(item) for item in CUDA_PACKAGES)
 _DLL_DIRECTORY_HANDLES: list[object] = []  # os.add_dll_directory precisa permanecer vivo
 _DLL_DIRECTORY_PATHS: set[str] = set()
 _CUDA_DLL_HANDLES: list[object] = []
 _CUDA_DLL_PATHS: set[str] = set()
-_CUDA_PRELOAD_ORDER = ("cudart64_12.dll", "cublasLt64_12.dll", "cublas64_12.dll", "cudnn64_8.dll")
+# A ordem importa: cada DLL precisa das anteriores já carregadas no processo.
+_CUDA_CORE_DLLS = ("cudart64_12.dll", "cublasLt64_12.dll", "cublas64_12.dll")
+
+# O nome das bibliotecas do cuDNN muda entre as versões maiores, e o que vale é o
+# que foi de fato embutido no executável — não uma versão escolhida aqui. Cada
+# variante lista as auxiliares primeiro e a principal por último; a detecção usa
+# a principal para decidir qual conjunto existe.
+_CUDNN_VARIANTS = (
+    ("cudnn_graph64_9.dll", "cudnn_engines_precompiled64_9.dll",
+     "cudnn_engines_runtime_compiled64_9.dll", "cudnn_heuristic64_9.dll",
+     "cudnn_ops64_9.dll", "cudnn64_9.dll"),
+    ("cudnn_ops_infer64_8.dll", "cudnn_cnn_infer64_8.dll",
+     "cudnn_adv_infer64_8.dll", "cudnn64_8.dll"),
+)
 
 
 @dataclass(frozen=True)
@@ -104,21 +132,40 @@ def prepare_embedded_cuda() -> str | None:
     folders = [folder for root in roots for folder in _cuda_dll_dirs(root) if folder.is_dir()]
     if folders:
         os.environ["PATH"] = os.pathsep.join([*(str(p) for p in folders), os.environ.get("PATH", "")])
-    missing: list[str] = []
-    for name in _CUDA_PRELOAD_ORDER:
-        path = next((p / name for p in folders if (p / name).is_file()), None)
-        if path is None:
-            missing.append(name)
-            continue
+    def locate(name: str) -> Path | None:
+        return next((p / name for p in folders if (p / name).is_file()), None)
+
+    def load(path: Path, name: str) -> str | None:
         key = str(path.resolve())
         if key in _CUDA_DLL_PATHS:
-            continue
+            return None
         try:
             _CUDA_DLL_HANDLES.append(ctypes.WinDLL(str(path)))
             _CUDA_DLL_PATHS.add(key)
         except OSError as exc:
             return f"não foi possível carregar {name} incluída no aplicativo: {exc}"
-    return None if not missing else "DLL(s) CUDA ausente(s) no executável: " + ", ".join(missing)
+        return None
+
+    missing = [name for name in _CUDA_CORE_DLLS if locate(name) is None]
+    if missing:
+        return "DLL(s) CUDA ausente(s) no executável: " + ", ".join(missing)
+    for name in _CUDA_CORE_DLLS:
+        if error := load(locate(name), name):
+            return error
+
+    # Usa a variante de cuDNN que existe no pacote, seja qual for a versão maior.
+    for variant in _CUDNN_VARIANTS:
+        principal = variant[-1]
+        if locate(principal) is None:
+            continue
+        for name in variant:                 # auxiliares ausentes são normais
+            path = locate(name)
+            if path is not None and (error := load(path, name)):
+                return error
+        return None
+
+    esperadas = " ou ".join(v[-1] for v in _CUDNN_VARIANTS)
+    return f"cuDNN ausente no executável (procurei {esperadas})"
 
 
 def activate_runtime(runtime_dir: Path = RUNTIME_DIR) -> None:
@@ -160,7 +207,7 @@ def _versions(path: Path | None = None) -> dict[str, str]:
     try:
         distributions = (importlib.metadata.distributions()
                          if path is None else importlib.metadata.distributions(path=[str(path)]))
-        tracked = set(PACKAGES) | set(CUDA_PACKAGE_NAMES)
+        tracked = set(PACKAGE_NAMES) | set(CUDA_PACKAGE_NAMES)
         for dist in distributions:
             name = (dist.metadata.get("Name") or "").lower().replace("_", "-")
             if name in tracked:
@@ -250,7 +297,7 @@ class RuntimeManager:
             return False
 
     def _needs_update(self, current: dict[str, str], use_cuda: bool) -> bool:
-        wanted = PACKAGES + (CUDA_PACKAGE_NAMES if use_cuda else ())
+        wanted = PACKAGE_NAMES + (CUDA_PACKAGE_NAMES if use_cuda else ())
         # Quando a máquina ganha ou perde GPU, as bibliotecas CUDA entram ou saem
         # na próxima abertura.
         return any(name not in current for name in wanted)
@@ -306,7 +353,7 @@ class RuntimeManager:
                 raise RuntimeError(f"pip terminou com código {code}")
 
             after = _versions(self.runtime_dir)
-            missing = [name for name in PACKAGES if name not in after]
+            missing = [name for name in PACKAGE_NAMES if name not in after]
             if missing:
                 raise RuntimeError("instalação incompleta: " + ", ".join(missing))
 

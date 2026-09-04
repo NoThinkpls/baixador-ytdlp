@@ -7,9 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QPlainTextEdit,
+                               QVBoxLayout, QWidget)
 from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, FluentIcon as FIF, InfoBar,
-                            InfoBarPosition, MessageBox, ProgressBar, PushButton,
+                            InfoBarPosition, ProgressBar, PushButton,
                             SmoothScrollArea, StrongBodyLabel, TitleLabel,
                             TransparentToolButton)
 
@@ -148,11 +149,37 @@ class JobCard(CardWidget):
             self.transcribe_requested.emit(str(self.files[0]))
 
     def _show_detail(self) -> None:
-        box = MessageBox("Saída do yt-dlp", self.detail[-2000:] or "Sem detalhes.", self.window())
-        box.yesButton.setText("Copiar")
-        box.cancelButton.setText("Fechar")
-        if box.exec():
-            QApplication.clipboard().setText(self.detail)
+        """Mostra a saída do yt-dlp numa janela rolável.
+
+        Não usa MessageBox de propósito: aquele widget fixa a altura na construção
+        e reflowa o texto a cada resize, então um log de várias linhas empurra os
+        botões para fora do cartão — e, sendo modal com máscara, deixa o aplicativo
+        inteiro inacessível. Log é conteúdo longo; precisa de rolagem.
+        """
+        dialog = QDialog(self.window())
+        dialog.setWindowTitle("Saída do yt-dlp")
+        dialog.resize(760, 460)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        view = QPlainTextEdit(self.detail or "Sem detalhes.", dialog)
+        view.setReadOnly(True)
+        view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        layout.addWidget(view, 1)
+
+        buttons = QHBoxLayout()
+        copy_btn = PushButton(FIF.COPY, "Copiar tudo", dialog)
+        copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(self.detail))
+        close_btn = PushButton(FIF.CLOSE, "Fechar", dialog)
+        close_btn.clicked.connect(dialog.accept)
+        buttons.addStretch(1)
+        buttons.addWidget(copy_btn)
+        buttons.addWidget(close_btn)
+        layout.addLayout(buttons)
+
+        dialog.exec()
 
 
 @dataclass

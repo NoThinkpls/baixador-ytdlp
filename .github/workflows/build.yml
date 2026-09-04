@@ -33,9 +33,8 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
-          # Sem PyTorch: o motor de transcrição é o CTranslate2, e as bibliotecas
-          # CUDA são instaladas na máquina do usuário só quando há GPU NVIDIA.
-          # Isso tira alguns GB do executável e da primeira compilação.
+          # Sem PyTorch: o motor de transcrição é o CTranslate2, com runtime
+          # CUDA (cuBLAS/cuDNN 8) incluído no instalador.
 
       - name: Definir a versão
         id: ver
@@ -55,6 +54,14 @@ jobs:
         run: |
           $exe = 'dist\baixador-ytdlp\baixador-ytdlp.exe'
           if (-not (Test-Path $exe)) { throw "PyInstaller não gerou $exe" }
+          $requiredCudaDlls = @(
+            'cudart64_12.dll', 'cublas64_12.dll', 'cublasLt64_12.dll',
+            'cudnn64_8.dll', 'cudnn_ops_infer64_8.dll', 'cudnn_cnn_infer64_8.dll'
+          )
+          $missingCudaDlls = foreach ($dll in $requiredCudaDlls) {
+            if (-not (Get-ChildItem -Path 'dist\baixador-ytdlp' -Filter $dll -File -Recurse)) { $dll }
+          }
+          if ($missingCudaDlls) { throw "DLLs CUDA ausentes: $($missingCudaDlls -join ', ')" }
           $item = Get-Item $exe
           Write-Host "OK: $($item.Name) — $([math]::Round($item.Length / 1MB, 1)) MB"
 

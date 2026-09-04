@@ -15,7 +15,9 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .config import Settings
+from .cookies import cookie_args
 from .tools import CREATE_NO_WINDOW, Toolchain
+from .diagnostics import log_event
 
 SEP = "\x1f"  # unit separator: nunca aparece em título de vídeo
 PROGRESS_TEMPLATE = (
@@ -115,8 +117,9 @@ def build_args(opts: DownloadOptions, cfg: Settings, tc: Toolchain) -> list[str]
             args.append("--embed-subs")
     if cfg.sponsorblock:
         args += ["--sponsorblock-remove", "sponsor,selfpromo,interaction"]
-    if cfg.cookies_browser:
-        args += ["--cookies-from-browser", cfg.cookies_browser]
+    args += cookie_args(cfg)
+    if cfg.extractor_args:
+        args += ["--extractor-args", cfg.extractor_args]
     if cfg.limit_rate:
         args += ["--limit-rate", cfg.limit_rate]
     if cfg.proxy:
@@ -163,11 +166,12 @@ class DownloadRunner:
 
     def run(self, on_progress: Callable[[Progress], None]) -> list[Path]:
         args = build_args(self.opts, self.cfg, self.tc)
+        log_event("yt-dlp download iniciado: %s", preview_command(self.opts, self.cfg, self.tc))
         prog = Progress(status="downloading")
         self._proc = subprocess.Popen(
             args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace", bufsize=1,
-            creationflags=CREATE_NO_WINDOW,
+            creationflags=CREATE_NO_WINDOW, env=self.tc.env(),
         )
         assert self._proc.stdout is not None
         for line in self._proc.stdout:
@@ -195,6 +199,7 @@ class DownloadRunner:
             on_progress(prog)
             return []
         if code != 0:
+            log_event("yt-dlp download falhou (código=%s): %s", code, self.tail(300))
             raise DownloadError(self._last_error())
 
         prog.status = "finished"

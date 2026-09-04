@@ -11,7 +11,7 @@ from qfluentwidgets import (FluentIcon as FIF, FluentWindow, InfoBar, InfoBarPos
                             NavigationItemPosition, Theme, setTheme)
 
 from ..config import APP_NAME, APP_VERSION, Settings
-from ..history import History, HistoryEntry
+from ..history import DOWNLOAD, TRANSCRIPTION, History, HistoryEntry
 from ..taskbar import TaskbarProgress
 from ..tools import ToolManager
 from ..workers import GpuWorker
@@ -52,6 +52,10 @@ class MainWindow(FluentWindow):
     def _init_window(self, icon: QIcon | None) -> None:
         # Janela deliberadamente redimensionável: mantém área útil em notebooks
         # menores, mas aproveita telas grandes sem conteúdo fixo.
+        # A borda de arrasto padrão do qframelesswindow é de 5 px, o que torna os
+        # cantos quase impossíveis de pegar com o mouse, ainda mais com escala de
+        # tela alta. 10 px dá margem confortável nos quatro cantos e nas laterais.
+        self.BORDER_WIDTH = 10
         self.resize(1120, 760)
         self.setMinimumSize(820, 540)
         self.setMaximumSize(16_777_215, 16_777_215)
@@ -77,10 +81,14 @@ class MainWindow(FluentWindow):
 
     def _init_navigation(self) -> None:
         # Ícones escolhidos pelo que cada página faz, não por serem genéricos:
-        # nuvem-com-seta = trazer da internet; lista escalonada = fila de espera;
-        # balão de fala = legenda; relógio-com-seta = histórico.
+        # nuvem-com-seta = trazer da internet; cartões empilhados = a fila de
+        # itens; balão de fala = legenda; relógio-com-seta = histórico.
+        #
+        # A Fila usava ALIGNMENT (linhas horizontais), quase idêntico ao
+        # hambúrguer que abre e fecha o próprio menu lateral. TILES desenha
+        # blocos empilhados, que é justamente como a página se parece.
         self.addSubInterface(self.home, FIF.CLOUD_DOWNLOAD, "Baixar")
-        self.addSubInterface(self.queue, FIF.ALIGNMENT, "Fila")
+        self.addSubInterface(self.queue, FIF.TILES, "Fila")
         self.addSubInterface(self.transcription, FIF.MESSAGE, "Legendar")
         self.addSubInterface(self.history_page, FIF.HISTORY, "Histórico")
         self.addSubInterface(self.settings, FIF.SETTING, "Configurações",
@@ -117,6 +125,7 @@ class MainWindow(FluentWindow):
         self.queue.overall_progress.connect(self._on_overall_progress)
         self.history_page.reopen_requested.connect(self._on_reopen)
         self.history_page.transcribe_requested.connect(self._on_transcribe)
+        self.transcription.transcription_finished.connect(self._on_transcribed)
         self.settings.update_requested.connect(lambda: self.run_setup(force=True))
         self.settings.download_dir_changed.connect(self.home.refresh_default_folder)
 
@@ -133,8 +142,11 @@ class MainWindow(FluentWindow):
         self.home.set_toolchain(toolchain)
         self.queue.set_toolchain(toolchain)
         self.transcription.set_toolchain(toolchain)
+        runtime = self.manager.runtime_info.summary
+        js = (f"Deno {toolchain.deno_version}" if toolchain.has_js_runtime
+              else "sem runtime JavaScript — o YouTube vai falhar")
         self.settings.set_versions(toolchain.ytdlp_version, toolchain.ffmpeg_version,
-                                   self.manager.runtime_info.summary)
+                                   f"{runtime}\nRuntime JS: {js}")
         # A detecção da GPU chama nvidia-smi e o FFmpeg duas vezes: fora da thread da UI.
         self._gpu_worker = GpuWorker(toolchain.ffmpeg, self)
         self._gpu_worker.finished_ok.connect(self.settings.set_gpu)
@@ -153,14 +165,35 @@ class MainWindow(FluentWindow):
             return
         # A URL vem do próprio job, não do campo da tela: entre o início e o fim
         # do download o usuário pode ter colado outro link ali.
+        # Guarda o primeiro arquivo que de fato existe. O yt-dlp também imprime
+        # caminhos de arquivos intermediários, que somem depois da junção — era
+        # por isso que "Mostrar na pasta" e "Legendar" apareciam desabilitados.
         paths = [Path(f) for f in files]
+        final = next((p for p in paths if p.is_file()), paths[0] if paths else None)
         self.history.add(HistoryEntry(
             title=title,
             url=opts.url,
-            path=str(paths[0]) if paths else "",
+            path=str(final) if final else "",
+            folder_path=opts.output_dir,
             files=len(paths),
             audio_only=opts.audio_only,
-            container=paths[0].suffix.lstrip(".") if paths else "",
+            container=final.suffix.lstrip(".") if final else "",
+            kind=DOWNLOAD,
+        ))
+        self.history_page.invalidate()
+
+    def _on_transcribed(self, output: str, source: str) -> None:
+        """Registra a legenda no histórico, ao lado dos downloads."""
+        if not self.cfg.history_enabled or not output:
+            return
+        legenda = Path(output)
+        self.history.add(HistoryEntry(
+            title=Path(source).stem or legenda.stem,
+            path=str(legenda),
+            folder_path=str(legenda.parent),
+            source=source,
+            container=legenda.suffix.lstrip("."),
+            kind=TRANSCRIPTION,
         ))
         self.history_page.invalidate()
 
@@ -200,6 +233,7 @@ class MainWindow(FluentWindow):
 
     def closeEvent(self, event):  # noqa: N802 - assinatura do Qt
         self.taskbar.clear(int(self.winId()))
+        self.home.shutdown()
         self.transcription.shutdown()
         self.queue.stop_all()
         self.history.flush()
