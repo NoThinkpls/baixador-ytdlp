@@ -8,7 +8,8 @@ As builds oficiais são geradas pelo GitHub Actions. Um push em `main` valida os
 | --- | --- | --- |
 | Windows instalador | `BaixadorYtdlp-X.Y.Z-setup.exe` | `baixador-ytdlp-setup.exe` |
 | Windows portable | `BaixadorYtdlp-X.Y.Z-portable-windows.zip` | `baixador-ytdlp-portable-windows.zip` |
-| macOS Apple Silicon | `BaixadorYtdlp-X.Y.Z-macos-arm64.zip` | `baixador-ytdlp-macos-arm64.zip` |
+| macOS Apple Silicon — instalador | `BaixadorYtdlp-X.Y.Z-macos-arm64.dmg` | `baixador-ytdlp-macos-arm64.dmg` |
+| macOS Apple Silicon — portable | `BaixadorYtdlp-X.Y.Z-macos-arm64.zip` | `baixador-ytdlp-macos-arm64.zip` |
 
 Os arquivos `SHA256SUMS.txt` e `SHA256SUMS-macos.txt` acompanham os pacotes. Os aliases estáveis fazem os links `/releases/latest/download/...` continuarem válidos mesmo com uma versão nova.
 

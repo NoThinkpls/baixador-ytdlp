@@ -1,6 +1,6 @@
 # Baixador YT-DLP
 
-Baixe vídeos e áudios, transcreva localmente e faça ajustes de mídia em uma interface simples para Windows e macOS Apple Silicon.
+Baixe vídeos e áudios, transcreva localmente e faça ajustes de mídia em uma interface Apple + Discord para Windows e macOS Apple Silicon.
 
 [![Última versão](https://img.shields.io/github/v/release/NoThinkpls/baixador-ytdlp?display_name=tag&label=vers%C3%A3o)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
 [![Windows e macOS Apple Silicon](https://img.shields.io/badge/plataformas-Windows%20%7C%20macOS%20Apple%20Silicon-0078D4)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
@@ -12,7 +12,8 @@ Baixe vídeos e áudios, transcreva localmente e faça ajustes de mídia em uma 
 | --- | --- | --- |
 | Windows 10/11 | Instalação normal, com atalho e atualização pelo app | [Baixar instalador](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-setup.exe) |
 | Windows 10/11 | Usar sem instalar: descompacte o ZIP e abra o executável | [Baixar versão portable](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-portable-windows.zip) |
-| Mac com M1, M2, M3 ou M4 | Aplicativo Apple Silicon | [Ver downloads para macOS](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest) |
+| Mac com M1, M2, M3 ou M4 | Instalação normal: abra o DMG e arraste para Aplicativos | [Baixar instalador para macOS](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-macos-arm64.dmg) |
+| Mac com M1, M2, M3 ou M4 | Usar sem instalar: descompacte e abra o app | [Baixar versão portable para macOS](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-macos-arm64.zip) |
 
 Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no [GitHub Actions](../../actions) terminar antes de baixar: é ela que anexa os arquivos à Release.
 
