@@ -1,21 +1,19 @@
-"""Aba Fluent para a transcrição local de áudio e vídeo."""
+"""Página 'Legendar': transcrição local de áudio e vídeo com faster-whisper."""
 from __future__ import annotations
 
 from pathlib import Path
 
 from PySide6.QtCore import QUrl, Signal
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (QFileDialog, QFormLayout, QGridLayout, QHBoxLayout,
-                               QPlainTextEdit, QProgressBar, QVBoxLayout, QWidget)
-from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, ComboBox,
-                            FluentIcon as FIF, InfoBar, InfoBarPosition, LineEdit,
-                            PrimaryPushButton, PushButton, StrongBodyLabel, SwitchButton,
-                            TitleLabel)
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from ..config import Settings
 from ..diagnostics import log_event
 from ..transcription import FORMATS, TranscriptionOptions
 from ..workers import TranscriptionWorker
+from .components import (Button, Card, Divider, Headline, InsetGroup, LogView, Muted,
+                         PageHeader, PrimaryButton, ProgressBar, ScrollColumn,
+                         SectionLabel, Select, SettingRow, Switch, TextField, Toast)
 
 LANGUAGES = [("Português", "pt"), ("Inglês", "en"), ("Espanhol", "es"),
              ("Francês", "fr"), ("Alemão", "de"), ("Italiano", "it"),
@@ -44,126 +42,170 @@ class TranscriptionPage(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(28, 16, 28, 20)
-        root.setSpacing(14)
+        root.setContentsMargins(28, 20, 28, 0)
+        root.setSpacing(16)
 
-        root.addWidget(TitleLabel("Legendar e transcrever", self))
-        description = CaptionLabel(
-            "Transcrição local com faster-whisper. O modelo usa CUDA/float16 quando disponível "
-            "e CPU/int8 de forma automática quando a GPU não puder ser usada.", self)
-        description.setWordWrap(True)
-        root.addWidget(description)
+        root.addWidget(PageHeader(
+            "Legendar",
+            "Transcrição local com faster-whisper. Usa CUDA quando dá, e CPU quando não dá.",
+            self))
 
-        file_card = CardWidget(self)
-        form = QFormLayout(file_card)
-        form.setContentsMargins(16, 14, 16, 14)
-        form.setHorizontalSpacing(14)
-        form.setVerticalSpacing(12)
+        page = ScrollColumn(self, spacing=14)
+        root.addWidget(page, 1)
 
-        self.media_edit = LineEdit(file_card)
-        self.media_edit.setPlaceholderText("Selecione ou arraste um vídeo ou áudio para cá")
+        page.add(SectionLabel("Arquivos", self))
+        page.add(self._files_group())
+
+        page.add(SectionLabel("Modelo", self))
+        page.add(self._options_group())
+
+        page.add(SectionLabel("Andamento", self))
+        page.add(self._status_card())
+        page.add(self._log_view(), 1)
+
+        root.addWidget(self._action_bar())
+
+    def _files_group(self) -> InsetGroup:
+        group = InsetGroup(self)
+
+        self.media_edit = TextField("Selecione ou arraste um vídeo ou áudio para cá", group)
         self.media_edit.setClearButtonEnabled(True)
-        pick_media = PushButton(FIF.MEDIA, "Selecionar", file_card)
+        pick_media = Button("Selecionar", "media", "secondary", group)
         pick_media.clicked.connect(self._pick_media)
-        media_row = QHBoxLayout()
-        media_row.addWidget(self.media_edit, 1)
-        media_row.addWidget(pick_media)
-        form.addRow("Arquivo de mídia", media_row)
+        group.add_row(self._path_row(
+            group, "Arquivo de mídia",
+            "Também aceita arrastar e soltar direto nesta página.",
+            self.media_edit, pick_media))
 
-        self.output_edit = LineEdit(file_card)
-        self.output_edit.setPlaceholderText("A legenda será criada ao lado da mídia")
+        self.output_edit = TextField("A legenda será criada ao lado da mídia", group)
         self.output_edit.setClearButtonEnabled(True)
-        pick_output = PushButton(FIF.SAVE_AS, "Salvar como", file_card)
+        pick_output = Button("Salvar como", "save", "secondary", group)
         pick_output.clicked.connect(self._pick_output)
-        output_row = QHBoxLayout()
-        output_row.addWidget(self.output_edit, 1)
-        output_row.addWidget(pick_output)
-        form.addRow("Arquivo de saída", output_row)
-        root.addWidget(file_card)
+        group.add_row(self._path_row(
+            group, "Arquivo de saída",
+            "Deixe em branco para gravar ao lado do arquivo de origem.",
+            self.output_edit, pick_output))
+        return group
 
-        options = CardWidget(self)
-        grid = QGridLayout(options)
-        grid.setContentsMargins(16, 14, 16, 14)
-        grid.setHorizontalSpacing(16)
-        grid.setVerticalSpacing(10)
+    @staticmethod
+    def _path_row(parent, title: str, subtitle: str, field: TextField,
+                  button: Button) -> QWidget:
+        row = QWidget(parent)
+        column = QVBoxLayout(row)
+        column.setContentsMargins(16, 12, 16, 14)
+        column.setSpacing(8)
+        column.addWidget(Headline(title, row))
+        column.addWidget(Muted(subtitle, row))
+        line = QHBoxLayout()
+        line.setSpacing(10)
+        line.addWidget(field, 1)
+        line.addWidget(button)
+        column.addLayout(line)
+        return row
 
-        self.language = self._combo(LANGUAGES, self.cfg.transcription_language, options)
+    def _options_group(self) -> InsetGroup:
+        group = InsetGroup(self)
+
+        self.language = self._combo(LANGUAGES, self.cfg.transcription_language, group)
         self.language.currentIndexChanged.connect(
             lambda: self._save("transcription_language", self.language.currentData()))
-        self.model = self._combo(MODELS, self.cfg.transcription_model, options)
+        group.add_row(SettingRow("Idioma", "“Detectar automaticamente” custa um pouco mais.",
+                                 self.language, group))
+
+        self.model = self._combo(MODELS, self.cfg.transcription_model, group)
         self.model.currentIndexChanged.connect(
             lambda: self._save("transcription_model", self.model.currentData()))
+        group.add_row(SettingRow("Modelo Whisper",
+                                 "Modelos maiores acertam mais e demoram mais.",
+                                 self.model, group))
+
         format_items = [(label, key) for key, (label, _ext) in FORMATS.items()]
-        self.output_format = self._combo(format_items, self.cfg.transcription_format, options)
+        self.output_format = self._combo(format_items, self.cfg.transcription_format, group)
         self.output_format.currentIndexChanged.connect(self._format_changed)
+        group.add_row(SettingRow("Formato da legenda", "", self.output_format, group))
 
-        grid.addWidget(BodyLabel("Idioma", options), 0, 0)
-        grid.addWidget(self.language, 0, 1)
-        grid.addWidget(BodyLabel("Modelo Whisper", options), 0, 2)
-        grid.addWidget(self.model, 0, 3)
-        grid.addWidget(BodyLabel("Formato", options), 1, 0)
-        grid.addWidget(self.output_format, 1, 1)
-
-        self.aggressive = SwitchButton(options)
-        self.aggressive.setOnText("Ligado")
-        self.aggressive.setOffText("Desligado")
+        self.aggressive = Switch(group)
         self.aggressive.setChecked(self.cfg.transcription_aggressive_filter)
         self.aggressive.checkedChanged.connect(
             lambda enabled: self._save("transcription_aggressive_filter", bool(enabled)))
-        grid.addWidget(BodyLabel("Filtro anti-alucinação agressivo", options), 1, 2)
-        grid.addWidget(self.aggressive, 1, 3)
-        grid.setColumnStretch(1, 1)
-        grid.setColumnStretch(3, 1)
-        root.addWidget(options)
+        group.add_row(SettingRow(
+            "Filtro anti-alucinação agressivo",
+            "Descarta trechos repetidos que o modelo inventa no silêncio.",
+            self.aggressive, group))
+        return group
 
-        status_card = CardWidget(self)
-        status = QVBoxLayout(status_card)
-        status.setContentsMargins(16, 12, 16, 12)
-        self.hardware = StrongBodyLabel("Hardware será detectado ao iniciar", status_card)
-        self.progress = QProgressBar(status_card)
-        self.progress.setRange(0, 100)
+    def _status_card(self) -> Card:
+        card = Card(self, padding=(16, 14, 16, 16), spacing=10)
+        self.hardware = Headline("Hardware será detectado ao iniciar", card, wrap=True)
+        card.body.addWidget(self.hardware)
+
+        line = QHBoxLayout()
+        line.setSpacing(12)
+        self.progress = ProgressBar(card)
         self.progress.setValue(0)
-        self.progress.setTextVisible(True)
-        self.progress_label = CaptionLabel("Pronto para transcrever", status_card)
-        status.addWidget(self.hardware)
-        status.addWidget(self.progress)
-        status.addWidget(self.progress_label)
-        root.addWidget(status_card)
+        self.percent_label = Muted("0%", card)
+        self.percent_label.setWordWrap(False)
+        self.percent_label.setFixedWidth(46)
+        self.progress.valueChanged.connect(
+            lambda value: self.percent_label.setText(f"{value}%"))
+        line.addWidget(self.progress, 1)
+        line.addWidget(self.percent_label)
+        card.body.addLayout(line)
 
-        controls = QHBoxLayout()
-        self.start_btn = PrimaryPushButton(FIF.MESSAGE, "Iniciar transcrição", self)
-        self.pause_btn = PushButton(FIF.PAUSE, "Pausar", self)
-        self.cancel_btn = PushButton(FIF.CANCEL, "Cancelar", self)
-        self.open_btn = PushButton(FIF.FOLDER, "Abrir pasta", self)
+        self.progress_label = Muted("Pronto para transcrever", card)
+        card.body.addWidget(self.progress_label)
+        return card
+
+    def _log_view(self) -> LogView:
+        self.log = LogView("O andamento da transcrição aparecerá aqui.", self)
+        self.log.setMinimumHeight(160)
+        return self.log
+
+    def _action_bar(self) -> QWidget:
+        bar = QWidget(self)
+        column = QVBoxLayout(bar)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        column.addWidget(Divider(bar))
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 14, 0, 16)
+        row.setSpacing(10)
+
+        self.start_btn = PrimaryButton("Iniciar transcrição", "captions", bar)
+        self.start_btn.setMinimumHeight(42)
+        self.pause_btn = Button("Pausar", "pause", "secondary", bar)
+        self.pause_btn.setMinimumHeight(42)
+        self.cancel_btn = Button("Cancelar", "stop", "ghost", bar)
+        self.cancel_btn.setMinimumHeight(42)
+        self.open_btn = Button("Abrir pasta", "folder", "secondary", bar)
+        self.open_btn.setMinimumHeight(42)
+
         self.start_btn.clicked.connect(self.start)
         self.pause_btn.clicked.connect(self.toggle_pause)
         self.cancel_btn.clicked.connect(self.cancel)
         self.open_btn.clicked.connect(self.open_output_folder)
         self.pause_btn.setEnabled(False)
         self.cancel_btn.setEnabled(False)
-        controls.addWidget(self.start_btn)
-        controls.addWidget(self.pause_btn)
-        controls.addWidget(self.cancel_btn)
-        controls.addStretch(1)
-        controls.addWidget(self.open_btn)
-        root.addLayout(controls)
 
-        self.log = QPlainTextEdit(self)
-        self.log.setReadOnly(True)
-        self.log.setMaximumBlockCount(500)
-        self.log.setPlaceholderText("O andamento da transcrição aparecerá aqui.")
-        self.log.setMinimumHeight(150)
-        root.addWidget(self.log, 1)
+        row.addWidget(self.start_btn)
+        row.addWidget(self.pause_btn)
+        row.addWidget(self.cancel_btn)
+        row.addStretch(1)
+        row.addWidget(self.open_btn)
+        column.addLayout(row)
+        return bar
 
     @staticmethod
-    def _combo(items, selected: str, parent) -> ComboBox:
-        combo = ComboBox(parent)
+    def _combo(items, selected: str, parent) -> Select:
+        combo = Select(parent)
         for label, value in items:
             combo.addItem(label, userData=value)
         for index in range(combo.count()):
             if combo.itemData(index) == selected:
                 combo.setCurrentIndex(index)
                 break
+        combo.setMinimumWidth(230)
         return combo
 
     def _save(self, key: str, value) -> None:
@@ -174,6 +216,7 @@ class TranscriptionPage(QWidget):
         self.toolchain = toolchain
 
     def _pick_media(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
         path, _ = QFileDialog.getOpenFileName(self, "Selecionar mídia", "", MEDIA_FILTER)
         if path:
             self.set_media(path)
@@ -192,6 +235,7 @@ class TranscriptionPage(QWidget):
         return str(Path(source).with_suffix(extension))
 
     def _pick_output(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
         fmt = self.output_format.currentData()
         label, extension = FORMATS[fmt]
         current = self.output_edit.text().strip() or self._suggested_output()
@@ -277,8 +321,8 @@ class TranscriptionPage(QWidget):
     def _done(self, path: str) -> None:
         self._finish_controls()
         self.transcription_finished.emit(path, self.media_edit.text().strip())
-        InfoBar.success("Transcrição concluída", f"Legenda salva em {Path(path).name}", duration=6000,
-                        position=InfoBarPosition.TOP_RIGHT, parent=self.window())
+        Toast.success("Transcrição concluída", f"Legenda salva em {Path(path).name}",
+                      parent=self.window(), duration=6000)
 
     def _clear_finished_worker(self) -> None:
         """Não retém uma referência Qt já destruída entre duas execuções."""
@@ -293,8 +337,7 @@ class TranscriptionPage(QWidget):
     def _failed(self, error: str) -> None:
         self._finish_controls()
         self._status(f"Erro: {error}")
-        InfoBar.error("Falha na transcrição", error, duration=9000,
-                      position=InfoBarPosition.TOP, parent=self.window())
+        Toast.error("Falha na transcrição", error, parent=self.window(), duration=9000)
 
     def _finish_controls(self) -> None:
         self.start_btn.setEnabled(True)
@@ -320,5 +363,4 @@ class TranscriptionPage(QWidget):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
     def _warn(self, message: str) -> None:
-        InfoBar.warning("Atenção", message, duration=5000,
-                        position=InfoBarPosition.TOP, parent=self.window())
+        Toast.warning("Atenção", message, parent=self.window(), duration=5000)

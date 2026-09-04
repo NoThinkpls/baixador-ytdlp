@@ -21,7 +21,7 @@ a = Analysis(
               + cublas_binaries + cudnn_binaries),
     datas=([('assets/icon.ico', 'assets')] + fw_datas + ct_datas + av_datas + pip_datas
            + cudart_datas + cublas_datas + cudnn_datas),
-    hiddenimports=(['qfluentwidgets', 'qframelesswindow'] + fw_hidden + ct_hidden + av_hidden
+    hiddenimports=(['qfluentwidgets', 'qframelesswindow', 'PySide6.QtSvg'] + fw_hidden + ct_hidden + av_hidden
                    + pip_hidden + cudart_hidden + cublas_hidden + cudnn_hidden),
     hookspath=[],
     runtime_hooks=['pyinstaller_runtime.py'],

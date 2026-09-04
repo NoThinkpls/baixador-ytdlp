@@ -5,19 +5,19 @@ import re
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QGridLayout, QHBoxLayout,
-                               QHeaderView, QInputDialog, QTableWidgetItem, QVBoxLayout, QWidget)
-from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, CheckBox, ComboBox,
-                            FluentIcon as FIF, IndeterminateProgressBar, InfoBar,
-                            InfoBarPosition, LineEdit, PrimaryPushButton, PushButton,
-                            StrongBodyLabel, SubtitleLabel, SwitchButton, TableWidget,
-                            TitleLabel, ToolTipFilter)
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileDialog, QHBoxLayout,
+                               QHeaderView, QInputDialog, QTableWidget, QTableWidgetItem,
+                               QVBoxLayout, QWidget)
 
 from ..config import Settings
 from ..downloader import DownloadOptions
 from ..probe import MediaInfo, kill_running
 from ..workers import ProbeWorker
+from . import theme
+from .components import (BusyBar, Button, Card, Divider, Headline, InsetGroup, Muted,
+                         PageHeader, PrimaryButton, ScrollColumn, SectionLabel, Select,
+                         SettingRow, Switch, TextField, Toast)
 
 CONTAINERS = [("MP4 (recomendado)", "mp4"), ("MKV (nunca reconverte)", "mkv"),
               ("WebM", "webm"), ("Manter original", "original")]
@@ -44,190 +44,254 @@ class HomePage(QWidget):
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(28, 16, 28, 20)
-        root.setSpacing(14)
+        root.setContentsMargins(28, 20, 28, 0)
+        root.setSpacing(16)
 
-        root.addWidget(TitleLabel("Baixar vídeo", self))
+        root.addWidget(PageHeader(
+            "Baixar",
+            "Cole o link de um vídeo ou de uma playlist e escolha como quer o arquivo.",
+            self))
 
-        # --- linha do link
-        url_card = CardWidget(self)
-        url_row = QHBoxLayout(url_card)
-        url_row.setContentsMargins(16, 14, 16, 14)
-        url_row.setSpacing(10)
+        page = ScrollColumn(self, spacing=14)
+        root.addWidget(page, 1)
 
-        self.url_edit = LineEdit(url_card)
-        self.url_edit.setPlaceholderText("Cole o link do vídeo ou da playlist")
+        page.add(self._link_card())
+
+        self.busy = BusyBar(self)
+        self.busy.hide()
+        page.add(self.busy)
+
+        self.info_card = self._info_card()
+        self.info_card.hide()
+        page.add(self.info_card)
+
+        self.quality_label = SectionLabel("Qualidade", self)
+        self.quality_label.hide()
+        page.add(self.quality_label)
+        page.add(self._quality_table())
+
+        page.add(SectionLabel("Saída", self))
+        page.add(self._output_group())
+
+        page.add(SectionLabel("Destino", self))
+        page.add(self._destination_group())
+
+        page.add(SectionLabel("Perfis", self))
+        page.add(self._profile_group())
+        page.add_stretch()
+
+        root.addWidget(self._action_bar())
+
+    def _link_card(self) -> Card:
+        """Bloco de entrada: é o primeiro gesto da tela, então ganha destaque."""
+        card = Card(self, padding=(16, 16, 16, 16), spacing=10, horizontal=True)
+
+        self.url_edit = TextField("Cole o link do vídeo ou da playlist", card)
         self.url_edit.setClearButtonEnabled(True)
+        self.url_edit.setMinimumHeight(42)
+        self.url_edit.setFont(theme.font(14, 400))
         self.url_edit.returnPressed.connect(self.analyze)
 
-        self.paste_btn = PushButton(FIF.PASTE, "Colar", url_card)
+        self.paste_btn = Button("Colar", "paste", "secondary", card)
+        self.paste_btn.setMinimumHeight(42)
         self.paste_btn.clicked.connect(self._paste)
-        self.analyze_btn = PrimaryPushButton(FIF.SEARCH, "Analisar", url_card)
-        self.analyze_btn.clicked.connect(self.analyze)
-        self.import_list_btn = PushButton(FIF.FOLDER, "Importar lista", url_card)
+
+        self.import_list_btn = Button("Importar lista", "document", "secondary", card)
+        self.import_list_btn.setMinimumHeight(42)
         self.import_list_btn.setToolTip("Importar até 500 links de um arquivo de texto")
         self.import_list_btn.clicked.connect(self._import_url_list)
 
-        url_row.addWidget(self.url_edit, 1)
-        url_row.addWidget(self.paste_btn)
-        url_row.addWidget(self.import_list_btn)
-        url_row.addWidget(self.analyze_btn)
-        root.addWidget(url_card)
+        self.analyze_btn = PrimaryButton("Analisar", "search", card)
+        self.analyze_btn.setMinimumHeight(42)
+        self.analyze_btn.clicked.connect(self.analyze)
 
-        self.busy = IndeterminateProgressBar(self)
-        self.busy.hide()
-        root.addWidget(self.busy)
+        card.body.addWidget(self.url_edit, 1)
+        card.body.addWidget(self.paste_btn)
+        card.body.addWidget(self.import_list_btn)
+        card.body.addWidget(self.analyze_btn)
+        return card
 
-        # --- cartão de informações da mídia
-        self.info_card = CardWidget(self)
-        info_layout = QVBoxLayout(self.info_card)
-        info_layout.setContentsMargins(16, 12, 16, 12)
-        info_layout.setSpacing(2)
-        self.media_title = StrongBodyLabel("—", self.info_card)
-        self.media_title.setWordWrap(True)
-        self.media_meta = CaptionLabel("", self.info_card)
-        info_layout.addWidget(self.media_title)
-        info_layout.addWidget(self.media_meta)
-        self.info_card.hide()
-        root.addWidget(self.info_card)
+    def _info_card(self) -> Card:
+        card = Card(self, padding=(16, 14, 16, 14), spacing=3)
+        self.media_title = Headline("—", card, wrap=True)
+        self.media_meta = Muted("", card)
+        card.body.addWidget(self.media_title)
+        card.body.addWidget(self.media_meta)
+        return card
 
-        # --- tabela de qualidades
-        self.quality_label = SubtitleLabel("Qualidade", self)
-        self.quality_label.hide()
-        root.addWidget(self.quality_label)
-
-        self.table = TableWidget(self)
+    def _quality_table(self) -> QTableWidget:
+        self.table = QTableWidget(self)
         self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels(
             ["Qualidade", "FPS", "Vídeo", "Áudio", "Container", "Tamanho", "Observações"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.verticalHeader().hide()
-        self.table.setBorderVisible(True)
-        self.table.setBorderRadius(8)
+        self.table.setFrameShape(QTableWidget.Shape.NoFrame)
+        self.table.setShowGrid(False)
         self.table.setWordWrap(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.setFont(theme.body())
+        self.table.verticalHeader().hide()
         # Altura de linha fixa: o Qt para de medir cada célula a cada repaint.
         self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
-        self.table.setAlternatingRowColors(True)
+        self.table.verticalHeader().setDefaultSectionSize(36)
         header = self.table.horizontalHeader()
+        header.setFont(theme.font(11, 700, 0.4))
+        header.setHighlightSections(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        self.table.setMinimumHeight(200)
+        self.table.setMaximumHeight(340)
         self.table.hide()
-        root.addWidget(self.table, 1)
+        return self.table
 
-        root.addWidget(self._destination_card())
+    def _output_group(self) -> InsetGroup:
+        group = InsetGroup(self)
 
-        # --- opções de saída
-        self.options_card = CardWidget(self)
-        grid = QGridLayout(self.options_card)
-        grid.setContentsMargins(16, 14, 16, 14)
-        grid.setHorizontalSpacing(14)
-        grid.setVerticalSpacing(10)
-
-        grid.addWidget(BodyLabel("Formato do arquivo", self.options_card), 0, 0)
-        self.container_combo = ComboBox(self.options_card)
+        self.container_combo = Select(group)
         for label, value in CONTAINERS:
             self.container_combo.addItem(label, userData=value)
         self._select_data(self.container_combo, self.cfg.container)
-        grid.addWidget(self.container_combo, 0, 1)
+        self.container_combo.setMinimumWidth(200)
+        group.add_row(SettingRow(
+            "Formato do arquivo",
+            "Container do vídeo final. MKV nunca reconverte.",
+            self.container_combo, group))
 
-        grid.addWidget(BodyLabel("Somente áudio", self.options_card), 0, 2)
-        self.audio_switch = SwitchButton(self.options_card)
-        self.audio_switch.setOnText("Sim")
-        self.audio_switch.setOffText("Não")
+        self.audio_switch = Switch(group)
         self.audio_switch.checkedChanged.connect(self._toggle_audio)
-        grid.addWidget(self.audio_switch, 0, 3)
+        group.add_row(SettingRow(
+            "Somente áudio",
+            "Extrai a trilha e descarta o vídeo.",
+            self.audio_switch, group))
 
-        grid.addWidget(BodyLabel("Formato do áudio", self.options_card), 0, 4)
-        self.audio_combo = ComboBox(self.options_card)
+        self.audio_combo = Select(group)
         for label, value in AUDIO_FORMATS:
             self.audio_combo.addItem(label, userData=value)
         self._select_data(self.audio_combo, self.cfg.audio_format)
         self.audio_combo.setEnabled(False)
-        grid.addWidget(self.audio_combo, 0, 5)
+        self.audio_combo.setMinimumWidth(200)
+        group.add_row(SettingRow(
+            "Formato do áudio",
+            "Vale quando “Somente áudio” está ligado.",
+            self.audio_combo, group))
 
-        # --- recorte por tempo
-        self.trim_check = CheckBox("Baixar só um trecho", self.options_card)
-        self.trim_check.setToolTip("Corta na origem: o yt-dlp baixa apenas o intervalo pedido.")
+        self.trim_check = Switch(group)
+        self.trim_check.setToolTip(
+            "Corta na origem: o yt-dlp baixa apenas o intervalo pedido.")
         self.trim_check.toggled.connect(self._toggle_trim)
-        grid.addWidget(self.trim_check, 1, 0, 1, 2)
+        group.add_row(SettingRow(
+            "Baixar só um trecho",
+            "Corta na origem — o download inteiro nem chega a acontecer.",
+            self.trim_check, group))
 
-        self.start_edit = LineEdit(self.options_card)
-        self.start_edit.setPlaceholderText("de 00:01:30")
-        self.start_edit.setFixedWidth(130)
+        self.start_edit = TextField("de 00:01:30", group)
+        self.start_edit.setFixedWidth(140)
         self.start_edit.setEnabled(False)
-        self.end_edit = LineEdit(self.options_card)
-        self.end_edit.setPlaceholderText("até 00:04:00")
-        self.end_edit.setFixedWidth(130)
+        self.end_edit = TextField("até 00:04:00", group)
+        self.end_edit.setFixedWidth(140)
         self.end_edit.setEnabled(False)
-        trim_row = QHBoxLayout()
-        trim_row.setSpacing(8)
-        trim_row.addWidget(self.start_edit)
-        trim_row.addWidget(self.end_edit)
-        trim_row.addStretch(1)
-        grid.addLayout(trim_row, 1, 2, 1, 3)
+        times = QWidget(group)
+        times_row = QHBoxLayout(times)
+        times_row.setContentsMargins(0, 0, 0, 0)
+        times_row.setSpacing(8)
+        times_row.addWidget(self.start_edit)
+        times_row.addWidget(self.end_edit)
+        self.trim_row = SettingRow(
+            "Intervalo", "Use mm:ss ou hh:mm:ss. Um dos dois já basta.", times, group)
+        self.trim_row.hide()
+        group.add_row(self.trim_row)
+        return group
 
-        self.playlist_hint = CaptionLabel("", self.options_card)
-        self.playlist_hint.setWordWrap(True)
-        grid.addWidget(self.playlist_hint, 2, 0, 1, 4)
+    def _destination_group(self) -> InsetGroup:
+        group = InsetGroup(self)
 
-        self.download_btn = PrimaryPushButton(FIF.CLOUD_DOWNLOAD, "Baixar", self.options_card)
-        self.download_btn.clicked.connect(self._emit_job)
-        self.download_btn.setEnabled(False)
-        self.download_btn.installEventFilter(ToolTipFilter(self.download_btn))
-        self.download_btn.setToolTip("Analise um link para liberar o download")
-        grid.addWidget(self.download_btn, 2, 5)
-
-        # Perfis reutilizáveis mantêm apenas escolhas de saída, sem caminhos sensíveis ou cookies.
-        grid.addWidget(BodyLabel("Perfil salvo", self.options_card), 3, 0)
-        self.profile_combo = ComboBox(self.options_card)
-        self.profile_combo.currentIndexChanged.connect(self._apply_profile)
-        grid.addWidget(self.profile_combo, 3, 1, 1, 3)
-        self.save_profile_btn = PushButton(FIF.SAVE, "Salvar perfil", self.options_card)
-        self.save_profile_btn.clicked.connect(self._save_profile)
-        self.delete_profile_btn = PushButton(FIF.DELETE, "Excluir", self.options_card)
-        self.delete_profile_btn.clicked.connect(self._delete_profile)
-        grid.addWidget(self.save_profile_btn, 3, 4)
-        grid.addWidget(self.delete_profile_btn, 3, 5)
-
-        self._refresh_profiles()
-        grid.setColumnStretch(1, 1)
-        grid.setColumnStretch(5, 1)
-        root.addWidget(self.options_card)
-
-    def _destination_card(self) -> CardWidget:
-        """Checkbox que libera a escolha da pasta de saída para este download."""
-        card = CardWidget(self)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(8)
-
-        self.folder_check = CheckBox("Escolher a pasta de saída deste download", card)
+        self.folder_check = Switch(group)
         self.folder_check.setChecked(bool(self.cfg.ask_output_dir))
         self.folder_check.toggled.connect(self._toggle_folder)
-        layout.addWidget(self.folder_check)
+        group.add_row(SettingRow(
+            "Escolher a pasta deste download",
+            "Desligado, o arquivo vai direto para a pasta padrão das configurações.",
+            self.folder_check, group))
 
-        row = QHBoxLayout()
-        row.setSpacing(10)
-        self.folder_edit = LineEdit(card)
-        self.folder_edit.setPlaceholderText("Caminho da pasta de destino")
+        row = QWidget(group)
+        column = QVBoxLayout(row)
+        column.setContentsMargins(16, 12, 16, 14)
+        column.setSpacing(8)
+        column.addWidget(Headline("Pasta de saída", row))
+
+        line = QHBoxLayout()
+        line.setSpacing(10)
+        self.folder_edit = TextField("Caminho da pasta de destino", row)
         self.folder_edit.setText(self.cfg.last_output_dir or self.cfg.download_dir)
-        self.browse_btn = PushButton(FIF.FOLDER, "Procurar", card)
+        self.browse_btn = Button("Procurar", "folder", "secondary", row)
         self.browse_btn.clicked.connect(self._browse_folder)
-        row.addWidget(self.folder_edit, 1)
-        row.addWidget(self.browse_btn)
-        layout.addLayout(row)
+        line.addWidget(self.folder_edit, 1)
+        line.addWidget(self.browse_btn)
+        column.addLayout(line)
 
-        self.folder_hint = CaptionLabel("", card)
-        self.folder_hint.setWordWrap(True)
-        layout.addWidget(self.folder_hint)
+        self.folder_hint = Muted("", row)
+        column.addWidget(self.folder_hint)
+        group.add_row(row)
 
         self._toggle_folder(self.folder_check.isChecked())
-        return card
+        return group
+
+    def _profile_group(self) -> InsetGroup:
+        group = InsetGroup(self)
+        row = QWidget(group)
+        column = QVBoxLayout(row)
+        column.setContentsMargins(16, 12, 16, 14)
+        column.setSpacing(8)
+        column.addWidget(Headline("Perfil salvo", row))
+        column.addWidget(Muted(
+            "Guarda apenas formato e modo de áudio. Caminhos e cookies nunca entram "
+            "num perfil.", row))
+
+        line = QHBoxLayout()
+        line.setSpacing(10)
+        self.profile_combo = Select(row)
+        self.profile_combo.currentIndexChanged.connect(self._apply_profile)
+        self.save_profile_btn = Button("Salvar perfil", "save", "secondary", row)
+        self.save_profile_btn.clicked.connect(self._save_profile)
+        self.delete_profile_btn = Button("Excluir", "trash", "ghost", row)
+        self.delete_profile_btn.clicked.connect(self._delete_profile)
+        line.addWidget(self.profile_combo, 1)
+        line.addWidget(self.save_profile_btn)
+        line.addWidget(self.delete_profile_btn)
+        column.addLayout(line)
+
+        group.add_row(row)
+        self._refresh_profiles()
+        return group
+
+    def _action_bar(self) -> QWidget:
+        """Barra fixa no rodapé: a ação principal nunca sai do alcance da rolagem."""
+        bar = QWidget(self)
+        column = QVBoxLayout(bar)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        column.addWidget(Divider(bar))
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 14, 0, 16)
+        row.setSpacing(16)
+        self.playlist_hint = Muted("", bar)
+        row.addWidget(self.playlist_hint, 1)
+
+        self.download_btn = PrimaryButton("Baixar", "download", bar)
+        self.download_btn.setMinimumHeight(42)
+        self.download_btn.setMinimumWidth(168)
+        self.download_btn.clicked.connect(self._emit_job)
+        self.download_btn.setEnabled(False)
+        self.download_btn.setToolTip("Analise um link para liberar o download")
+        row.addWidget(self.download_btn)
+        column.addLayout(row)
+        return bar
 
     @staticmethod
-    def _select_data(combo: ComboBox, value: str) -> None:
+    def _select_data(combo: Select, value: str) -> None:
         for i in range(combo.count()):
             if combo.itemData(i) == value:
                 combo.setCurrentIndex(i)
@@ -245,7 +309,6 @@ class HomePage(QWidget):
         if not self.folder_check.isChecked():
             self.folder_hint.setText(f"Usando a pasta padrão: {self.cfg.download_dir}")
             self.folder_edit.setText(self.cfg.last_output_dir or self.cfg.download_dir)
-
 
     def _import_url_list(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -298,12 +361,11 @@ class HomePage(QWidget):
         ]
         self.enqueue_many.emit(options)
         suffix = " (limitado a 500)" if len(URL_LIST_RE.findall(text)) > MAX_BATCH_URLS else ""
-        InfoBar.success(
+        Toast.success(
             "Lista importada",
             f"{len(options)} link(s) enviados para a fila{suffix}.",
-            duration=6000,
-            position=InfoBarPosition.TOP,
             parent=self.window(),
+            duration=6000,
         )
 
     def _profile_values(self) -> dict[str, object]:
@@ -342,12 +404,11 @@ class HomePage(QWidget):
         self.cfg.download_profiles = profiles
         self.cfg.save()
         self._refresh_profiles(name)
-        InfoBar.success(
+        Toast.success(
             "Perfil salvo",
             f"“{name}” pode ser aplicado antes do próximo download.",
-            duration=4500,
-            position=InfoBarPosition.TOP,
             parent=self.window(),
+            duration=4500,
         )
 
     def _delete_profile(self) -> None:
@@ -360,12 +421,11 @@ class HomePage(QWidget):
         ]
         self.cfg.save()
         self._refresh_profiles()
-        InfoBar.info(
+        Toast.info(
             "Perfil excluído",
             f"“{name}” foi removido desta máquina.",
-            duration=4000,
-            position=InfoBarPosition.TOP,
             parent=self.window(),
+            duration=4000,
         )
 
     def _apply_profile(self, _index: int) -> None:
@@ -415,7 +475,6 @@ class HomePage(QWidget):
         return False
 
     def _paste(self) -> None:
-        from PySide6.QtWidgets import QApplication
         text = (QApplication.clipboard().text() or "").strip()
         if text:
             self.url_edit.setText(text)
@@ -433,6 +492,7 @@ class HomePage(QWidget):
     def _toggle_trim(self, checked: bool) -> None:
         self.start_edit.setEnabled(checked)
         self.end_edit.setEnabled(checked)
+        self.trim_row.setVisible(checked)
 
     def _toggle_folder(self, checked: bool) -> None:
         self.folder_edit.setEnabled(checked)
@@ -454,7 +514,7 @@ class HomePage(QWidget):
             return self.cfg.download_dir
         path = self.folder_edit.text().strip()
         if not path:
-            self._warn("Escolha a pasta ou desmarque a caixa para usar a padrão.")
+            self._warn("Escolha a pasta ou desligue a opção para usar a padrão.")
             return None
         target = Path(path)
         try:
@@ -506,8 +566,7 @@ class HomePage(QWidget):
 
     def _on_probe_error(self, message: str) -> None:
         self._reset_analyze_button()
-        InfoBar.error("Não deu para analisar", message, duration=8000,
-                      position=InfoBarPosition.TOP, parent=self.window())
+        Toast.error("Não deu para analisar", message, parent=self.window(), duration=8000)
 
     def _on_info(self, info: MediaInfo) -> None:
         self._reset_analyze_button()
@@ -546,7 +605,11 @@ class HomePage(QWidget):
             quality = row.quality + ("  (só áudio)" if row.audio_only else "")
             cells = [quality, row.fps, row.vcodec, row.acodec, row.ext, row.size, row.note]
             for col, text in enumerate(cells):
-                self.table.setItem(r, col, QTableWidgetItem(text))
+                item = QTableWidgetItem(text)
+                if col in (1, 5):
+                    item.setTextAlignment(int(Qt.AlignmentFlag.AlignRight
+                                              | Qt.AlignmentFlag.AlignVCenter))
+                self.table.setItem(r, col, item)
 
         self.table.selectRow(0)
         self.table.setUpdatesEnabled(True)
@@ -598,5 +661,4 @@ class HomePage(QWidget):
         self.enqueue.emit(opts)
 
     def _warn(self, message: str) -> None:
-        InfoBar.warning("Atenção", message, duration=4000,
-                        position=InfoBarPosition.TOP, parent=self.window())
+        Toast.warning("Atenção", message, parent=self.window(), duration=4500)

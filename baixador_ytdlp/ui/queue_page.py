@@ -7,17 +7,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QPlainTextEdit,
-                               QVBoxLayout, QWidget)
-from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, FluentIcon as FIF, InfoBar,
-                            InfoBarPosition, ProgressBar, PushButton,
-                            SmoothScrollArea, StrongBodyLabel, TitleLabel,
-                            TransparentToolButton)
+from PySide6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QLabel, QVBoxLayout,
+                               QWidget)
 
 from ..config import Settings
 from ..downloader import DownloadOptions, Progress
 from ..probe import human_size
 from ..workers import DownloadWorker
+from . import icons, theme
+from .components import (Button, Chip, EmptyState, Headline, IconButton, ListRow, LogView,
+                         Muted, PageHeader, ProgressBar, ScrollColumn, Toast)
 
 
 def reveal(path: Path) -> None:
@@ -33,74 +32,113 @@ def reveal(path: Path) -> None:
         pass
 
 
-class JobCard(CardWidget):
+def state_badge(parent: QWidget, icon_name: str, tone: str) -> QLabel:
+    """Disco colorido com um ícone — identifica o estado do item de relance."""
+    badge = QLabel(parent)
+    badge.setFixedSize(34, 34)
+    badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    apply_badge(badge, icon_name, tone)
+    return badge
+
+
+def apply_badge(badge: QLabel, icon_name: str, tone: str) -> None:
+    # 'neutral' é o nome do tom nas etiquetas; nos tokens de cor ele é o
+    # cinza terciário, então a tradução acontece aqui e não em cada chamada.
+    tone = "text_tertiary" if tone == "neutral" else tone
+    color = theme.qcolor(tone)
+    badge.setPixmap(icons.pixmap(icon_name, theme.color(tone), 18))
+    badge.setStyleSheet(
+        f"background-color: rgba({color.red()}, {color.green()}, {color.blue()}, 0.14);"
+        f" border-radius: 17px;")
+
+
+class JobCard(ListRow):
     cancel_requested = Signal(int)
     retry_requested = Signal(int)
     transcribe_requested = Signal(str)   # caminho do arquivo
 
     def __init__(self, job_id: int, opts: DownloadOptions, parent=None):
-        super().__init__(parent)
+        super().__init__(parent, padding=(14, 12, 12, 13), spacing=10, horizontal=False)
         self.job_id = job_id
         self.files: list[Path] = []
         self.detail = ""
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(6)
+        self._state = ""
 
         top = QHBoxLayout()
-        self.title = StrongBodyLabel(opts.title or opts.url, self)
-        self.title.setWordWrap(True)
+        top.setSpacing(12)
 
-        self.transcribe_btn = TransparentToolButton(FIF.MESSAGE, self)
-        self.transcribe_btn.setToolTip("Gerar legenda deste arquivo")
+        self.badge = state_badge(self, "queue", "text_tertiary")
+        top.addWidget(self.badge, 0, Qt.AlignmentFlag.AlignTop)
+
+        texts = QVBoxLayout()
+        texts.setSpacing(3)
+        self.title = Headline(opts.title or opts.url, self, wrap=True)
+        self.status = Muted("Na fila", self)
+        texts.addWidget(self.title)
+        texts.addWidget(self.status)
+        top.addLayout(texts, 1)
+
+        self.chip = Chip("Na fila", "neutral", self)
+        top.addWidget(self.chip, 0, Qt.AlignmentFlag.AlignTop)
+
+        self.transcribe_btn = IconButton("captions", "Gerar legenda deste arquivo", self)
         self.transcribe_btn.clicked.connect(self._transcribe)
         self.transcribe_btn.hide()
 
-        self.detail_btn = TransparentToolButton(FIF.INFO, self)
-        self.detail_btn.setToolTip("Ver o erro completo")
+        self.detail_btn = IconButton("info", "Ver o erro completo", self)
         self.detail_btn.clicked.connect(self._show_detail)
         self.detail_btn.hide()
 
-        self.retry_btn = TransparentToolButton(FIF.SYNC, self)
-        self.retry_btn.setToolTip("Tentar de novo")
+        self.retry_btn = IconButton("refresh", "Tentar de novo", self)
         self.retry_btn.clicked.connect(lambda: self.retry_requested.emit(self.job_id))
         self.retry_btn.hide()
 
-        self.open_btn = TransparentToolButton(FIF.FOLDER, self)
-        self.open_btn.setToolTip("Mostrar na pasta")
+        self.open_btn = IconButton("folder", "Mostrar na pasta", self)
         self.open_btn.clicked.connect(self._reveal)
         self.open_btn.hide()
 
-        self.cancel_btn = TransparentToolButton(FIF.CLOSE, self)
-        self.cancel_btn.setToolTip("Cancelar")
+        self.cancel_btn = IconButton("close", "Cancelar", self)
         self.cancel_btn.clicked.connect(lambda: self.cancel_requested.emit(self.job_id))
 
-        top.addWidget(self.title, 1)
         for button in (self.transcribe_btn, self.detail_btn, self.retry_btn,
                        self.open_btn, self.cancel_btn):
-            top.addWidget(button)
+            top.addWidget(button, 0, Qt.AlignmentFlag.AlignTop)
 
         self.bar = ProgressBar(self)
         self.bar.setRange(0, 100)
-        self.status = CaptionLabel("Na fila", self)
-        self.status.setWordWrap(True)
 
-        layout.addLayout(top)
-        layout.addWidget(self.bar)
-        layout.addWidget(self.status)
+        self.body.addLayout(top)
+        self.body.addWidget(self.bar)
 
     # ------------------------------------------------------------- estados
+    def _set_state(self, label: str, tone: str, icon_name: str) -> None:
+        """Evita repintar etiqueta e disco a cada evento de progresso."""
+        if self._state == label:
+            return
+        self._state = label
+        self.chip.setText(label)
+        self.chip.set_tone(tone)
+        apply_badge(self.badge, icon_name, tone)
+
+    def _tint_bar(self, token: str) -> None:
+        """Barra verde ao concluir: o estado do item se lê sem ler o texto."""
+        self.bar.setStyleSheet(
+            f"QProgressBar::chunk {{ background-color: {theme.color(token)};"
+            f" border-radius: 4px; }}")
+
     def reset(self) -> None:
         self.files = []
         self.detail = ""
+        self._tint_bar("accent")
         self.bar.setValue(0)
         self.status.setText("Na fila")
+        self._set_state("Na fila", "neutral", "queue")
         self.cancel_btn.show()
         for button in (self.retry_btn, self.detail_btn, self.open_btn, self.transcribe_btn):
             button.hide()
 
     def update_progress(self, prog: Progress) -> None:
+        self._set_state("Baixando", "accent", "download")
         if prog.stage:
             self.status.setText(prog.stage)
             if prog.percent:
@@ -120,7 +158,9 @@ class JobCard(CardWidget):
 
     def mark_done(self, files: list[Path]) -> None:
         self.files = files
+        self._tint_bar("success")
         self.bar.setValue(100)
+        self._set_state("Concluído", "success", "success")
         self.cancel_btn.hide()
         self.retry_btn.hide()
         if files:
@@ -136,7 +176,11 @@ class JobCard(CardWidget):
         self.bar.setValue(0)
         self.status.setText(message)
         self.detail = detail
-        self.retry_btn.setVisible(message != "Cancelado")
+        cancelled = message == "Cancelado"
+        self._set_state("Cancelado" if cancelled else "Erro",
+                        "neutral" if cancelled else "danger",
+                        "stop" if cancelled else "error")
+        self.retry_btn.setVisible(not cancelled)
         self.detail_btn.setVisible(bool(detail))
 
     # -------------------------------------------------------------- ações
@@ -151,28 +195,28 @@ class JobCard(CardWidget):
     def _show_detail(self) -> None:
         """Mostra a saída do yt-dlp numa janela rolável.
 
-        Não usa MessageBox de propósito: aquele widget fixa a altura na construção
-        e reflowa o texto a cada resize, então um log de várias linhas empurra os
-        botões para fora do cartão — e, sendo modal com máscara, deixa o aplicativo
-        inteiro inacessível. Log é conteúdo longo; precisa de rolagem.
+        Não usa caixa de diálogo modal com altura fixa de propósito: log é
+        conteúdo longo e precisa de rolagem, senão os botões saem do cartão.
         """
         dialog = QDialog(self.window())
         dialog.setWindowTitle("Saída do yt-dlp")
-        dialog.resize(760, 460)
+        dialog.resize(780, 480)
 
         layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+        layout.addWidget(Headline("Saída do yt-dlp", dialog))
 
-        view = QPlainTextEdit(self.detail or "Sem detalhes.", dialog)
-        view.setReadOnly(True)
-        view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        view = LogView("", dialog)
+        view.setPlainText(self.detail or "Sem detalhes.")
+        view.setLineWrapMode(LogView.LineWrapMode.NoWrap)
         layout.addWidget(view, 1)
 
         buttons = QHBoxLayout()
-        copy_btn = PushButton(FIF.COPY, "Copiar tudo", dialog)
+        buttons.setSpacing(10)
+        copy_btn = Button("Copiar tudo", "document", "secondary", dialog)
         copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(self.detail))
-        close_btn = PushButton(FIF.CLOSE, "Fechar", dialog)
+        close_btn = Button("Fechar", "close", "ghost", dialog)
         close_btn.clicked.connect(dialog.accept)
         buttons.addStretch(1)
         buttons.addWidget(copy_btn)
@@ -210,32 +254,27 @@ class QueuePage(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(28, 16, 28, 20)
-        root.setSpacing(12)
+        root.setContentsMargins(28, 20, 28, 20)
+        root.setSpacing(16)
 
-        header = QHBoxLayout()
-        header.addWidget(TitleLabel("Fila", self), 1)
-        self.summary = CaptionLabel("", self)
-        header.addWidget(self.summary)
-        self.clear_btn = PushButton(FIF.BROOM, "Limpar concluídos", self)
+        header = PageHeader("Fila", "Downloads em andamento e concluídos desta sessão.", self)
+        self.summary = Muted("", header)
+        self.summary.setWordWrap(False)
+        header.add_action(self.summary)
+        self.clear_btn = Button("Limpar concluídos", "sweep", "secondary", header)
         self.clear_btn.clicked.connect(self.clear_finished)
-        header.addWidget(self.clear_btn)
-        root.addLayout(header)
+        header.add_action(self.clear_btn)
+        root.addWidget(header)
 
-        self.empty = BodyLabel("Nada na fila ainda. Analise um link na página Baixar.", self)
-        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty = EmptyState(
+            "queue", "A fila está vazia",
+            "Analise um link na página Baixar e ele aparece aqui com o progresso.", self)
         root.addWidget(self.empty, 1)
 
-        self.scroll = SmoothScrollArea(self)
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-        self.container = QWidget(self.scroll)
-        self.container.setStyleSheet("background: transparent;")
-        self.cards = QVBoxLayout(self.container)
-        self.cards.setContentsMargins(0, 0, 8, 0)
-        self.cards.setSpacing(10)
+        self.scroll = ScrollColumn(self, spacing=10)
+        self.cards = self.scroll.column
         self.cards.addStretch(1)
-        self.scroll.setWidget(self.container)
+        self.container = self.scroll.body
         self.scroll.hide()
         root.addWidget(self.scroll, 3)
 
@@ -352,8 +391,7 @@ class QueuePage(QWidget):
             job.worker = None
             job.card.mark_failed(message, detail)
             if message != "Cancelado":
-                InfoBar.error("Falha no download", message, duration=9000,
-                              position=InfoBarPosition.TOP_RIGHT, parent=self.window())
+                Toast.error("Falha no download", message, parent=self.window(), duration=9000)
         self._pump()
         self._emit_overall()
 

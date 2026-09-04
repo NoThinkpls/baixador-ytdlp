@@ -1,4 +1,4 @@
-"""Janela principal: navegação lateral no padrão Fluent do Windows 11."""
+"""Janela principal: barra unificada, navegação lateral e as páginas do app."""
 from __future__ import annotations
 
 import re
@@ -6,10 +6,8 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, QTimer
-from PySide6.QtGui import QIcon, QKeySequence, QShortcut
-from PySide6.QtWidgets import QApplication, QSizePolicy, QVBoxLayout, QWidget
-from qfluentwidgets import (FluentIcon as FIF, FluentWindow, InfoBar, InfoBarPosition,
-                            NavigationItemPosition, Theme, setTheme)
+from PySide6.QtGui import QGuiApplication, QIcon, QKeySequence, QShortcut
+from PySide6.QtWidgets import QApplication, QSizePolicy
 
 from ..config import APP_NAME, APP_VERSION, Settings
 from ..history import DOWNLOAD, TRANSCRIPTION, History, HistoryEntry
@@ -17,13 +15,15 @@ from ..taskbar import TaskbarProgress
 from ..tools import ToolManager
 from ..updater import AppUpdater, ReleaseInfo
 from ..workers import AppUpdateCheckWorker, AppUpdateDownloadWorker, GpuWorker
-from .appearance import apply_apple_discord_appearance
+from . import theme
+from .components import Toast
 from .history_page import HistoryPage
-from .media_tools_page import MediaToolsPage
 from .home_page import HomePage
+from .media_tools_page import MediaToolsPage
 from .queue_page import QueuePage
 from .settings_page import SettingsPage
 from .setup_dialog import SetupDialog
+from .shell import AppShell
 from .transcription_page import TranscriptionPage
 from .update_banner import UpdateBanner
 
@@ -33,7 +33,7 @@ HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT = 10, 11, 12, 13, 14
 HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT = 15, 16, 17
 
 
-class MainWindow(FluentWindow):
+class MainWindow(AppShell):
     def __init__(self, cfg: Settings, manager: ToolManager, icon: QIcon | None = None):
         super().__init__()
         self.cfg = cfg
@@ -71,58 +71,45 @@ class MainWindow(FluentWindow):
         # tela alta. 12 px dá margem confortável nos quatro cantos e nas laterais.
         self.BORDER_WIDTH = 12
         self.setResizeEnabled(True)
-        self.resize(1120, 760)
-        self.setMinimumSize(820, 540)
+        self.resize(1160, 780)
+        self.setMinimumSize(880, 560)
         self.setMaximumSize(16_777_215, 16_777_215)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint)
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         if icon:
             self.setWindowIcon(icon)
-        setTheme({"light": Theme.LIGHT, "dark": Theme.DARK}.get(self.cfg.theme, Theme.AUTO))
+        theme.set_mode(self.cfg.theme)
         self._refresh_appearance()
+        self.set_brand(APP_NAME, APP_VERSION, icon)
         if self.cfg.mica and sys.platform.startswith("win"):
+            self.setMicaEffectEnabled(True)
+
+        # No modo automático, seguir a troca de tema do sistema sem reabrir o app.
+        hints = QGuiApplication.styleHints()
+        signal = getattr(hints, "colorSchemeChanged", None)
+        if signal is not None:
             try:
-                self.setMicaEffectEnabled(True)
-            except Exception:
+                signal.connect(lambda *_: self._refresh_appearance())
+            except Exception:  # noqa: BLE001 - Qt sem o sinal
                 pass
-        self.navigationInterface.setExpandWidth(224)
-        # qframelesswindow expõe estes controles no Windows; os guards preservam
-        # compatibilidade com versões que adotem uma title bar diferente.
-        title_bar = getattr(self, "titleBar", None)
-        for name in ("minBtn", "maxBtn"):
-            button = getattr(title_bar, name, None)
-            if button:
-                button.show()
 
     def _init_navigation(self) -> None:
-        # Ícones escolhidos pelo que cada página faz, não por serem genéricos:
-        # nuvem-com-seta = trazer da internet; cartões empilhados = a fila de
-        # itens; balão de fala = legenda; relógio-com-seta = histórico.
-        #
-        # A Fila usava ALIGNMENT (linhas horizontais), quase idêntico ao
-        # hambúrguer que abre e fecha o próprio menu lateral. TILES desenha
-        # blocos empilhados, que é justamente como a página se parece.
-        self.addSubInterface(self.home, FIF.CLOUD_DOWNLOAD, "Baixar")
-        self.addSubInterface(self.queue, FIF.TILES, "Fila")
-        self.addSubInterface(self.transcription, FIF.MESSAGE, "Legendar")
-        self.addSubInterface(self.media_tools, FIF.SYNC, "Ferramentas")
-        self.addSubInterface(self.history_page, FIF.HISTORY, "Histórico")
-        self.addSubInterface(self.settings, FIF.SETTING, "Configurações",
-                             position=NavigationItemPosition.BOTTOM)
-
+        # Ícones escolhidos pelo que cada página faz: seta para baixo = trazer da
+        # internet; camadas empilhadas = a fila de itens; balões = legenda;
+        # controles deslizantes = ferramentas; relógio com seta = histórico.
+        self.add_nav_section("Navegação")
+        self.addSubInterface(self.home, "download", "Baixar", "1")
+        self.addSubInterface(self.queue, "queue", "Fila", "2")
+        self.addSubInterface(self.transcription, "captions", "Legendar", "3")
+        self.addSubInterface(self.media_tools, "tools", "Ferramentas", "4")
+        self.addSubInterface(self.history_page, "history", "Histórico", "5")
+        self.addSubInterface(self.settings, "settings", "Configurações", "⌘,"
+                             if sys.platform == "darwin" else "Ctrl ,", bottom=True)
 
     def _init_update_banner(self) -> None:
         """Reserva uma faixa inferior sem sobrepor o conteúdo das páginas."""
-        self.widgetLayout.removeWidget(self.stackedWidget)
-        content = QWidget(self)
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(0)
-        content_layout.addWidget(self.stackedWidget, 1)
-        content_layout.addWidget(self.update_banner, 0)
-        self.widgetLayout.addWidget(content, 1)
-        self._content_container = content
+        self.add_footer_widget(self.update_banner)
 
     def _init_shortcuts(self) -> None:
         pages = (self.home, self.queue, self.transcription, self.media_tools, self.history_page)
@@ -166,12 +153,13 @@ class MainWindow(FluentWindow):
         # A tela aparece imediatamente; a consulta de rede começa depois, em thread própria.
         QTimer.singleShot(700, self._check_app_update)
 
-
     def _refresh_appearance(self, _theme: str = "") -> None:
+        """Reaplica tokens, folha de estilo e as cores dos botões da janela."""
         app = QApplication.instance()
         if app is not None:
-            apply_apple_discord_appearance(app)
-
+            theme.apply(app)
+        self.refresh_title_bar_colors()
+        self.update()
 
     # ------------------------------------------------------- atualização app
     def _check_app_update(self, force: bool = False) -> None:
@@ -215,24 +203,14 @@ class MainWindow(FluentWindow):
             self.update_banner.show_release(release)
             return
         if manual:
-            InfoBar.info(
-                "Atualização",
-                "Você já está usando a versão mais recente.",
-                duration=5000,
-                position=InfoBarPosition.TOP_RIGHT,
-                parent=self,
-            )
+            Toast.info("Atualização", "Você já está usando a versão mais recente.",
+                       parent=self, duration=5000)
 
     def _on_app_update_check_failed(self, message: str, manual: bool) -> None:
         # Na abertura, uma indisponibilidade temporária de rede não interrompe o trabalho.
         if manual:
-            InfoBar.error(
-                "Não foi possível verificar atualizações",
-                message,
-                duration=7000,
-                position=InfoBarPosition.TOP_RIGHT,
-                parent=self,
-            )
+            Toast.error("Não foi possível verificar atualizações", message,
+                        parent=self, duration=7000)
 
     def _dismiss_app_update(self) -> None:
         if self._available_update:
@@ -266,24 +244,13 @@ class MainWindow(FluentWindow):
         self.update_banner.details.setText(
             "Atualização validada. O instalador foi aberto; fechando o aplicativo…"
         )
-        InfoBar.success(
-            "Atualização pronta",
-            "O instalador validado foi aberto.",
-            duration=4000,
-            position=InfoBarPosition.TOP_RIGHT,
-            parent=self,
-        )
+        Toast.success("Atualização pronta", "O instalador validado foi aberto.",
+                      parent=self, duration=4000)
         QTimer.singleShot(900, QApplication.quit)
 
     def _on_app_update_download_failed(self, message: str) -> None:
         self.update_banner.show_error(message)
-        InfoBar.error(
-            "Atualização não concluída",
-            message,
-            duration=7000,
-            position=InfoBarPosition.TOP_RIGHT,
-            parent=self,
-        )
+        Toast.error("Atualização não concluída", message, parent=self, duration=7000)
 
     # --------------------------------------------------------------- fluxo
     def run_setup(self, force: bool = False) -> bool:
@@ -314,31 +281,22 @@ class MainWindow(FluentWindow):
         if self.queue.add(opts):
             self.switchTo(self.queue)
             return
-        InfoBar.warning(
-            "Já está na fila",
-            "Este download já está aguardando ou em andamento.",
-            duration=4500,
-            position=InfoBarPosition.TOP_RIGHT,
-            parent=self,
-        )
+        Toast.warning("Já está na fila",
+                      "Este download já está aguardando ou em andamento.",
+                      parent=self, duration=4500)
 
     def _on_enqueue_many(self, options) -> None:
         added, skipped = self.queue.add_many(options)
         if added:
             self.switchTo(self.queue)
         if skipped:
-            InfoBar.info(
-                "Itens repetidos ignorados",
-                f"{skipped} link(s) já estavam aguardando ou baixando.",
-                duration=5000,
-                position=InfoBarPosition.TOP_RIGHT,
-                parent=self,
-            )
+            Toast.info("Itens repetidos ignorados",
+                       f"{skipped} link(s) já estavam aguardando ou baixando.",
+                       parent=self, duration=5000)
 
     def _on_finished(self, opts, files) -> None:
         title = opts.title or opts.url
-        InfoBar.success("Download concluído", title, duration=6000,
-                        position=InfoBarPosition.TOP_RIGHT, parent=self)
+        Toast.success("Download concluído", title, parent=self, duration=6000)
         if not self.cfg.history_enabled:
             return
         # A URL vem do próprio job, não do campo da tela: entre o início e o fim
@@ -397,7 +355,7 @@ class MainWindow(FluentWindow):
     def nativeEvent(self, event_type, message):  # noqa: N802 - assinatura do Qt
         """Prioriza a borda física da janela no Windows antes dos widgets filhos.
 
-        A title bar personalizada do Fluent pode consumir o hit-test dos cantos
+        A barra de título personalizada pode consumir o hit-test dos cantos
         direitos. Ao responder a WM_NCHITTEST no topo, o Windows recebe sempre o
         cursor de redimensionamento correto em todas as bordas e cantos.
         """
@@ -436,7 +394,7 @@ class MainWindow(FluentWindow):
                             if right:
                                 return True, HTRIGHT
             except Exception:
-                # O backend do Fluent continua como fallback se a consulta Win32 falhar.
+                # O backend do qframelesswindow continua como fallback.
                 pass
         return super().nativeEvent(event_type, message)
 

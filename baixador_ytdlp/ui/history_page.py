@@ -6,18 +6,18 @@ from pathlib import Path
 from PySide6.QtCore import QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
-from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, FluentIcon as FIF, PushButton,
-                            SmoothScrollArea, StrongBodyLabel, TitleLabel, TransparentToolButton)
 
 from ..config import Settings
 from ..history import History, HistoryEntry
-from .queue_page import reveal
+from .components import (Button, EmptyState, Headline, IconButton, ListRow, Muted,
+                         PageHeader, ScrollColumn)
+from .queue_page import reveal, state_badge
 
 MEDIA_SUFFIXES = {".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".flv", ".wmv",
                   ".mp3", ".m4a", ".opus", ".flac", ".wav", ".aac", ".ogg", ".m4b"}
 
 
-class HistoryCard(CardWidget):
+class HistoryCard(ListRow):
     """Uma linha do histórico. As ações são ligadas ou desligadas conforme o que
     existe no disco AGORA — não conforme o que existia quando o item foi criado."""
 
@@ -26,31 +26,23 @@ class HistoryCard(CardWidget):
     forget = Signal(object)       # HistoryEntry
 
     def __init__(self, entry: HistoryEntry, parent=None):
-        super().__init__(parent)
+        super().__init__(parent, padding=(14, 11, 12, 11), spacing=12)
         self.entry = entry
 
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 10, 16, 10)
-        layout.setSpacing(10)
-
-        badge = TransparentToolButton(
-            FIF.MESSAGE if entry.is_transcription else FIF.CLOUD_DOWNLOAD, self)
-        badge.setEnabled(False)
-        badge.setToolTip("Transcrição" if entry.is_transcription else "Download")
-        layout.addWidget(badge)
+        transcription = entry.is_transcription
+        self.body.addWidget(
+            state_badge(self, "captions" if transcription else "download",
+                        "accent" if transcription else "success"),
+            0, Qt.AlignmentFlag.AlignVCenter)
 
         texts = QVBoxLayout()
-        texts.setSpacing(1)
-        title = StrongBodyLabel(entry.title, self)
-        title.setWordWrap(True)
-        meta = CaptionLabel(self._meta_text(entry), self)
-        meta.setWordWrap(True)
-        texts.addWidget(title)
-        texts.addWidget(meta)
-        layout.addLayout(texts, 1)
+        texts.setSpacing(2)
+        texts.addWidget(Headline(entry.title, self, wrap=True))
+        texts.addWidget(Muted(self._meta_text(entry), self))
+        self.body.addLayout(texts, 1)
 
         for button in self._actions(entry):
-            layout.addWidget(button)
+            self.body.addWidget(button, 0, Qt.AlignmentFlag.AlignVCenter)
 
     # ------------------------------------------------------------------ texto
     @staticmethod
@@ -66,50 +58,43 @@ class HistoryCard(CardWidget):
         return " · ".join(partes)
 
     # ------------------------------------------------------------------ ações
-    def _actions(self, entry: HistoryEntry) -> list[TransparentToolButton]:
+    def _actions(self, entry: HistoryEntry) -> list[IconButton]:
         arquivo = entry.existing_file()
         pasta = entry.existing_folder()
 
         # "Mostrar na pasta" vale mesmo sem o arquivo: a pasta continua útil.
-        # Era isto que travava os botões — a checagem antiga exigia o arquivo,
-        # e o caminho gravado podia apontar para um temporário já removido.
-        abrir = TransparentToolButton(FIF.FOLDER, self)
-        abrir.setToolTip("Mostrar na pasta" if arquivo else "Abrir a pasta")
+        abrir = IconButton("folder", "Mostrar na pasta" if arquivo else "Abrir a pasta", self)
         abrir.setEnabled(bool(arquivo or pasta))
         abrir.clicked.connect(lambda: self._reveal(arquivo, pasta))
         botoes = [abrir]
 
         if entry.is_transcription:
-            ver = TransparentToolButton(FIF.DOCUMENT, self)
-            ver.setToolTip("Abrir a legenda")
+            ver = IconButton("document", "Abrir a legenda", self)
             ver.setEnabled(bool(arquivo))
             ver.clicked.connect(lambda: self._open_file(arquivo))
             botoes.append(ver)
 
             origem = entry.existing_source()
-            refazer = TransparentToolButton(FIF.SYNC, self)
-            refazer.setToolTip("Transcrever de novo" if origem
-                               else "A mídia de origem não está mais no lugar")
+            refazer = IconButton("refresh", "Transcrever de novo" if origem
+                                 else "A mídia de origem não está mais no lugar", self)
             refazer.setEnabled(bool(origem))
             refazer.clicked.connect(lambda: self.transcribe.emit(str(origem)))
             botoes.append(refazer)
         else:
-            legendar = TransparentToolButton(FIF.MESSAGE, self)
             pode = bool(arquivo) and arquivo.suffix.lower() in MEDIA_SUFFIXES
-            legendar.setToolTip("Gerar legenda deste arquivo" if pode
-                                else "O arquivo não está mais no lugar")
+            legendar = IconButton("captions", "Gerar legenda deste arquivo" if pode
+                                  else "O arquivo não está mais no lugar", self)
             legendar.setEnabled(pode)
             legendar.clicked.connect(lambda: self.transcribe.emit(str(arquivo)))
             botoes.append(legendar)
 
-            de_novo = TransparentToolButton(FIF.SYNC, self)
-            de_novo.setToolTip("Baixar de novo" if entry.url else "Sem link guardado")
+            de_novo = IconButton("refresh", "Baixar de novo" if entry.url
+                                 else "Sem link guardado", self)
             de_novo.setEnabled(bool(entry.url))
             de_novo.clicked.connect(lambda: self.reopen.emit(entry.url))
             botoes.append(de_novo)
 
-        remover = TransparentToolButton(FIF.DELETE, self)
-        remover.setToolTip("Remover do histórico")
+        remover = IconButton("trash", "Remover do histórico", self)
         remover.clicked.connect(lambda: self.forget.emit(entry))
         botoes.append(remover)
         return botoes
@@ -139,33 +124,27 @@ class HistoryPage(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(28, 16, 28, 20)
-        root.setSpacing(12)
+        root.setContentsMargins(28, 20, 28, 20)
+        root.setSpacing(16)
 
-        header = QHBoxLayout()
-        header.addWidget(TitleLabel("Histórico", self), 1)
-        self.summary = CaptionLabel("", self)
-        header.addWidget(self.summary)
-        clear = PushButton(FIF.BROOM, "Limpar tudo", self)
+        header = PageHeader("Histórico", "Tudo o que você baixou e legendou nesta máquina.", self)
+        self.summary = Muted("", header)
+        self.summary.setWordWrap(False)
+        header.add_action(self.summary)
+        clear = Button("Limpar tudo", "sweep", "secondary", header)
         clear.clicked.connect(self._clear)
-        header.addWidget(clear)
-        root.addLayout(header)
+        header.add_action(clear)
+        root.addWidget(header)
 
-        self.empty = BodyLabel(
-            "Nada aqui ainda. O que você baixar ou transcrever aparece nesta lista.", self)
-        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty = EmptyState(
+            "history", "Nada guardado ainda",
+            "O que você baixar ou transcrever aparece nesta lista, só na sua máquina.", self)
         root.addWidget(self.empty, 1)
 
-        self.scroll = SmoothScrollArea(self)
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-        self.container = QWidget(self.scroll)
-        self.container.setStyleSheet("background: transparent;")
-        self.cards = QVBoxLayout(self.container)
-        self.cards.setContentsMargins(0, 0, 8, 0)
-        self.cards.setSpacing(8)
+        self.scroll = ScrollColumn(self, spacing=8)
+        self.cards = self.scroll.column
         self.cards.addStretch(1)
-        self.scroll.setWidget(self.container)
+        self.container = self.scroll.body
         self.scroll.hide()
         root.addWidget(self.scroll, 4)
 

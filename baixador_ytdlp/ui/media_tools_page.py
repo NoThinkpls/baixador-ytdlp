@@ -3,15 +3,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFileDialog, QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
-from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, ComboBox,
-                            FluentIcon as FIF, InfoBar, InfoBarPosition, LineEdit,
-                            PrimaryPushButton, ProgressBar, PushButton, SubtitleLabel,
-                            TitleLabel)
+from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QVBoxLayout, QWidget
 
 from ..media_tools import MediaToolOptions, default_destination
 from ..workers import MediaToolWorker
+from .components import (BusyBar, Button, Divider, Headline, InsetGroup, Muted, PageHeader,
+                         PrimaryButton, ScrollColumn, SectionLabel, Select, SettingRow,
+                         TextField, Toast)
 
 OPERATIONS = [
     ("Recortar trecho sem recompressão", "trim"),
@@ -22,7 +20,8 @@ OPERATIONS = [
     ("Queimar legendas no vídeo", "burn"),
 ]
 SUBTITLE_FILTER = "Legendas (*.srt *.vtt *.ass);;Todos os arquivos (*.*)"
-MEDIA_FILTER = "Mídia (*.mp4 *.mkv *.webm *.mov *.avi *.m4v *.mp3 *.m4a *.wav *.flac);;Todos os arquivos (*.*)"
+MEDIA_FILTER = ("Mídia (*.mp4 *.mkv *.webm *.mov *.avi *.m4v *.mp3 *.m4a *.wav *.flac);;"
+                "Todos os arquivos (*.*)")
 
 
 class MediaToolsPage(QWidget):
@@ -38,86 +37,131 @@ class MediaToolsPage(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(28, 16, 28, 20)
-        root.setSpacing(14)
-        root.addWidget(TitleLabel("Ferramentas de mídia", self))
-        intro = CaptionLabel(
-            "As operações usam o FFmpeg instalado pelo aplicativo e sempre gravam em outro arquivo.",
-            self,
-        )
-        intro.setWordWrap(True)
-        root.addWidget(intro)
+        root.setContentsMargins(28, 20, 28, 0)
+        root.setSpacing(16)
 
-        source_card = CardWidget(self)
-        source_layout = QHBoxLayout(source_card)
-        source_layout.setContentsMargins(16, 12, 16, 12)
-        self.source_edit = LineEdit(source_card)
-        self.source_edit.setPlaceholderText("Arquivo de vídeo ou áudio de origem")
-        source_button = PushButton(FIF.FOLDER, "Procurar", source_card)
+        root.addWidget(PageHeader(
+            "Ferramentas",
+            "Edições rápidas com o FFmpeg do aplicativo. O original nunca é sobrescrito.",
+            self))
+
+        page = ScrollColumn(self, spacing=14)
+        root.addWidget(page, 1)
+
+        page.add(SectionLabel("Origem", self))
+        page.add(self._source_group())
+
+        page.add(SectionLabel("Operação", self))
+        page.add(self._operation_group())
+
+        page.add(SectionLabel("Saída", self))
+        page.add(self._destination_group())
+        page.add_stretch()
+
+        root.addWidget(self._action_bar())
+        self._operation_changed(0)
+
+    def _source_group(self) -> InsetGroup:
+        group = InsetGroup(self)
+        self.source_edit = TextField("Arquivo de vídeo ou áudio de origem", group)
+        source_button = Button("Procurar", "folder", "secondary", group)
         source_button.clicked.connect(self._choose_source)
-        source_layout.addWidget(self.source_edit, 1)
-        source_layout.addWidget(source_button)
-        root.addWidget(source_card)
+        group.add_row(self._path_row(
+            group, "Arquivo de origem",
+            "O resultado é sempre gravado em outro arquivo.",
+            self.source_edit, source_button))
+        return group
 
-        options = CardWidget(self)
-        grid = QGridLayout(options)
-        grid.setContentsMargins(16, 14, 16, 14)
-        grid.setHorizontalSpacing(12)
-        grid.setVerticalSpacing(10)
+    def _operation_group(self) -> InsetGroup:
+        group = InsetGroup(self)
 
-        grid.addWidget(BodyLabel("Operação", options), 0, 0)
-        self.operation_combo = ComboBox(options)
+        self.operation_combo = Select(group)
         for label, value in OPERATIONS:
             self.operation_combo.addItem(label, userData=value)
         self.operation_combo.currentIndexChanged.connect(self._operation_changed)
-        grid.addWidget(self.operation_combo, 0, 1, 1, 3)
+        self.operation_combo.setMinimumWidth(300)
+        group.add_row(SettingRow("O que fazer", "", self.operation_combo, group))
 
-        self.trim_label = BodyLabel("Trecho", options)
-        grid.addWidget(self.trim_label, 1, 0)
-        self.start_edit = LineEdit(options)
-        self.start_edit.setPlaceholderText("início 00:01:30")
-        self.end_edit = LineEdit(options)
-        self.end_edit.setPlaceholderText("fim 00:04:00")
-        grid.addWidget(self.start_edit, 1, 1)
-        grid.addWidget(self.end_edit, 1, 2)
+        self.start_edit = TextField("início 00:01:30", group)
+        self.start_edit.setFixedWidth(150)
+        self.end_edit = TextField("fim 00:04:00", group)
+        self.end_edit.setFixedWidth(150)
+        times = QWidget(group)
+        times_row = QHBoxLayout(times)
+        times_row.setContentsMargins(0, 0, 0, 0)
+        times_row.setSpacing(8)
+        times_row.addWidget(self.start_edit)
+        times_row.addWidget(self.end_edit)
+        self.trim_row = SettingRow("Trecho", "Corte sem recompressão, então o corte cai "
+                                             "no quadro-chave mais próximo.", times, group)
+        group.add_row(self.trim_row)
 
-        self.subtitle_label = BodyLabel("Legenda", options)
-        grid.addWidget(self.subtitle_label, 2, 0)
-        self.subtitle_edit = LineEdit(options)
-        self.subtitle_edit.setPlaceholderText("Arquivo .srt, .vtt ou .ass")
-        self.subtitle_button = PushButton(FIF.FOLDER, "Escolher", options)
+        self.subtitle_edit = TextField("Arquivo .srt, .vtt ou .ass", group)
+        self.subtitle_button = Button("Escolher", "document", "secondary", group)
         self.subtitle_button.clicked.connect(self._choose_subtitles)
-        grid.addWidget(self.subtitle_edit, 2, 1, 1, 2)
-        grid.addWidget(self.subtitle_button, 2, 3)
+        self.subtitle_row = self._path_row(
+            group, "Arquivo de legenda",
+            "A legenda é gravada dentro da imagem do vídeo.",
+            self.subtitle_edit, self.subtitle_button)
+        group.add_row(self.subtitle_row)
+        return group
 
-        grid.addWidget(BodyLabel("Salvar como", options), 3, 0)
-        self.destination_edit = LineEdit(options)
-        self.destination_edit.setPlaceholderText("A saída será sugerida ao escolher o arquivo")
-        destination_button = PushButton(FIF.SAVE, "Salvar em", options)
+    def _destination_group(self) -> InsetGroup:
+        group = InsetGroup(self)
+        self.destination_edit = TextField(
+            "A saída será sugerida ao escolher o arquivo", group)
+        destination_button = Button("Salvar em", "save", "secondary", group)
         destination_button.clicked.connect(self._choose_destination)
-        grid.addWidget(self.destination_edit, 3, 1, 1, 2)
-        grid.addWidget(destination_button, 3, 3)
-        root.addWidget(options)
+        group.add_row(self._path_row(
+            group, "Salvar como", "", self.destination_edit, destination_button))
+        return group
 
-        self.progress = ProgressBar(self)
-        self.progress.setRange(0, 0)
+    @staticmethod
+    def _path_row(parent, title: str, subtitle: str, field: TextField,
+                  button: Button) -> QWidget:
+        row = QWidget(parent)
+        column = QVBoxLayout(row)
+        column.setContentsMargins(16, 12, 16, 14)
+        column.setSpacing(8)
+        column.addWidget(Headline(title, row))
+        if subtitle:
+            column.addWidget(Muted(subtitle, row))
+        line = QHBoxLayout()
+        line.setSpacing(10)
+        line.addWidget(field, 1)
+        line.addWidget(button)
+        column.addLayout(line)
+        return row
+
+    def _action_bar(self) -> QWidget:
+        bar = QWidget(self)
+        column = QVBoxLayout(bar)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        column.addWidget(Divider(bar))
+
+        self.progress = BusyBar(bar)
         self.progress.hide()
-        root.addWidget(self.progress)
+        column.addWidget(self.progress)
 
-        bottom = QHBoxLayout()
-        self.status = CaptionLabel("Escolha uma operação para começar.", self)
-        self.status.setWordWrap(True)
-        bottom.addWidget(self.status, 1)
-        self.cancel_button = PushButton(FIF.CLOSE, "Cancelar", self)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 14, 0, 16)
+        row.setSpacing(10)
+        self.status = Muted("Escolha uma operação para começar.", bar)
+        row.addWidget(self.status, 1)
+
+        self.cancel_button = Button("Cancelar", "close", "ghost", bar)
+        self.cancel_button.setMinimumHeight(42)
         self.cancel_button.clicked.connect(self._cancel)
         self.cancel_button.hide()
-        self.run_button = PrimaryPushButton(FIF.SYNC, "Processar", self)
+        self.run_button = PrimaryButton("Processar", "sparkle", bar)
+        self.run_button.setMinimumHeight(42)
+        self.run_button.setMinimumWidth(150)
         self.run_button.clicked.connect(self._run)
-        bottom.addWidget(self.cancel_button)
-        bottom.addWidget(self.run_button)
-        root.addLayout(bottom)
-        root.addStretch(1)
-        self._operation_changed(0)
+        row.addWidget(self.cancel_button)
+        row.addWidget(self.run_button)
+        column.addLayout(row)
+        return bar
 
     def set_toolchain(self, toolchain) -> None:
         self.toolchain = toolchain
@@ -130,12 +174,8 @@ class MediaToolsPage(QWidget):
         return str(self.operation_combo.currentData())
 
     def _operation_changed(self, _index: int) -> None:
-        trim = self._operation() == "trim"
-        burn = self._operation() == "burn"
-        for widget in (self.trim_label, self.start_edit, self.end_edit):
-            widget.setVisible(trim)
-        for widget in (self.subtitle_label, self.subtitle_edit, self.subtitle_button):
-            widget.setVisible(burn)
+        self.trim_row.setVisible(self._operation() == "trim")
+        self.subtitle_row.setVisible(self._operation() == "burn")
         self._suggest_destination()
 
     def _choose_source(self) -> None:
@@ -196,7 +236,6 @@ class MediaToolsPage(QWidget):
         self.cancel_button.show()
         self.status.setText("Preparando a operação…")
 
-
     def _clear_worker(self, worker: MediaToolWorker) -> None:
         if self.worker is worker:
             self.worker = None
@@ -211,13 +250,8 @@ class MediaToolsPage(QWidget):
         self.run_button.setEnabled(True)
         self.cancel_button.hide()
         self.status.setText(f"Concluído: {Path(output).name}")
-        InfoBar.success(
-            "Processamento concluído",
-            f"Arquivo salvo em {output}",
-            duration=7000,
-            position=InfoBarPosition.TOP_RIGHT,
-            parent=self.window(),
-        )
+        Toast.success("Processamento concluído", f"Arquivo salvo em {output}",
+                      parent=self.window(), duration=7000)
 
     def _failed(self, message: str) -> None:
         self.progress.hide()
@@ -227,13 +261,8 @@ class MediaToolsPage(QWidget):
         self._show_error(message)
 
     def _show_error(self, message: str) -> None:
-        InfoBar.error(
-            "Não foi possível processar a mídia",
-            message,
-            duration=8000,
-            position=InfoBarPosition.TOP_RIGHT,
-            parent=self.window(),
-        )
+        Toast.error("Não foi possível processar a mídia", message,
+                    parent=self.window(), duration=8000)
 
     def shutdown(self) -> None:
         if self.worker and self.worker.isRunning():
