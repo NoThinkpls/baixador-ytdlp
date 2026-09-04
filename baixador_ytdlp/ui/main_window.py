@@ -145,6 +145,7 @@ class MainWindow(FluentWindow):
 
     def _wire(self) -> None:
         self.home.enqueue.connect(self._on_enqueue)
+        self.home.enqueue_many.connect(self._on_enqueue_many)
         self.queue.job_finished.connect(self._on_finished)
         self.queue.transcribe_requested.connect(self._on_transcribe)
         self.queue.overall_progress.connect(self._on_overall_progress)
@@ -297,8 +298,29 @@ class MainWindow(FluentWindow):
         self._gpu_worker.start()
 
     def _on_enqueue(self, opts) -> None:
-        self.queue.add(opts)
-        self.switchTo(self.queue)
+        if self.queue.add(opts):
+            self.switchTo(self.queue)
+            return
+        InfoBar.warning(
+            "Já está na fila",
+            "Este download já está aguardando ou em andamento.",
+            duration=4500,
+            position=InfoBarPosition.TOP_RIGHT,
+            parent=self,
+        )
+
+    def _on_enqueue_many(self, options) -> None:
+        added, skipped = self.queue.add_many(options)
+        if added:
+            self.switchTo(self.queue)
+        if skipped:
+            InfoBar.info(
+                "Itens repetidos ignorados",
+                f"{skipped} link(s) já estavam aguardando ou baixando.",
+                duration=5000,
+                position=InfoBarPosition.TOP_RIGHT,
+                parent=self,
+            )
 
     def _on_finished(self, opts, files) -> None:
         title = opts.title or opts.url

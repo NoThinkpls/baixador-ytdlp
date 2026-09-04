@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QGridLayout, QHBoxLayout,
-                               QHeaderView, QTableWidgetItem, QVBoxLayout, QWidget)
+                               QHeaderView, QInputDialog, QTableWidgetItem, QVBoxLayout, QWidget)
 from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, CheckBox, ComboBox,
                             FluentIcon as FIF, IndeterminateProgressBar, InfoBar,
                             InfoBarPosition, LineEdit, PrimaryPushButton, PushButton,
@@ -23,10 +24,13 @@ CONTAINERS = [("MP4 (recomendado)", "mp4"), ("MKV (nunca reconverte)", "mkv"),
 AUDIO_FORMATS = [("MP3", "mp3"), ("M4A / AAC", "m4a"), ("Opus", "opus"),
                  ("FLAC (sem perdas)", "flac"), ("WAV", "wav")]
 TIME_RE = re.compile(r"^(?:\d{1,2}:)?(?:[0-5]?\d:)?[0-5]?\d(?:\.\d+)?$")
+URL_LIST_RE = re.compile(r'https?://[^\s<>"\']+')
+MAX_BATCH_URLS = 500
 
 
 class HomePage(QWidget):
     enqueue = Signal(object)  # DownloadOptions
+    enqueue_many = Signal(list)  # list[DownloadOptions]
 
     def __init__(self, cfg: Settings, parent=None):
         super().__init__(parent)
@@ -60,9 +64,13 @@ class HomePage(QWidget):
         self.paste_btn.clicked.connect(self._paste)
         self.analyze_btn = PrimaryPushButton(FIF.SEARCH, "Analisar", url_card)
         self.analyze_btn.clicked.connect(self.analyze)
+        self.import_list_btn = PushButton(FIF.FOLDER, "Importar lista", url_card)
+        self.import_list_btn.setToolTip("Importar até 500 links de um arquivo de texto")
+        self.import_list_btn.clicked.connect(self._import_url_list)
 
         url_row.addWidget(self.url_edit, 1)
         url_row.addWidget(self.paste_btn)
+        url_row.addWidget(self.import_list_btn)
         url_row.addWidget(self.analyze_btn)
         root.addWidget(url_card)
 
@@ -171,6 +179,19 @@ class HomePage(QWidget):
         self.download_btn.setToolTip("Analise um link para liberar o download")
         grid.addWidget(self.download_btn, 2, 5)
 
+        # Perfis reutilizáveis mantêm apenas escolhas de saída, sem caminhos sensíveis ou cookies.
+        grid.addWidget(BodyLabel("Perfil salvo", self.options_card), 3, 0)
+        self.profile_combo = ComboBox(self.options_card)
+        self.profile_combo.currentIndexChanged.connect(self._apply_profile)
+        grid.addWidget(self.profile_combo, 3, 1, 1, 3)
+        self.save_profile_btn = PushButton(FIF.SAVE, "Salvar perfil", self.options_card)
+        self.save_profile_btn.clicked.connect(self._save_profile)
+        self.delete_profile_btn = PushButton(FIF.DELETE, "Excluir", self.options_card)
+        self.delete_profile_btn.clicked.connect(self._delete_profile)
+        grid.addWidget(self.save_profile_btn, 3, 4)
+        grid.addWidget(self.delete_profile_btn, 3, 5)
+
+        self._refresh_profiles()
         grid.setColumnStretch(1, 1)
         grid.setColumnStretch(5, 1)
         root.addWidget(self.options_card)
@@ -224,6 +245,174 @@ class HomePage(QWidget):
         if not self.folder_check.isChecked():
             self.folder_hint.setText(f"Usando a pasta padrão: {self.cfg.download_dir}")
             self.folder_edit.setText(self.cfg.last_output_dir or self.cfg.download_dir)
+
+
+    def _import_url_list(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Importar lista de links",
+            "",
+            "Listas de links (*.txt *.csv *.url);;Todos os arquivos (*.*)",
+        )
+        if not path:
+            return
+        file_path = Path(path)
+        try:
+            if file_path.stat().st_size > 5 * 1024 * 1024:
+                raise ValueError("A lista passa de 5 MB. Divida-a em arquivos menores.")
+            text = file_path.read_text(encoding="utf-8", errors="replace")
+        except (OSError, ValueError) as exc:
+            self._warn(f"Não foi possível importar a lista: {exc}")
+            return
+
+        seen: set[str] = set()
+        urls: list[str] = []
+        for match in URL_LIST_RE.findall(text):
+            url = match.rstrip(".,;:)]}>")
+            if url not in seen:
+                seen.add(url)
+                urls.append(url)
+            if len(urls) >= MAX_BATCH_URLS:
+                break
+        if not urls:
+            self._warn("Nenhum link HTTP(S) foi encontrado no arquivo.")
+            return
+
+        output_dir = self._output_dir()
+        if output_dir is None:
+            return
+        audio_only = self.audio_switch.isChecked()
+        options = [
+            DownloadOptions(
+                url=url,
+                output_dir=output_dir,
+                selector="bv*+ba/b",
+                container=self.container_combo.currentData(),
+                audio_only=audio_only,
+                audio_format=self.audio_combo.currentData(),
+                # Para não descartar itens quando a lista contém playlists.
+                playlist=True,
+                title=url,
+            )
+            for url in urls
+        ]
+        self.enqueue_many.emit(options)
+        suffix = " (limitado a 500)" if len(URL_LIST_RE.findall(text)) > MAX_BATCH_URLS else ""
+        InfoBar.success(
+            "Lista importada",
+            f"{len(options)} link(s) enviados para a fila{suffix}.",
+            duration=6000,
+            position=InfoBarPosition.TOP,
+            parent=self.window(),
+        )
+
+    def _profile_values(self) -> dict[str, object]:
+        return {
+            "container": str(self.container_combo.currentData()),
+            "audio_only": self.audio_switch.isChecked(),
+            "audio_format": str(self.audio_combo.currentData()),
+        }
+
+    def _refresh_profiles(self, selected_name: str = "") -> None:
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.clear()
+        self.profile_combo.addItem("Sem perfil salvo", userData="")
+        for profile in self.cfg.download_profiles:
+            name = str(profile.get("name") or "").strip()
+            if name:
+                self.profile_combo.addItem(name, userData=name)
+        if selected_name:
+            self._select_data(self.profile_combo, selected_name)
+        self.profile_combo.blockSignals(False)
+        self.delete_profile_btn.setEnabled(bool(selected_name))
+
+    def _save_profile(self) -> None:
+        name, accepted = QInputDialog.getText(
+            self, "Salvar perfil", "Nome do perfil (ex.: MP3, Melhor qualidade, Shorts):"
+        )
+        name = name.strip()
+        if not accepted or not name:
+            return
+        profile = {"name": name, **self._profile_values()}
+        profiles = [
+            item for item in self.cfg.download_profiles
+            if str(item.get("name") or "").casefold() != name.casefold()
+        ]
+        profiles.append(profile)
+        self.cfg.download_profiles = profiles
+        self.cfg.save()
+        self._refresh_profiles(name)
+        InfoBar.success(
+            "Perfil salvo",
+            f"“{name}” pode ser aplicado antes do próximo download.",
+            duration=4500,
+            position=InfoBarPosition.TOP,
+            parent=self.window(),
+        )
+
+    def _delete_profile(self) -> None:
+        name = str(self.profile_combo.currentData() or "")
+        if not name:
+            return
+        self.cfg.download_profiles = [
+            item for item in self.cfg.download_profiles
+            if str(item.get("name") or "") != name
+        ]
+        self.cfg.save()
+        self._refresh_profiles()
+        InfoBar.info(
+            "Perfil excluído",
+            f"“{name}” foi removido desta máquina.",
+            duration=4000,
+            position=InfoBarPosition.TOP,
+            parent=self.window(),
+        )
+
+    def _apply_profile(self, _index: int) -> None:
+        name = str(self.profile_combo.currentData() or "")
+        self.delete_profile_btn.setEnabled(bool(name))
+        if not name:
+            return
+        profile = next(
+            (item for item in self.cfg.download_profiles if item.get("name") == name),
+            None,
+        )
+        if not profile:
+            return
+        self._select_data(self.container_combo, str(profile.get("container") or "mp4"))
+        self._select_data(self.audio_combo, str(profile.get("audio_format") or "mp3"))
+        self.audio_switch.setChecked(bool(profile.get("audio_only")))
+
+    def _has_space_for_download(
+        self,
+        output_dir: str,
+        *,
+        audio_only: bool,
+        selected_row: int,
+    ) -> bool:
+        """Bloqueia início quando a estimativa conhecida não cabe com margem de segurança."""
+        if not self.info:
+            return True
+        if audio_only:
+            estimated = max((row.estimated_size for row in self.info.rows if row.audio_only), default=0)
+        elif selected_row > 0 and selected_row - 1 < len(self.info.rows):
+            estimated = self.info.rows[selected_row - 1].estimated_size
+        else:
+            estimated = max((row.estimated_size for row in self.info.rows if not row.audio_only), default=0)
+        if not estimated:
+            return True
+        try:
+            free = shutil.disk_usage(output_dir).free
+        except OSError:
+            return True
+        required = int(estimated * 1.25) + 100 * 1024 * 1024
+        if free >= required:
+            return True
+        self._warn(
+            "Espaço livre insuficiente para a estimativa deste download "
+            f"({estimated / 1024**2:.0f} MB + margem)."
+        )
+        return False
 
     def _paste(self) -> None:
         from PySide6.QtWidgets import QApplication
@@ -389,6 +578,10 @@ class HomePage(QWidget):
                 audio_only = True
             else:
                 selector = row.selector
+
+        if not self._has_space_for_download(
+                output_dir, audio_only=audio_only, selected_row=row_index):
+            return
 
         opts = DownloadOptions(
             url=self.url_edit.text().strip(),

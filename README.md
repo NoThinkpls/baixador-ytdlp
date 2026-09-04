@@ -60,6 +60,11 @@ disponíveis e baixa na melhor por padrão.
   keyframe — não baixa o vídeo inteiro para depois cortar.
 - **Fila com downloads paralelos**, progresso, velocidade, ETA, cancelamento, *tentar de
   novo* nos itens que falharam e a saída completa do yt-dlp copiável em um clique.
+- **Importação de listas.** Escolha um `.txt`, `.csv` ou `.url` com até 500 links: o
+  programa extrai os URLs, elimina repetições da própria lista e envia tudo para a fila.
+- **Perfis de saída.** Salve combinações como MP3, melhor qualidade ou áudio; elas ficam só
+  no `settings.json` local. Antes de iniciar, o app também compara a estimativa conhecida
+  de tamanho com o espaço livre e evita duplicar o mesmo item enquanto ele já está na fila.
 - **Histórico** dos downloads **e** das transcrições, cada tipo com o seu conjunto de
   ações: abrir a pasta, gerar legenda, baixar de novo, abrir a legenda, transcrever de novo.
 - **Playlists** em subpasta numerada, com histórico opcional para não rebaixar o que já veio.
@@ -103,6 +108,8 @@ programa aparecer quando você digita o nome na busca do Windows.
   de permitir sua execução. Não há instalação silenciosa.
 - **Checagem manual.** Em *Configurações → Atualizações do aplicativo*, **Verificar agora**
   ignora o intervalo configurado.
+- **Fila mais produtiva.** Importe listas de URLs, salve perfis de saída e receba um bloqueio
+  antecipado quando a estimativa conhecida de download não cabe no espaço livre.
 
 ## Atualizações do aplicativo
 

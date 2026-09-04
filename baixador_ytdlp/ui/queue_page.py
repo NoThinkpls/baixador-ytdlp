@@ -243,7 +243,25 @@ class QueuePage(QWidget):
         self.toolchain = toolchain
 
     # ------------------------------------------------------------- fila
-    def add(self, opts: DownloadOptions) -> None:
+    def add(self, opts: DownloadOptions) -> bool:
+        """Inclui um job, exceto se o mesmo item já estiver pendente ou em andamento."""
+        added = self._add(opts)
+        if added:
+            self._pump()
+        return added
+
+    def add_many(self, options: list[DownloadOptions]) -> tuple[int, int]:
+        """Importa uma lista e agenda todos os novos jobs de uma única vez."""
+        added = sum(1 for opts in options if self._add(opts))
+        if added:
+            self._pump()
+        return added, len(options) - added
+
+    def _add(self, opts: DownloadOptions) -> bool:
+        if any(self._same_download(job.opts, opts)
+               for job in self.jobs.values()
+               if job.active or job.id in self.pending):
+            return False
         job_id = self._next_id
         self._next_id += 1
         card = JobCard(job_id, opts, self.container)
@@ -255,7 +273,20 @@ class QueuePage(QWidget):
         self.pending.append(job_id)
         self.empty.hide()
         self.scroll.show()
-        self._pump()
+        return True
+
+    @staticmethod
+    def _same_download(first: DownloadOptions, second: DownloadOptions) -> bool:
+        return (
+            first.url.strip() == second.url.strip()
+            and Path(first.output_dir) == Path(second.output_dir)
+            and first.selector == second.selector
+            and first.container == second.container
+            and first.audio_only == second.audio_only
+            and first.audio_format == second.audio_format
+            and first.section_start == second.section_start
+            and first.section_end == second.section_end
+        )
 
     def retry(self, job_id: int) -> None:
         job = self.jobs.get(job_id)

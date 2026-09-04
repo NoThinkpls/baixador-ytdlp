@@ -77,6 +77,8 @@ class Settings:
     cookies_file: str = ""           # cookies.txt Netscape; tem prioridade sobre o navegador
     extractor_args: str = ""         # ex.: youtube:player_client=default,web_safari
     filename_template: str = "%(title).180B [%(id)s].%(ext)s"
+    # Perfis de saída salvos na página Baixar; somente preferências, nunca credenciais.
+    download_profiles: list[dict[str, object]] = field(default_factory=list)
     archive_enabled: bool = False    # não rebaixar o que já foi baixado
     theme: str = "auto"              # auto | light | dark
     mica: bool = True
