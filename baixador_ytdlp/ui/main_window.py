@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt
@@ -22,7 +23,10 @@ from .settings_page import SettingsPage
 from .setup_dialog import SetupDialog
 from .transcription_page import TranscriptionPage
 
-URL_RE = re.compile(r"https?://\S+")
+URL_RE = re.compile(r"https?://\\S+")
+WM_NCHITTEST = 0x0084
+HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT = 10, 11, 12, 13, 14
+HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT = 15, 16, 17
 
 
 class MainWindow(FluentWindow):
@@ -54,8 +58,9 @@ class MainWindow(FluentWindow):
         # menores, mas aproveita telas grandes sem conteúdo fixo.
         # A borda de arrasto padrão do qframelesswindow é de 5 px, o que torna os
         # cantos quase impossíveis de pegar com o mouse, ainda mais com escala de
-        # tela alta. 10 px dá margem confortável nos quatro cantos e nas laterais.
-        self.BORDER_WIDTH = 10
+        # tela alta. 12 px dá margem confortável nos quatro cantos e nas laterais.
+        self.BORDER_WIDTH = 12
+        self.setResizeEnabled(True)
         self.resize(1120, 760)
         self.setMinimumSize(820, 540)
         self.setMaximumSize(16_777_215, 16_777_215)
@@ -216,6 +221,52 @@ class MainWindow(FluentWindow):
             self.taskbar.set_value(handle, percent)
 
     # ------------------------------------------------------- área de transf.
+    def nativeEvent(self, event_type, message):  # noqa: N802 - assinatura do Qt
+        """Prioriza a borda física da janela no Windows antes dos widgets filhos.
+
+        A title bar personalizada do Fluent pode consumir o hit-test dos cantos
+        direitos. Ao responder a WM_NCHITTEST no topo, o Windows recebe sempre o
+        cursor de redimensionamento correto em todas as bordas e cantos.
+        """
+        if sys.platform.startswith("win") and not self.isMaximized() and not self.isFullScreen():
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                msg = wintypes.MSG.from_address(message.__int__())
+                if msg.message == WM_NCHITTEST:
+                    point = wintypes.POINT()
+                    hwnd = int(self.winId())
+                    if (ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
+                            and ctypes.windll.user32.ScreenToClient(hwnd, ctypes.byref(point))):
+                        rect = wintypes.RECT()
+                        if ctypes.windll.user32.GetClientRect(hwnd, ctypes.byref(rect)):
+                            border = max(8, int(self.BORDER_WIDTH))
+                            left = point.x <= rect.left + border
+                            right = point.x >= rect.right - border - 1
+                            top = point.y <= rect.top + border
+                            bottom = point.y >= rect.bottom - border - 1
+                            if left and top:
+                                return True, HTTOPLEFT
+                            if right and top:
+                                return True, HTTOPRIGHT
+                            if left and bottom:
+                                return True, HTBOTTOMLEFT
+                            if right and bottom:
+                                return True, HTBOTTOMRIGHT
+                            if top:
+                                return True, HTTOP
+                            if bottom:
+                                return True, HTBOTTOM
+                            if left:
+                                return True, HTLEFT
+                            if right:
+                                return True, HTRIGHT
+            except Exception:
+                # O backend do Fluent continua como fallback se a consulta Win32 falhar.
+                pass
+        return super().nativeEvent(event_type, message)
+
     def event(self, event: QEvent):  # noqa: N802 - assinatura do Qt
         if event.type() == QEvent.Type.WindowActivate and self.cfg.clipboard_watch:
             self._check_clipboard()
