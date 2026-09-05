@@ -26,11 +26,10 @@ from .setup_dialog import SetupDialog
 from .shell import AppShell
 from .transcription_page import TranscriptionPage
 from .update_banner import UpdateBanner
+from .windowing import _resize_hit_test
 
 URL_RE = re.compile(r"https?://\S+")
 WM_NCHITTEST = 0x0084
-HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT = 10, 11, 12, 13, 14
-HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT = 15, 16, 17
 
 
 class MainWindow(AppShell):
@@ -70,7 +69,6 @@ class MainWindow(AppShell):
         # cantos quase impossíveis de pegar com o mouse, ainda mais com escala de
         # tela alta. 12 px dá margem confortável nos quatro cantos e nas laterais.
         self.BORDER_WIDTH = 12
-        self.setResizeEnabled(True)
         self.resize(1160, 780)
         # As páginas já rolam verticalmente; permitir 760 px dá espaço para
         # notebooks menores sem cortar controles. A barra lateral recolhe para
@@ -81,6 +79,10 @@ class MainWindow(AppShell):
         flags = self.windowFlags() | Qt.WindowType.Window | Qt.WindowType.WindowMinMaxButtonsHint
         flags &= ~Qt.WindowType.MSWindowsFixedSizeDialogHint
         self.setWindowFlags(flags)
+        # setWindowFlags pode recriar a janela nativa e descartar a preferência
+        # do qframelesswindow. Reaplicamos depois dos flags e também no primeiro
+        # showEvent para não depender da ordem interna da biblioteca.
+        self.setResizeEnabled(True)
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         if icon:
             self.setWindowIcon(icon)
@@ -90,6 +92,7 @@ class MainWindow(AppShell):
         self.set_brand(APP_NAME, APP_VERSION, icon)
         if self.cfg.mica and sys.platform.startswith("win"):
             self.setMicaEffectEnabled(True)
+        self._enable_windows_resize_style()
 
         # No modo automático, seguir a troca de tema do sistema sem reabrir o app.
         hints = QGuiApplication.styleHints()
@@ -99,6 +102,63 @@ class MainWindow(AppShell):
                 signal.connect(lambda *_: self._refresh_appearance())
             except Exception:  # noqa: BLE001 - Qt sem o sinal
                 pass
+
+    def showEvent(self, event):  # noqa: N802 - assinatura do Qt
+        super().showEvent(event)
+        if sys.platform.startswith("win"):
+            # O qframelesswindow termina a criação do HWND durante o showEvent.
+            # Rodar no próximo ciclo garante que a moldura redimensionável não
+            # seja removida depois da nossa configuração inicial.
+            QTimer.singleShot(0, self._enable_windows_resize_style)
+
+    def _enable_windows_resize_style(self) -> None:
+        """Garante que a janela frameless mantenha bordas arrastáveis no Windows."""
+        if not sys.platform.startswith("win"):
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            hwnd = int(self.winId())
+            if not hwnd:
+                return
+            user32 = ctypes.windll.user32
+            get_style = user32.GetWindowLongW
+            get_style.argtypes = (wintypes.HWND, ctypes.c_int)
+            get_style.restype = ctypes.c_long
+            set_style = user32.SetWindowLongW
+            set_style.argtypes = (wintypes.HWND, ctypes.c_int, ctypes.c_long)
+            set_style.restype = ctypes.c_long
+            set_window_pos = user32.SetWindowPos
+            set_window_pos.argtypes = (
+                wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+                ctypes.c_int, ctypes.c_int, wintypes.UINT,
+            )
+            set_window_pos.restype = wintypes.BOOL
+
+            GWL_STYLE = -16
+            WS_THICKFRAME = 0x00040000
+            WS_MINIMIZEBOX = 0x00020000
+            WS_MAXIMIZEBOX = 0x00010000
+            SWP_NOSIZE = 0x0001
+            SWP_NOMOVE = 0x0002
+            SWP_NOZORDER = 0x0004
+            SWP_NOACTIVATE = 0x0010
+            SWP_FRAMECHANGED = 0x0020
+
+            style = get_style(hwnd, GWL_STYLE)
+            wanted = style | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
+            if wanted != style:
+                set_style(hwnd, GWL_STYLE, wanted)
+                set_window_pos(
+                    hwnd, None, 0, 0, 0, 0,
+                    SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+                )
+            self.setResizeEnabled(True)
+        except Exception:
+            # A rotina só é complementar; o WM_NCHITTEST abaixo continua como
+            # o caminho principal para as bordas e os cantos.
+            pass
 
     def _init_navigation(self) -> None:
         # Ícones escolhidos pelo que cada página faz: seta para baixo = trazer da
@@ -401,27 +461,12 @@ class MainWindow(AppShell):
                         cursor = wintypes.POINT()
                         ctypes.windll.user32.GetCursorPos(ctypes.byref(cursor))
                         point_x, point_y = cursor.x, cursor.y
-                        left = point_x <= rect.left + border
-                        right = point_x >= rect.right - border - 1
-                        top = point_y <= rect.top + border
-                        bottom = point_y >= rect.bottom - border - 1
-                        if left or right or top or bottom:
-                            if left and top:
-                                return True, HTTOPLEFT
-                            if right and top:
-                                return True, HTTOPRIGHT
-                            if left and bottom:
-                                return True, HTBOTTOMLEFT
-                            if right and bottom:
-                                return True, HTBOTTOMRIGHT
-                            if top:
-                                return True, HTTOP
-                            if bottom:
-                                return True, HTBOTTOM
-                            if left:
-                                return True, HTLEFT
-                            if right:
-                                return True, HTRIGHT
+                        hit = _resize_hit_test(
+                            rect.left, rect.top, rect.right, rect.bottom,
+                            point_x, point_y, border,
+                        )
+                        if hit is not None:
+                            return True, hit
             except Exception:
                 # O backend do qframelesswindow continua como fallback.
                 pass
