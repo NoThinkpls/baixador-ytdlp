@@ -158,6 +158,10 @@ class ToolManager:
         # (caminho, mtime, tamanho) -> versão. Evita repetir `--version`, que
         # custa de 100 ms a 1 s por binário em disco lento ou com antivírus ativo.
         self._version_cache: dict[tuple[str, int, int], str] = {}
+        # O mesmo cache é persistido no estado. Na abertura seguinte não há
+        # motivo para iniciar três processos só para descobrir versões de
+        # executáveis que não mudaram desde a última sessão.
+        self._state_dirty = False
 
     # ---------------------------------------------------------------- estado
     def _load_state(self) -> dict:
@@ -169,6 +173,7 @@ class ToolManager:
     def _save_state(self) -> None:
         STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
         STATE_PATH.write_text(json.dumps(self.state, indent=2), encoding="utf-8")
+        self._state_dirty = False
 
     # ------------------------------------------------------- cache de versão
     def _cached_version(self, path: Path, reader: Callable[[Path], str]) -> str:
@@ -176,10 +181,42 @@ class ToolManager:
             stat = path.stat()
         except OSError:
             return ""
-        key = (str(path), int(stat.st_mtime), stat.st_size)
-        if key not in self._version_cache:
-            self._version_cache[key] = reader(path)
-        return self._version_cache[key]
+        identity = str(path.resolve())
+        mtime_ns = stat.st_mtime_ns
+        key = (identity, mtime_ns, stat.st_size)
+        cached = self._version_cache.get(key)
+        if cached is not None:
+            return cached
+
+        persistent = self.state.get("tool_version_cache")
+        if not isinstance(persistent, dict):
+            persistent = {}
+            self.state["tool_version_cache"] = persistent
+            self._state_dirty = True
+        entry = persistent.get(identity)
+        if isinstance(entry, dict) and (
+            entry.get("mtime_ns") == mtime_ns
+            and entry.get("size") == stat.st_size
+            and isinstance(entry.get("version"), str)
+            and entry["version"]
+        ):
+            version = entry["version"]
+        else:
+            if entry is not None:
+                persistent.pop(identity, None)
+                self._state_dirty = True
+            version = reader(path)
+            # Não persiste uma falha temporária: uma próxima abertura deve poder
+            # consultar o executável novamente em vez de esconder o problema.
+            if version:
+                persistent[identity] = {
+                    "mtime_ns": mtime_ns,
+                    "size": stat.st_size,
+                    "version": version,
+                }
+                self._state_dirty = True
+        self._version_cache[key] = version
+        return version
 
     # --------------------------------------------------------------- caminhos
     def _resolve(self, name: str) -> Path:
@@ -240,6 +277,13 @@ class ToolManager:
             while chunk := fh.read(1 << 20):
                 digest.update(chunk)
         return digest.hexdigest()
+
+    @staticmethod
+    def _extract_zip_member(zf: zipfile.ZipFile, member: str, destination: Path) -> None:
+        """Extrai sem manter um executável inteiro duplicado na memória."""
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(member) as src, open(destination, "wb") as dst:
+            shutil.copyfileobj(src, dst, length=1 << 20)
 
     def _should_check(self, key: str, hours: int) -> bool:
         last = self.state.get(f"{key}_checked_at")
@@ -447,10 +491,8 @@ class ToolManager:
                 for member in zf.namelist():
                     name = Path(member).name
                     if name.lower() in wanted:
-                        with zf.open(member) as src:
-                            staged = self.bin_dir / f"{name}.new"
-                            staged.parent.mkdir(parents=True, exist_ok=True)
-                            staged.write_bytes(src.read())
+                        staged = self.bin_dir / f"{name}.new"
+                        self._extract_zip_member(zf, member, staged)
                         self._replace(staged, self.bin_dir / name)
 
         self.state["ffmpeg_stamp"] = stamp
@@ -549,8 +591,7 @@ class ToolManager:
                     if not member:
                         raise RuntimeError(f"{DENO_EXE} não veio no pacote")
                     staged = self.bin_dir / f"{DENO_EXE}.new"
-                    with zf.open(member) as src:
-                        staged.write_bytes(src.read())
+                    self._extract_zip_member(zf, member, staged)
                 self._replace(staged, target)
         except Exception as exc:  # noqa: BLE001 - runtime JS é opcional
             get_logger().warning("Deno: falha ao instalar %s (%s: %s)",
@@ -608,11 +649,14 @@ class ToolManager:
         self.ensure_ytdlp(progress, check_now)
         self.ensure_ffmpeg(progress, check_now)
         self.ensure_deno(progress, check_now)
-        # O motor do legendador vem no instalador. A checagem apenas ativa suas
-        # DLLs e preserva o fallback seguro para desenvolvimento.
+        # O motor do legendador vem no instalador. A checagem confirma sua
+        # disponibilidade e preserva o fallback seguro para desenvolvimento.
         self.runtime_info = self.runtime.ensure(progress, check_now)
         tc = self.toolchain()
         if not tc.ok:
             raise RuntimeError("As dependências não ficaram disponíveis após a instalação.")
+        if self._state_dirty:
+            self._save_state()
+            self._state_dirty = False
         progress("Tudo pronto", 100)
         return tc
