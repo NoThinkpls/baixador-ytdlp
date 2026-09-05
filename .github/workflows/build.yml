@@ -218,10 +218,10 @@ jobs:
           test -d "$app"
           test -x "$executable"
           lipo -archs "$executable" | grep -qw arm64
-          # A extensão MLX tem nomes internos diferentes entre versões; exigir
-          # qualquer módulo do pacote evita um falso negativo, sem deixar o
-          # backend opcional escapar do bundle.
-          find "$app" -type f -path '*mlx*' | grep -q .
+          # A extensão MLX tem nomes internos diferentes entre versões. Usar
+          # -quit evita que o find retorne erro de pipe ao primeiro resultado.
+          mlx_file="$(find "$app" -type f -path '*mlx*' -print -quit)"
+          test -n "$mlx_file"
           echo "OK: $app"
 
       - name: Empacotar o aplicativo
