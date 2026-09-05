@@ -1,33 +1,15 @@
-"""Casca da janela: barra de título unificada + navegação lateral.
-
-O aplicativo não usa mais a `FluentWindow`. A estrutura aqui é a que se vê no
-Discord e nos apps de referência da Apple:
-
-    ┌──────────────────────────────────────────────┐
-    │ marca + versão                    – ▢ ✕      │  barra unificada
-    ├───────────────┬──────────────────────────────┤
-    │  NAVEGAÇÃO    │  ╭───────────────────────────│  painel de conteúdo com
-    │  ▍ Baixar     │  │                           │  canto arredondado
-    │    Fila       │  │                           │
-    │    …          │  │                           │
-    │               │  │                           │
-    │    Ajustes    │  │                           │
-    └───────────────┴──────────────────────────────┘
-
-A API pública (`addSubInterface`, `switchTo`, `stackedWidget`) reproduz a que a
-janela principal já usava, então nenhuma lógica de tela precisou mudar.
-"""
+"""Casca da janela: barra de título unificada e navegação lateral recolhível."""
 from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen
+from PySide6.QtCore import QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (QAbstractButton, QHBoxLayout, QLabel, QSizePolicy,
                                QStackedWidget, QVBoxLayout, QWidget)
 
 from . import icons, theme
-from .components import Chip, SectionLabel
+from .components import Chip, IconButton, SectionLabel
 
 try:  # o qfluentwidgets já traz o qframelesswindow como dependência
     from qframelesswindow import FramelessWindow as _Base
@@ -36,14 +18,14 @@ except Exception:  # pragma: no cover - fallback defensivo
 
 
 class NavItem(QAbstractButton):
-    """Item da barra lateral: indicador na borda, ícone, rótulo e atalho."""
+    """Item lateral com rótulo no modo amplo e ícone no modo compacto."""
 
     HEIGHT = 40
 
-    def __init__(self, icon_name: str, text: str, shortcut: str = "", parent=None):
+    def __init__(self, icon_name: str, text: str, parent=None):
         super().__init__(parent)
         self._icon_name = icon_name
-        self._shortcut = shortcut
+        self._compact = False
         self.setText(text)
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -53,8 +35,15 @@ class NavItem(QAbstractButton):
         self.pressed.connect(self.update)
         self.released.connect(self.update)
 
+    def set_compact(self, compact: bool) -> None:
+        self._compact = compact
+        self.setToolTip(self.text() if compact else "")
+        self.updateGeometry()
+        self.update()
+
     def sizeHint(self) -> QSize:
-        return QSize(theme.SIDEBAR_WIDTH, self.HEIGHT)
+        width = theme.SIDEBAR_COLLAPSED_WIDTH if self._compact else theme.SIDEBAR_WIDTH
+        return QSize(width, self.HEIGHT)
 
     def paintEvent(self, _event):  # noqa: N802 - assinatura do Qt
         painter = QPainter(self)
@@ -63,7 +52,6 @@ class NavItem(QAbstractButton):
 
         active = self.isChecked()
         hovered = self.underMouse()
-
         pill = QRectF(8, 2, self.width() - 16, self.height() - 4)
         if active:
             painter.setBrush(theme.qcolor("accent_soft"))
@@ -73,31 +61,23 @@ class NavItem(QAbstractButton):
             painter.drawRoundedRect(pill, 9, 9)
 
         if active:
-            # Marca fina na borda da coluna — o indicador de item ativo do Discord.
             painter.setBrush(theme.qcolor("accent"))
             painter.drawRoundedRect(
                 QRectF(0, (self.height() - 20) / 2, 3.5, 20), 2, 2)
 
         icon_tone = "accent" if active else ("text" if hovered else "text_secondary")
-        painter.drawPixmap(20, int((self.height() - 18) / 2),
+        icon_x = int((self.width() - 18) / 2) if self._compact else 20
+        painter.drawPixmap(icon_x, int((self.height() - 18) / 2),
                            icons.pixmap(self._icon_name, theme.color(icon_tone), 18))
 
-        font = theme.font(13, 600 if active else 500)
-        painter.setFont(font)
+        if self._compact:
+            return
+        painter.setFont(theme.font(13, 600 if active else 500))
         painter.setPen(QPen(theme.qcolor(
             "text" if (active or hovered) else "text_secondary")))
-        painter.drawText(QRectF(50, 0, self.width() - 84, self.height()),
+        painter.drawText(QRectF(50, 0, self.width() - 60, self.height()),
                          int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
                          self.text())
-
-        if self._shortcut:
-            painter.setFont(theme.font(11, 600))
-            painter.setPen(QPen(theme.qcolor("text_tertiary")))
-            metrics = QFontMetrics(painter.font())
-            width = metrics.horizontalAdvance(self._shortcut)
-            painter.drawText(QRectF(self.width() - 22 - width, 0, width, self.height()),
-                             int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
-                             self._shortcut)
 
     def enterEvent(self, event):  # noqa: N802 - assinatura do Qt
         self.update()
@@ -109,38 +89,86 @@ class NavItem(QAbstractButton):
 
 
 class Sidebar(QWidget):
-    """Coluna de navegação. Itens no topo, ajustes fixados embaixo."""
+    """Navegação lateral que pode recolher sem ocultar páginas ou atalhos."""
+
+    collapsedChanged = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("sidebar")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._collapsed = False
+        self._sections: list[QLabel] = []
+        self._items: list[NavItem] = []
         self.setFixedWidth(theme.SIDEBAR_WIDTH)
 
         self._column = QVBoxLayout(self)
-        self._column.setContentsMargins(0, 10, 0, 12)
+        self._column.setContentsMargins(0, 8, 0, 12)
         self._column.setSpacing(2)
+
+        header = QWidget(self)
+        header.setFixedHeight(38)
+        self._header_layout = QHBoxLayout(header)
+        self._header_layout.setContentsMargins(14, 0, 14, 0)
+        self._header_layout.setSpacing(0)
+        self.toggle = IconButton("sidebar-collapse", "Recolher navegação", header,
+                                 size=32, icon_size=18)
+        self.toggle.clicked.connect(self.toggle_collapsed)
+        self._header_layout.addWidget(self.toggle)
+        self._header_layout.addStretch(1)
+        self._column.addWidget(header)
+        self._top_count = 1
         self._column.addStretch(1)
-        self._top_count = 0
+
+    @property
+    def collapsed(self) -> bool:
+        return self._collapsed
+
+    def toggle_collapsed(self) -> None:
+        self.set_collapsed(not self._collapsed)
+
+    def set_collapsed(self, collapsed: bool, emit: bool = True) -> None:
+        collapsed = bool(collapsed)
+        if collapsed == self._collapsed:
+            return
+        self._collapsed = collapsed
+        width = theme.SIDEBAR_COLLAPSED_WIDTH if collapsed else theme.SIDEBAR_WIDTH
+        self.setFixedWidth(width)
+        margin = 16 if collapsed else 14
+        self._header_layout.setContentsMargins(margin, 0, margin, 0)
+        self.toggle.set_icon_name("sidebar-expand" if collapsed else "sidebar-collapse")
+        self.toggle.setToolTip("Expandir navegação" if collapsed else "Recolher navegação")
+        for label in self._sections:
+            label.setVisible(not collapsed)
+        for item in self._items:
+            item.set_compact(collapsed)
+        if emit:
+            self.collapsedChanged.emit(collapsed)
 
     def add_section(self, text: str) -> QLabel:
         label = SectionLabel(text, self)
         label.setContentsMargins(20, 12, 20, 6)
+        label.setVisible(not self._collapsed)
         self._column.insertWidget(self._top_count, label)
         self._top_count += 1
+        self._sections.append(label)
         return label
 
     def add_item(self, item: NavItem, bottom: bool = False) -> NavItem:
+        item.set_compact(self._collapsed)
         if bottom:
             self._column.addWidget(item)
         else:
             self._column.insertWidget(self._top_count, item)
             self._top_count += 1
+        self._items.append(item)
         return item
 
 
 class AppShell(_Base):
     """Janela sem moldura nativa com barra unificada e navegação lateral."""
+
+    sidebar_collapsed_changed = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -155,6 +183,7 @@ class AppShell(_Base):
         root.setSpacing(0)
 
         self.sidebar = Sidebar(self)
+        self.sidebar.collapsedChanged.connect(self.sidebar_collapsed_changed)
         root.addWidget(self.sidebar)
 
         self.contentArea = QWidget(self)
@@ -255,16 +284,19 @@ class AppShell(_Base):
             self.brand_icon.hide()
 
     # ---------------------------------------------------------------- navegação
+    def set_sidebar_collapsed(self, collapsed: bool) -> None:
+        self.sidebar.set_collapsed(collapsed, emit=False)
+
     def add_nav_section(self, text: str) -> None:
         self.sidebar.add_section(text)
 
-    def addSubInterface(self, widget: QWidget, icon_name: str, text: str,  # noqa: N802
-                        shortcut: str = "", bottom: bool = False) -> NavItem:
+    def addSubInterface(self, widget: QWidget, icon_name: str, text: str,
+                        bottom: bool = False) -> NavItem:  # noqa: N802
         """Registra uma página e cria o item correspondente na barra lateral."""
         if not widget.objectName():
             widget.setObjectName(text)
         self.stackedWidget.addWidget(widget)
-        item = NavItem(icon_name, text, shortcut, self.sidebar)
+        item = NavItem(icon_name, text, self.sidebar)
         item.clicked.connect(lambda _checked=False, page=widget: self.switchTo(page))
         self.sidebar.add_item(item, bottom=bottom)
         self._nav_items[widget] = item

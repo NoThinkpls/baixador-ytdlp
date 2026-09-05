@@ -21,12 +21,12 @@ class SetupDialog(_Base):
 
     ready = Signal(object)  # Toolchain
 
-    def __init__(self, manager: ToolManager, force: bool = False, parent=None):
+    def __init__(self, manager: ToolManager, check_now: bool = False, parent=None):
         super().__init__(parent)
         self.manager = manager
         self.toolchain = None
         self._build_ui()
-        self.worker = SetupWorker(manager, force, self)
+        self.worker = SetupWorker(manager, check_now, self)
         self.worker.progress.connect(self._on_progress)
         self.worker.finished_ok.connect(self._on_done)
         self.worker.failed.connect(self._on_fail)

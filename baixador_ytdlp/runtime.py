@@ -311,7 +311,7 @@ class RuntimeManager:
             *PACKAGES, *(CUDA_PACKAGES if use_cuda else ()),
         ]
 
-    def ensure(self, progress: ProgressCB, force: bool = False) -> RuntimeInfo:
+    def ensure(self, progress: ProgressCB, check_now: bool = False) -> RuntimeInfo:
         ensure_dirs()
         use_cuda = _has_nvidia_driver()
         # O instalador contém o motor e as DLLs CUDA; priorizá-lo impede que
@@ -334,9 +334,9 @@ class RuntimeManager:
 
         # Não importa torch/faster-whisper antes daqui. Assim uma atualização nunca
         # tenta substituir DLL que está carregada pelo próprio processo.
-        needs_update = force or self._needs_update(before, use_cuda)
+        needs_update = self._needs_update(before, use_cuda)
 
-        if not needs_update and self._fresh_enough(before, use_cuda):
+        if not needs_update and not check_now and self._fresh_enough(before, use_cuda):
             # Tudo na versão certa e verificado há pouco: ativa o runtime já
             # instalado e devolve o controle à interface sem tocar na rede.
             activate_runtime(self.runtime_dir)

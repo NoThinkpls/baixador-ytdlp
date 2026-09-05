@@ -29,11 +29,11 @@ Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no 
 
 ## Interface
 
-A partir da versão 1.4.3 a interface tem linguagem visual própria, sem o Fluent
+A partir da versão 1.4.4 a interface tem linguagem visual própria, sem o Fluent
 Design da Microsoft — inclusive no Windows.
 
 - **Estrutura Discord.** Barra lateral com seções em caixa alta, indicador do
-  item ativo na borda e o atalho de teclado visível em cada item.
+  item ativo na borda e modo compacto com ícones e tooltips.
 - **Controles Apple.** Interruptores em cápsula, listas agrupadas (um bloco
   arredondado por assunto, com fios finos entre as linhas) e a hierarquia
   tipográfica das Human Interface Guidelines.
@@ -41,6 +41,8 @@ Design da Microsoft — inclusive no Windows.
   colorido em tempo de execução, então nada some no tema claro ou no escuro.
 - **Tema claro e escuro** com troca imediata, acompanhando o sistema quando a
   opção é “Seguir o sistema”.
+- **Ferramentas guiadas.** As edições locais seguem quatro passos claros:
+  escolher a tarefa, selecionar a origem, ajustar apenas o necessário e salvar.
 - **Avisos que não atrapalham:** aparecem no alto do conteúdo, longe dos botões
   do cabeçalho, e somem sozinhos.
 

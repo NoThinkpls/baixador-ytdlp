@@ -81,6 +81,7 @@ class MainWindow(AppShell):
             self.setWindowIcon(icon)
         theme.set_mode(self.cfg.theme)
         self._refresh_appearance()
+        self.set_sidebar_collapsed(self.cfg.sidebar_collapsed)
         self.set_brand(APP_NAME, APP_VERSION, icon)
         if self.cfg.mica and sys.platform.startswith("win"):
             self.setMicaEffectEnabled(True)
@@ -99,13 +100,12 @@ class MainWindow(AppShell):
         # internet; camadas empilhadas = a fila de itens; balões = legenda;
         # controles deslizantes = ferramentas; relógio com seta = histórico.
         self.add_nav_section("Navegação")
-        self.addSubInterface(self.home, "download", "Baixar", "1")
-        self.addSubInterface(self.queue, "queue", "Fila", "2")
-        self.addSubInterface(self.transcription, "captions", "Legendar", "3")
-        self.addSubInterface(self.media_tools, "tools", "Ferramentas", "4")
-        self.addSubInterface(self.history_page, "history", "Histórico", "5")
-        self.addSubInterface(self.settings, "settings", "Configurações", "⌘,"
-                             if sys.platform == "darwin" else "Ctrl ,", bottom=True)
+        self.addSubInterface(self.home, "download", "Baixar")
+        self.addSubInterface(self.queue, "queue", "Fila")
+        self.addSubInterface(self.transcription, "captions", "Legendar")
+        self.addSubInterface(self.media_tools, "tools", "Ferramentas")
+        self.addSubInterface(self.history_page, "history", "Histórico")
+        self.addSubInterface(self.settings, "settings", "Configurações", bottom=True)
 
     def _init_update_banner(self) -> None:
         """Reserva uma faixa inferior sem sobrepor o conteúdo das páginas."""
@@ -144,14 +144,19 @@ class MainWindow(AppShell):
         self.history_page.reopen_requested.connect(self._on_reopen)
         self.history_page.transcribe_requested.connect(self._on_transcribe)
         self.transcription.transcription_finished.connect(self._on_transcribed)
-        self.settings.update_requested.connect(lambda: self.run_setup(force=True))
+        self.settings.update_requested.connect(lambda: self.run_setup(check_now=True))
         self.settings.app_update_requested.connect(lambda: self._check_app_update(force=True))
         self.settings.download_dir_changed.connect(self.home.refresh_default_folder)
         self.settings.theme_changed.connect(self._refresh_appearance)
+        self.sidebar_collapsed_changed.connect(self._save_sidebar_state)
         self.update_banner.update_requested.connect(self._download_app_update)
         self.update_banner.dismissed.connect(self._dismiss_app_update)
         # A tela aparece imediatamente; a consulta de rede começa depois, em thread própria.
         QTimer.singleShot(700, self._check_app_update)
+
+    def _save_sidebar_state(self, collapsed: bool) -> None:
+        self.cfg.sidebar_collapsed = bool(collapsed)
+        self.cfg.save()
 
     def _refresh_appearance(self, _theme: str = "") -> None:
         """Reaplica tokens, folha de estilo e as cores dos botões da janela."""
@@ -253,9 +258,9 @@ class MainWindow(AppShell):
         Toast.error("Atualização não concluída", message, parent=self, duration=7000)
 
     # --------------------------------------------------------------- fluxo
-    def run_setup(self, force: bool = False) -> bool:
-        """Roda a checagem de dependências. Devolve False se o usuário fechou sem sucesso."""
-        dialog = SetupDialog(self.manager, force=force, parent=self)
+    def run_setup(self, check_now: bool = False) -> bool:
+        """Roda a checagem de dependências sem reinstalar versões atuais."""
+        dialog = SetupDialog(self.manager, check_now=check_now, parent=self)
         dialog.ready.connect(self._on_toolchain)
         dialog.start()
         return dialog.exec() == dialog.DialogCode.Accepted or self.toolchain is not None
@@ -364,19 +369,24 @@ class MainWindow(AppShell):
                 import ctypes
                 from ctypes import wintypes
 
-                msg = wintypes.MSG.from_address(message.__int__())
+                pointer = int(message)
+                msg = wintypes.MSG.from_address(pointer)
                 if msg.message == WM_NCHITTEST:
-                    point = wintypes.POINT()
                     hwnd = int(self.winId())
-                    if (ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
-                            and ctypes.windll.user32.ScreenToClient(hwnd, ctypes.byref(point))):
-                        rect = wintypes.RECT()
-                        if ctypes.windll.user32.GetClientRect(hwnd, ctypes.byref(rect)):
-                            border = max(8, int(self.BORDER_WIDTH))
-                            left = point.x <= rect.left + border
-                            right = point.x >= rect.right - border - 1
-                            top = point.y <= rect.top + border
-                            bottom = point.y >= rect.bottom - border - 1
+                    rect = wintypes.RECT()
+                    if ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                        # WM_NCHITTEST usa pixels físicos e o retângulo externo
+                        # inclui a moldura invisível do Windows. Isso evita que a
+                        # barra de título personalizada engula os cantos direitos.
+                        dpi = getattr(ctypes.windll.user32, "GetDpiForWindow", lambda _hwnd: 96)(hwnd)
+                        border = max(12, round(self.BORDER_WIDTH * int(dpi) / 96))
+                        point_x = ctypes.c_short(msg.lParam & 0xFFFF).value
+                        point_y = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
+                        left = point_x <= rect.left + border
+                        right = point_x >= rect.right - border - 1
+                        top = point_y <= rect.top + border
+                        bottom = point_y >= rect.bottom - border - 1
+                        if left or right or top or bottom:
                             if left and top:
                                 return True, HTTOPLEFT
                             if right and top:

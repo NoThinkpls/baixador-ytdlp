@@ -11,7 +11,7 @@ from .hardware import default_fragments, default_parallel_downloads
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.4.3"
+APP_VERSION = "1.4.4"
 IS_WINDOWS = sys.platform.startswith("win")
 
 
@@ -82,6 +82,7 @@ class Settings:
     archive_enabled: bool = False    # não rebaixar o que já foi baixado
     theme: str = "auto"              # auto | light | dark
     mica: bool = True
+    sidebar_collapsed: bool = False
     # Atualizações do aplicativo: a checagem é automática, mas instalação é sempre confirmada.
     auto_update: bool = True
     update_check_hours: int = 12

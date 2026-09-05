@@ -28,14 +28,15 @@ class SetupWorker(QThread):
     finished_ok = Signal(object)      # Toolchain
     failed = Signal(str)
 
-    def __init__(self, manager: ToolManager, force: bool = False, parent=None):
+    def __init__(self, manager: ToolManager, check_now: bool = False, parent=None):
         super().__init__(parent)
-        self.manager, self.force = manager, force
+        self.manager, self.check_now = manager, check_now
 
     def run(self) -> None:
         try:
-            log_event("Setup iniciado (forçar atualização=%s)", self.force)
-            tc = self.manager.ensure_all(lambda msg, pct: self.progress.emit(msg, pct), self.force)
+            log_event("Setup iniciado (consultar agora=%s)", self.check_now)
+            tc = self.manager.ensure_all(
+                lambda msg, pct: self.progress.emit(msg, pct), self.check_now)
         except Exception as exc:  # noqa: BLE001 — a mensagem vai para a UI
             report_exception("preparação do ambiente", exc)
             self.failed.emit(str(exc))
