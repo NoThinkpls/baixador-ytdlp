@@ -5,11 +5,11 @@ VSVersionInfo(
     StringFileInfo([StringTable('040904B0', [
         StringStruct('CompanyName', 'Projeto pessoal'),
         StringStruct('FileDescription', 'baixador-ytdlp - baixador e legendador'),
-        StringStruct('FileVersion', '1.4.4.0'),
+        StringStruct('FileVersion', '1.4.5.0'),
         StringStruct('InternalName', 'BaixadorYtdlp'),
         StringStruct('OriginalFilename', 'baixador-ytdlp.exe'),
         StringStruct('ProductName', 'baixador-ytdlp'),
-        StringStruct('ProductVersion', '1.4.4.0')])]),
+        StringStruct('ProductVersion', '1.4.5.0')])]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
   ]
 )

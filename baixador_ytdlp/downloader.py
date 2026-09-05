@@ -270,9 +270,9 @@ def _to_float(value: str) -> float:
         return 0.0
 
 
-# --------------------------------------------------------------------- NVENC
+# ------------------------------------------------------------- GPU encode
 class Transcoder:
-    """Reencoda via NVENC no Windows ou VideoToolbox no Apple Silicon."""
+    """Reencoda via NVENC, AMD AMF ou VideoToolbox."""
 
     def __init__(self, tc: Toolchain, cfg: Settings):
         self.tc, self.cfg = tc, cfg
@@ -299,6 +299,7 @@ class Transcoder:
         codec = self.cfg.transcode_codec
         args = [str(self.tc.ffmpeg), "-hide_banner", "-loglevel", "error", "-y"]
         is_nvenc = codec.endswith("_nvenc")
+        is_amf = codec.endswith("_amf")
         is_videotoolbox = codec.endswith("_videotoolbox")
         if hwaccel and is_nvenc:
             args += ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
@@ -313,6 +314,13 @@ class Transcoder:
         elif is_videotoolbox:
             quality = max(1, min(100, self.cfg.transcode_cq * 3))
             args += ["-q:v", str(quality), "-b:v", "0"]
+        elif is_amf:
+            # A codificação é feita na AMD. Não forçamos decodificação D3D11,
+            # pois ela pode falhar com arquivos/driver específicos e não impede
+            # que o AMF acelere a etapa mais cara: a codificação do vídeo.
+            quality = max(1, min(51, self.cfg.transcode_cq))
+            args += ["-quality", "balanced", "-rc", "cqp",
+                     "-qp_i", str(quality), "-qp_p", str(quality)]
         else:
             raise DownloadError("O encoder acelerado selecionado não é suportado.")
         args += [
@@ -327,6 +335,7 @@ class Transcoder:
         suffix = {
             "h264_nvenc": "h264", "hevc_nvenc": "hevc", "av1_nvenc": "av1",
             "h264_videotoolbox": "h264", "hevc_videotoolbox": "hevc",
+            "h264_amf": "h264", "hevc_amf": "hevc", "av1_amf": "av1",
         }
         dst = src.with_name(f"{src.stem} [{suffix.get(codec, 'acelerado')}]{src.suffix}")
         attempts = (True, False) if codec.endswith("_nvenc") else (True,)

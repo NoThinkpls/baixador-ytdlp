@@ -232,6 +232,7 @@ class AppShell(_Base):
             button = getattr(title_bar, name, None)
             if button is not None:
                 button.setFixedHeight(theme.TITLEBAR_HEIGHT)
+                button.setFixedWidth(46)
                 button.show()
         self.refresh_title_bar_colors()
 
@@ -240,6 +241,15 @@ class AppShell(_Base):
         title_bar = getattr(self, "titleBar", None)
         if title_bar is None:
             return
+        # Faz o próprio qframelesswindow redesenhar os glifos de minimizar,
+        # maximizar e fechar ao alternar o tema. Sem isso, algumas versões
+        # deixam os ícones claros no tema claro (ou escuros no tema escuro).
+        set_dark = getattr(title_bar, "setDarkTheme", None)
+        if callable(set_dark):
+            try:
+                set_dark(theme.is_dark())
+            except Exception:  # noqa: BLE001 - API varia entre versões
+                pass
         normal = theme.qcolor("text_secondary")
         hover_background = theme.qcolor("surface_hover")
         for name in ("minBtn", "maxBtn"):

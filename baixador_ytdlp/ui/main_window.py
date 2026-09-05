@@ -369,8 +369,19 @@ class MainWindow(AppShell):
                 import ctypes
                 from ctypes import wintypes
 
+                # Algumas versões de PySide6 não expõem wintypes.MSG e outras
+                # entregam um VoidPtr. Declarar a estrutura aqui evita que a
+                # exceção silenciosa faça o qframelesswindow perder *todas* as
+                # bordas de redimensionamento.
+                class WinMessage(ctypes.Structure):
+                    _fields_ = [
+                        ("hwnd", wintypes.HWND), ("message", wintypes.UINT),
+                        ("wParam", wintypes.WPARAM), ("lParam", wintypes.LPARAM),
+                        ("time", wintypes.DWORD), ("pt", wintypes.POINT),
+                    ]
+
                 pointer = int(message)
-                msg = wintypes.MSG.from_address(pointer)
+                msg = WinMessage.from_address(pointer)
                 if msg.message == WM_NCHITTEST:
                     hwnd = int(self.winId())
                     rect = wintypes.RECT()
@@ -380,8 +391,11 @@ class MainWindow(AppShell):
                         # barra de título personalizada engula os cantos direitos.
                         dpi = getattr(ctypes.windll.user32, "GetDpiForWindow", lambda _hwnd: 96)(hwnd)
                         border = max(12, round(self.BORDER_WIDTH * int(dpi) / 96))
-                        point_x = ctypes.c_short(msg.lParam & 0xFFFF).value
-                        point_y = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
+                        # GetCursorPos evita truncamento de coordenadas em telas
+                        # posicionadas à esquerda/acima do monitor principal.
+                        cursor = wintypes.POINT()
+                        ctypes.windll.user32.GetCursorPos(ctypes.byref(cursor))
+                        point_x, point_y = cursor.x, cursor.y
                         left = point_x <= rect.left + border
                         right = point_x >= rect.right - border - 1
                         top = point_y <= rect.top + border
