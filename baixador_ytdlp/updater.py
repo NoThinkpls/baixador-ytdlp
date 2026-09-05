@@ -81,9 +81,15 @@ class AppUpdater:
             raise UpdateError("A release publicada não possui arquivos para atualização.")
 
         release_version = tag.lstrip("v")
-        expected_name = f"BaixadorYtdlp-{release_version}-setup.exe"
+        # A cópia versionada é a preferida. O alias estável mantém a checagem
+        # compatível com releases antigas e com a página de download do README.
+        installer_names = (
+            f"BaixadorYtdlp-{release_version}-setup.exe",
+            "baixador-ytdlp-setup.exe",
+        )
         installer = next(
-            (asset for asset in assets if asset.get("name") == expected_name),
+            (asset for name in installer_names
+             for asset in assets if str(asset.get("name") or "") == name),
             None,
         )
         checksums = next(
@@ -97,7 +103,7 @@ class AppUpdater:
             )
         if not installer or not checksums:
             raise UpdateError(
-                "A release ainda não possui o instalador versionado e o SHA256SUMS.txt. "
+                "A release ainda não possui o instalador e o SHA256SUMS.txt. "
                 "Aguarde a publicação terminar e tente novamente."
             )
 
@@ -107,7 +113,8 @@ class AppUpdater:
         if not installer_url or not checksum_url or not page_url:
             raise UpdateError("A release não possui links de download válidos.")
 
-        sha256 = self._checksum_for(expected_name, self._request_text(checksum_url))
+        installer_name = str(installer.get("name") or "")
+        sha256 = self._checksum_for(installer_name, self._request_text(checksum_url))
         if sha256 is None:
             raise UpdateError("O hash do instalador não foi publicado na release.")
 
@@ -115,7 +122,7 @@ class AppUpdater:
             version=release_version,
             tag=tag,
             page_url=page_url,
-            installer_name=expected_name,
+            installer_name=installer_name,
             installer_url=installer_url,
             sha256=sha256.lower(),
         )
@@ -193,8 +200,10 @@ class AppUpdater:
     def _checksum_for(filename: str, content: str) -> str | None:
         for line in content.splitlines():
             match = _SHA256_RE.match(line)
-            if match and match.group(2).strip() == filename:
-                return match.group(1)
+            if match:
+                candidate = Path(match.group(2).strip()).name
+                if candidate.casefold() == filename.casefold():
+                    return match.group(1)
         return None
 
     @staticmethod

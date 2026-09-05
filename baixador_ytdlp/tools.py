@@ -244,7 +244,7 @@ class ToolManager:
                 pass
         return tag, assets.get(YTDLP_ASSET, ""), sums
 
-    def ensure_ytdlp(self, progress: ProgressCB, force: bool = False) -> None:
+    def ensure_ytdlp(self, progress: ProgressCB, check_now: bool = False) -> None:
         target = self.bin_dir / YTDLP_EXE
         current = self.local_ytdlp_version(target)
 
@@ -254,7 +254,7 @@ class ToolManager:
                 return
             raise RuntimeError("Instale o yt-dlp (pip install yt-dlp) neste sistema.")
 
-        if current and not force and not self._should_check("ytdlp", 12):
+        if current and not check_now and not self._should_check("ytdlp", 12):
             progress(f"yt-dlp {current} (verificado recentemente)", 100)
             return
 
@@ -268,7 +268,7 @@ class ToolManager:
             raise RuntimeError(f"Não foi possível baixar o yt-dlp: {exc}") from exc
 
         self._mark_checked("ytdlp")
-        if current and tag and current == tag and not force:
+        if current and tag and current == tag:
             progress(f"yt-dlp {current} já está atualizado", 100)
             self._save_state()
             return
@@ -319,10 +319,10 @@ class ToolManager:
             raise RuntimeError(f"A release não trouxe FFmpeg/ffprobe para macOS {arch}.")
         return str(data.get("tag_name") or ""), {name: assets[name] for name in names}
 
-    def _ensure_macos_ffmpeg(self, progress: ProgressCB, force: bool = False) -> None:
+    def _ensure_macos_ffmpeg(self, progress: ProgressCB, check_now: bool = False) -> None:
         target = self.bin_dir / FFMPEG_EXE
         current = self.local_ffmpeg_version(target)
-        if current and not force and not self._should_check("ffmpeg", 168):
+        if current and not check_now and not self._should_check("ffmpeg", 168):
             progress(f"FFmpeg {current} (verificado recentemente)", 100)
             return
 
@@ -339,7 +339,7 @@ class ToolManager:
             [tag, *(f"{asset.get('id')}:{asset.get('updated_at', '')}" for asset in assets.values())]
         )
         self._mark_checked("ffmpeg")
-        if current and self.state.get("ffmpeg_stamp") == stamp and not force:
+        if current and self.state.get("ffmpeg_stamp") == stamp:
             progress(f"FFmpeg {current} já está atualizado", 100)
             self._save_state()
             return
@@ -366,12 +366,12 @@ class ToolManager:
         self._save_state()
         progress("FFmpeg para macOS instalado", 100)
 
-    def ensure_ffmpeg(self, progress: ProgressCB, force: bool = False) -> None:
+    def ensure_ffmpeg(self, progress: ProgressCB, check_now: bool = False) -> None:
         target = self.bin_dir / FFMPEG_EXE
         current = self.local_ffmpeg_version(target)
 
         if sys.platform == "darwin":
-            self._ensure_macos_ffmpeg(progress, force)
+            self._ensure_macos_ffmpeg(progress, check_now)
             return
 
         if not IS_WINDOWS and not target.exists():
@@ -380,7 +380,7 @@ class ToolManager:
                 return
             raise RuntimeError("Instale o FFmpeg neste sistema.")
 
-        if current and not force and not self._should_check("ffmpeg", 168):  # 7 dias
+        if current and not check_now and not self._should_check("ffmpeg", 168):  # 7 dias
             progress(f"FFmpeg {current} (verificado recentemente)", 100)
             return
 
@@ -397,7 +397,7 @@ class ToolManager:
 
         self._mark_checked("ffmpeg")
         stamp = f"{asset['id']}:{asset.get('updated_at', '')}"
-        if current and self.state.get("ffmpeg_stamp") == stamp and not force:
+        if current and self.state.get("ffmpeg_stamp") == stamp:
             progress(f"FFmpeg {current} já está atualizado", 100)
             self._save_state()
             return
@@ -453,7 +453,7 @@ class ToolManager:
         except ValueError:
             return False
 
-    def ensure_deno(self, progress: ProgressCB, force: bool = False) -> None:
+    def ensure_deno(self, progress: ProgressCB, check_now: bool = False) -> None:
         """Instala o runtime JavaScript exigido pelo yt-dlp para o YouTube.
 
         Falhar aqui não impede o aplicativo de abrir: sites que não exigem
@@ -463,7 +463,7 @@ class ToolManager:
         target = self.bin_dir / DENO_EXE
         current = self.local_deno_version(target)
 
-        if current and self._version_ok(current, DENO_MIN_VERSION) and not force \
+        if current and self._version_ok(current, DENO_MIN_VERSION) and not check_now \
                 and not self._should_check("deno", 168):  # 7 dias
             progress(f"Runtime JavaScript: Deno {current}", 100)
             return
@@ -489,7 +489,7 @@ class ToolManager:
 
         self._mark_checked("deno")
         tag = (data.get("tag_name") or "").lstrip("v")
-        if current and tag and current == tag and not force:
+        if current and tag and current == tag:
             progress(f"Deno {current} já está atualizado", 100)
             self._save_state()
             return
@@ -560,16 +560,21 @@ class ToolManager:
             for leftover in self.bin_dir.glob(pattern):
                 _quiet_unlink(leftover)
 
-    def ensure_all(self, progress: ProgressCB, force: bool = False) -> Toolchain:
+    def ensure_all(self, progress: ProgressCB, check_now: bool = False) -> Toolchain:
+        """Confere as dependências e baixa somente uma versão nova ou ausente.
+
+        ``check_now`` ignora apenas o intervalo de consulta local. Ele nunca
+        transforma uma checagem manual em reinstalação dos binários atuais.
+        """
         ensure_dirs()
         self.cleanup()
         progress("Preparando o ambiente…", -1)
-        self.ensure_ytdlp(progress, force)
-        self.ensure_ffmpeg(progress, force)
-        self.ensure_deno(progress, force)
+        self.ensure_ytdlp(progress, check_now)
+        self.ensure_ffmpeg(progress, check_now)
+        self.ensure_deno(progress, check_now)
         # O motor do legendador vem no instalador. A checagem apenas ativa suas
         # DLLs e preserva o fallback seguro para desenvolvimento.
-        self.runtime_info = self.runtime.ensure(progress, force)
+        self.runtime_info = self.runtime.ensure(progress, check_now)
         tc = self.toolchain()
         if not tc.ok:
             raise RuntimeError("As dependências não ficaram disponíveis após a instalação.")

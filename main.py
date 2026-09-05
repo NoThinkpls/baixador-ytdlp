@@ -68,7 +68,7 @@ def main() -> int:
     window = MainWindow(cfg, ToolManager(runtime_check_hours=cfg.runtime_check_hours), icon)
     window.show()
 
-    if not window.run_setup(force=False) and window.toolchain is None:
+    if not window.run_setup() and window.toolchain is None:
         log_event("Encerrando: preparação inicial não foi concluída")
         return 1
 
