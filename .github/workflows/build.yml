@@ -239,7 +239,19 @@ jobs:
           cp -R "$app" "$staging/baixador-ytdlp.app"
           ln -s /Applications "$staging/Applications"
           hdiutil create -volname "Baixador YT-DLP" -srcfolder "$staging" -ov -format UDZO "$dmg"
-          hdiutil verify "$dmg"
+          # No macOS hospedado, o diskimages-helper pode ainda manter o DMG
+          # ocupado por alguns segundos depois do `create`. Repetir a checagem
+          # evita falhar uma release válida por esse estado transitório.
+          for attempt in {1..5}; do
+            if hdiutil verify "$dmg"; then
+              break
+            fi
+            if [[ "$attempt" == 5 ]]; then
+              echo "::error::Não foi possível validar o DMG após 5 tentativas."
+              exit 1
+            fi
+            sleep 3
+          done
 
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             cp "$archive" dist/installer/baixador-ytdlp-macos-arm64.zip
