@@ -211,6 +211,7 @@ class MainWindow(AppShell):
         self.transcription.transcription_finished.connect(self._on_transcribed)
         self.settings.update_requested.connect(lambda: self.run_setup(check_now=True))
         self.settings.app_update_requested.connect(lambda: self._check_app_update(force=True))
+        self.settings.gpu_detection_requested.connect(self._detect_gpu)
         self.settings.download_dir_changed.connect(self.home.refresh_default_folder)
         self.settings.theme_changed.connect(self._refresh_appearance)
         self.sidebar_collapsed_changed.connect(self._save_sidebar_state)
@@ -341,11 +342,29 @@ class MainWindow(AppShell):
               else "sem runtime JavaScript — o YouTube vai falhar")
         self.settings.set_versions(toolchain.ytdlp_version, toolchain.ffmpeg_version,
                                    f"{runtime}\nRuntime JS: {js}")
-        # A detecção da GPU chama nvidia-smi e o FFmpeg duas vezes: fora da thread da UI.
-        self._gpu_worker = GpuWorker(toolchain.ffmpeg, self)
-        self._gpu_worker.finished_ok.connect(self.settings.set_gpu)
-        self._gpu_worker.finished.connect(self._gpu_worker.deleteLater)
-        self._gpu_worker.start()
+        # Se a página ficou visível durante a preparação, o seu showEvent já
+        # pediu a detecção. Agora que há um FFmpeg disponível, ela pode rodar.
+        if self.settings._gpu_requested:
+            self._detect_gpu()
+
+    def _detect_gpu(self) -> None:
+        """Só consulta GPU quando a informação pode ser mostrada ao usuário."""
+        if self.toolchain is None:
+            return
+        if self._gpu_worker is not None and self._gpu_worker.isRunning():
+            return
+        # A detecção roda nvidia-smi e o FFmpeg duas vezes. Adiá-la evita esses
+        # processos na abertura, sem mudar os encoders apresentados na aba.
+        worker = GpuWorker(self.toolchain.ffmpeg, self)
+        self._gpu_worker = worker
+        worker.finished_ok.connect(self.settings.set_gpu)
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(lambda w=worker: self._clear_gpu_worker(w))
+        worker.start()
+
+    def _clear_gpu_worker(self, worker: GpuWorker) -> None:
+        if self._gpu_worker is worker:
+            self._gpu_worker = None
 
     def _on_enqueue(self, opts) -> None:
         if self.queue.add(opts):

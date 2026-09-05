@@ -9,6 +9,7 @@ from __future__ import annotations
 import shlex
 import subprocess
 import threading
+import time
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -158,6 +159,8 @@ class DownloadRunner:
         self.log: deque[str] = deque(maxlen=300)
         self._proc: Optional[subprocess.Popen] = None
         self._cancelled = threading.Event()
+        self._last_progress_emit = 0.0
+        self._last_progress_state: tuple[str, str] | None = None
 
     def cancel(self) -> None:
         self._cancelled.set()
@@ -186,7 +189,7 @@ class DownloadRunner:
                 continue
             if line.startswith("@P@" + SEP):
                 self._apply_progress(line, prog)
-                on_progress(prog)
+                self._emit_progress(on_progress, prog)
             elif line.startswith("@F@" + SEP):
                 path = Path(line.split(SEP, 1)[1].strip())
                 if path.name:
@@ -197,12 +200,12 @@ class DownloadRunner:
                 if stage:
                     prog.stage = stage
                     prog.status = "processing"
-                    on_progress(prog)
+                    self._emit_progress(on_progress, prog, force=True)
 
         code = self._proc.wait()
         if self._cancelled.is_set():
             prog.status = "cancelled"
-            on_progress(prog)
+            self._emit_progress(on_progress, prog, force=True)
             return []
         if code != 0:
             log_event("yt-dlp download falhou (código=%s): %s", code, self.tail(300))
@@ -211,8 +214,33 @@ class DownloadRunner:
         prog.status = "finished"
         prog.percent = 100.0
         prog.stage = ""
-        on_progress(prog)
+        self._emit_progress(on_progress, prog, force=True)
         return self.files
+
+    def _emit_progress(
+        self,
+        on_progress: Callable[[Progress], None],
+        prog: Progress,
+        *,
+        force: bool = False,
+    ) -> None:
+        """Limita repaints sem esconder transições importantes de estado.
+
+        O yt-dlp pode produzir dezenas de linhas por segundo. Enfileirar todas
+        como sinais Qt consome CPU e deixa a interface atrasada, principalmente
+        quando há downloads paralelos. O último estado continua chegando em no
+        máximo 120 ms e toda mudança de etapa chega imediatamente.
+        """
+        now = time.monotonic()
+        state = (prog.status, prog.stage)
+        if (not force and state == self._last_progress_state
+                and now - self._last_progress_emit < 0.12):
+            return
+        self._last_progress_emit = now
+        self._last_progress_state = state
+        # O callback pode cruzar threads; a cópia impede que a UI veja um
+        # objeto alterado novamente antes de processar o sinal enfileirado.
+        on_progress(Progress(**vars(prog)))
 
     def _apply_progress(self, line: str, prog: Progress) -> None:
         parts = line.split(SEP)

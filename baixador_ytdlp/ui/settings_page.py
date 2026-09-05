@@ -40,6 +40,7 @@ PRESETS = [("p1 — mais rápido", "p1"), ("p4 — equilibrado", "p4"),
 class SettingsPage(QWidget):
     update_requested = Signal()
     app_update_requested = Signal()
+    gpu_detection_requested = Signal()
     theme_changed = Signal(str)
     download_dir_changed = Signal(str)
 
@@ -48,6 +49,7 @@ class SettingsPage(QWidget):
         self.setObjectName("settingsPage")
         self.cfg = cfg
         self.gpu = GpuInfo()
+        self._gpu_requested = False
         # settings.json é reescrito no máximo uma vez a cada 400 ms, mesmo que o
         # usuário arraste um contador de ponta a ponta.
         self._save_timer = QTimer(self)
@@ -277,7 +279,7 @@ class SettingsPage(QWidget):
             "O download em si não usa a GPU — é rede e cópia de arquivo. A placa entra "
             "quando você converte o vídeo depois de baixar. Toda conversão perde qualidade "
             "em relação ao original.")
-        self.gpu_label = Muted("Detectando a GPU…", row)
+        self.gpu_label = Muted("A detecção será feita ao abrir Configurações.", row)
         column.addWidget(self.gpu_label)
         self._add_row(row)
 
@@ -428,6 +430,17 @@ class SettingsPage(QWidget):
                 if self.codec_combo.itemData(i) == self.cfg.transcode_codec:
                     self.codec_combo.setCurrentIndex(i)
                     break
+
+    def request_gpu_detection(self) -> None:
+        """Agenda a detecção uma única vez, quando há alguém para vê-la."""
+        if not self._gpu_requested:
+            self._gpu_requested = True
+            self.gpu_label.setText("Detectando a GPU…")
+            self.gpu_detection_requested.emit()
+
+    def showEvent(self, event):  # noqa: N802 - assinatura do Qt
+        super().showEvent(event)
+        self.request_gpu_detection()
 
     def hideEvent(self, event):  # noqa: N802 - assinatura do Qt
         """Não deixa uma alteração recente pendente se o usuário sair da aba."""

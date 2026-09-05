@@ -123,6 +123,30 @@ def activate_embedded_cuda() -> None:
     _add_dll_dirs(folders)
 
 
+def embedded_cuda_available() -> bool:
+    """Confere o conjunto CUDA sem carregar DLLs no processo da interface.
+
+    A abertura só precisa saber se a distribuição inclui os arquivos. O
+    carregamento propriamente dito fica no processo isolado de transcrição,
+    imediatamente antes de criar o CTranslate2; assim as DLLs grandes não
+    elevam a memória do aplicativo enquanto ele só baixa vídeos.
+    """
+    if not IS_WINDOWS:
+        return False
+    roots = ([Path(getattr(sys, "_MEIPASS"))]
+             if getattr(sys, "_MEIPASS", None) else [Path(item) for item in sys.path if item])
+    folders = [folder for root in roots for folder in _cuda_dll_dirs(root) if folder.is_dir()]
+    if not folders:
+        return False
+
+    def exists(name: str) -> bool:
+        return any((folder / name).is_file() for folder in folders)
+
+    return all(exists(name) for name in _CUDA_CORE_DLLS) and any(
+        exists(variant[-1]) for variant in _CUDNN_VARIANTS
+    )
+
+
 def prepare_embedded_cuda() -> str | None:
     """Pré-carrega DLLs CUDA pelo caminho absoluto antes do CTranslate2."""
     activate_embedded_cuda()
@@ -318,9 +342,11 @@ class RuntimeManager:
         # uma cópia antiga/parcial em %LOCALAPPDATA% substitua o pacote validado.
         deactivate_runtime(self.runtime_dir)
         if self._available_packages():
-            cuda_problem = prepare_embedded_cuda()
-            if cuda_problem:
-                use_cuda = False
+            # Não carrega cudnn/cublas aqui: a transcrição roda em processo
+            # separado e faz o carregamento completo só quando o usuário a usa.
+            # Isso reduz memória e I/O logo na abertura sem mudar o backend que
+            # será empregado no processamento real.
+            use_cuda = use_cuda and embedded_cuda_available()
             embedded = _versions()
             self.info = RuntimeInfo(embedded, use_cuda, False, "runtime incluído no aplicativo")
             progress("Motor de transcrição incluído e pronto", 100)
