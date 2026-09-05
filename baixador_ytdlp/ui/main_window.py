@@ -72,10 +72,15 @@ class MainWindow(AppShell):
         self.BORDER_WIDTH = 12
         self.setResizeEnabled(True)
         self.resize(1160, 780)
-        self.setMinimumSize(880, 560)
+        # As páginas já rolam verticalmente; permitir 760 px dá espaço para
+        # notebooks menores sem cortar controles. A barra lateral recolhe para
+        # ícones abaixo de 920 px (ver AppShell.resizeEvent).
+        self.setMinimumSize(760, 520)
         self.setMaximumSize(16_777_215, 16_777_215)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint)
+        flags = self.windowFlags() | Qt.WindowType.Window | Qt.WindowType.WindowMinMaxButtonsHint
+        flags &= ~Qt.WindowType.MSWindowsFixedSizeDialogHint
+        self.setWindowFlags(flags)
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         if icon:
             self.setWindowIcon(icon)

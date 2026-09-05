@@ -40,7 +40,7 @@ class GpuInfo:
             return "Apple Silicon detectado — conversão acelerada indisponível neste FFmpeg."
         if not self.name and not self.encoders:
             return "Nenhum encoder de GPU detectado — a conversão usaria a CPU."
-        codecs = ", ".join(e.replace("_nvenc", "").replace("_videotoolbox", "").upper()
+        codecs = ", ".join(e.replace("_nvenc", "").replace("_videotoolbox", "").replace("_amf", "").upper()
                            for e in self.encoders)
         if any(e.endswith("_videotoolbox") for e in self.encoders):
             backend = "VideoToolbox"
@@ -95,6 +95,9 @@ def detect(ffmpeg: Path) -> GpuInfo:
         # AMF é a confirmação mais confiável: alguns drivers não expõem nome via
         # nvidia-smi (obviamente) e o FFmpeg ainda consegue codificar normalmente.
         info.name = info.name or "GPU AMD"
-    if not info.name:
-        info.encoders = []
+    if info.encoders and not info.name:
+        # O FFmpeg consegue testar o encoder diretamente. Não esconder uma
+        # NVENC funcional só porque nvidia-smi não está no PATH ou foi bloqueado
+        # por política corporativa.
+        info.name = "GPU detectada"
     return info

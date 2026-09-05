@@ -8,6 +8,9 @@ execução — todas as funções são cacheadas.
 from __future__ import annotations
 
 import os
+import platform
+import subprocess
+import sys
 from functools import lru_cache
 
 
@@ -73,12 +76,38 @@ def default_parallel_downloads() -> int:
 
 
 @lru_cache(maxsize=1)
+def apple_performance_cores() -> int:
+    """Núcleos de desempenho do Apple Silicon, quando o macOS os informa.
+
+    Misturar todos os núcleos de eficiência numa tarefa pesada de CPU pode
+    aumentar consumo e latência sem ajudar tanto a transcrição. O MLX usa a GPU
+    unificada normalmente; este número é para o fallback CTranslate2/NEON.
+    """
+    if sys.platform != "darwin" or platform.machine().lower() not in {"arm64", "aarch64"}:
+        return 0
+    for key in ("hw.perflevel0.physicalcpu", "hw.physicalcpu"):
+        try:
+            value = subprocess.run(
+                ["sysctl", "-n", key], capture_output=True, text=True, timeout=1,
+            ).stdout.strip()
+            count = int(value)
+            if count > 0:
+                return count
+        except (OSError, ValueError, subprocess.SubprocessError):
+            continue
+    return 0
+
+
+@lru_cache(maxsize=1)
 def whisper_threads() -> int:
     """Threads do CTranslate2 na CPU.
 
     Deixa pelo menos um núcleo livre para a interface não travar durante a
     transcrição, e não passa de 8 — acima disso o ganho some e a memória sobe.
     """
+    apple_cores = apple_performance_cores()
+    if apple_cores:
+        return max(2, min(8, apple_cores))
     return max(1, min(8, usable_cores() - 1)) if usable_cores() > 2 else 1
 
 

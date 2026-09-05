@@ -16,7 +16,7 @@ from typing import Callable, Optional
 
 from .config import IS_WINDOWS, Settings
 from .cookies import cookie_args
-from .tools import CREATE_NO_WINDOW, Toolchain
+from .tools import CREATE_NO_WINDOW, Toolchain, decode_external_output
 from .diagnostics import log_event
 
 SEP = "\x1f"  # unit separator: nunca aparece em título de vídeo
@@ -68,6 +68,9 @@ def build_args(opts: DownloadOptions, cfg: Settings, tc: Toolchain) -> list[str]
     args: list[str] = [
         str(tc.ytdlp),
         "--ignore-config",
+        # O executável standalone do yt-dlp pode seguir a página de código do
+        # Windows ao escrever no pipe. Forçar UTF-8 impede nomes como "Mendon�a".
+        "--encoding", "utf-8",
         "--ffmpeg-location", str(tc.bin_dir),
         "--no-colors", "--newline", "--progress", "--no-simulate",
         "--progress-template", PROGRESS_TEMPLATE,
@@ -171,12 +174,14 @@ class DownloadRunner:
         prog = Progress(status="downloading")
         self._proc = subprocess.Popen(
             args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, encoding="utf-8", errors="replace", bufsize=1,
+            # Ler bytes permite reconhecer de forma segura uma versão antiga
+            # do yt-dlp que imprima na página de código do Windows.
+            text=False, bufsize=0,
             creationflags=CREATE_NO_WINDOW, env=self.tc.env(),
         )
         assert self._proc.stdout is not None
-        for line in self._proc.stdout:
-            line = line.rstrip("\r\n")
+        for raw_line in self._proc.stdout:
+            line = decode_external_output(raw_line).rstrip("\r\n")
             if not line:
                 continue
             if line.startswith("@P@" + SEP):
@@ -342,14 +347,21 @@ class Transcoder:
         for attempt, hwaccel in enumerate(attempts):
             args = self.build_args(src, dst, hwaccel=hwaccel)
             self._proc = subprocess.Popen(
-                args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                encoding="utf-8", errors="replace", bufsize=1, creationflags=CREATE_NO_WINDOW,
+                # Mesclar stderr evita o deadlock clássico: o FFmpeg pode
+                # encher a pipe de erro antes de o processo principal chegar a
+                # lê-la. Mantemos somente o final para a mensagem ao usuário.
+                args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=False,
+                bufsize=0, creationflags=CREATE_NO_WINDOW,
             )
             assert self._proc.stdout is not None
-            for line in self._proc.stdout:
+            errors: deque[str] = deque(maxlen=40)
+            for raw_line in self._proc.stdout:
+                line = decode_external_output(raw_line).rstrip("\r\n")
                 if line.startswith("out_time_us=") and total:
                     micros = _to_float(line.split("=", 1)[1])
                     on_progress(min(99.0, micros / 1_000_000 / total * 100))
+                elif line:
+                    errors.append(line)
             code = self._proc.wait()
             if code == 0:
                 break
@@ -357,7 +369,7 @@ class Transcoder:
                 dst.unlink(missing_ok=True)
                 raise DownloadError("Conversão cancelada.")
             if attempt == len(attempts) - 1:
-                err = (self._proc.stderr.read() if self._proc.stderr else "") or ""
+                err = "\n".join(errors)
                 dst.unlink(missing_ok=True)
                 raise DownloadError(f"Falha na conversão acelerada: {err.strip()[:300]}")
         on_progress(100.0)

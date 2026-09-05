@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (QAbstractButton, QHBoxLayout, QLabel, QSizePolicy,
                                QStackedWidget, QVBoxLayout, QWidget)
@@ -15,6 +15,95 @@ try:  # o qfluentwidgets já traz o qframelesswindow como dependência
     from qframelesswindow import FramelessWindow as _Base
 except Exception:  # pragma: no cover - fallback defensivo
     _Base = QWidget
+
+
+class CaptionButton(QAbstractButton):
+    """Botão de moldura com os três glifos desenhados na mesma métrica.
+
+    O qframelesswindow usa um SVG escalável para fechar e traços de tamanho
+    fixo para minimizar/maximizar. Ao aumentar a barra de título, o ``X`` ficava
+    visivelmente maior que os outros símbolos. Este componente substitui os
+    três no Windows e mantém peso, dimensão e posição idênticos.
+    """
+
+    WIDTH = 46
+
+    def __init__(self, action: str, parent=None):
+        super().__init__(parent)
+        self.action = action
+        self.setFixedSize(self.WIDTH, theme.TITLEBAR_HEIGHT)
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.setToolTip({"minimize": "Minimizar", "maximize": "Maximizar", "close": "Fechar"}[action])
+        self.pressed.connect(self.update)
+        self.released.connect(self.update)
+        self.clicked.connect(self._activate)
+
+    def _activate(self) -> None:
+        window = self.window()
+        if self.action == "minimize":
+            window.showMinimized()
+        elif self.action == "maximize":
+            window.showNormal() if window.isMaximized() else window.showMaximized()
+            self.update()
+        else:
+            window.close()
+
+    def paintEvent(self, _event):  # noqa: N802 - assinatura do Qt
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        hovered = self.underMouse()
+        pressed = self.isDown()
+        if hovered:
+            painter.setPen(Qt.PenStyle.NoPen)
+            if self.action == "close":
+                painter.setBrush(theme.qcolor("danger_hover" if pressed else "danger"))
+            else:
+                painter.setBrush(theme.qcolor("surface_active" if pressed else "surface_hover"))
+            painter.drawRect(self.rect())
+
+        tone = QColor("#FFFFFF") if self.action == "close" and hovered else theme.qcolor("text_secondary")
+        pen = QPen(tone, 1.35)
+        pen.setCapStyle(Qt.PenCapStyle.SquareCap)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+        center_x, center_y = self.width() / 2, self.height() / 2
+        if self.action == "minimize":
+            painter.drawLine(int(center_x - 5), int(center_y), int(center_x + 5), int(center_y))
+        elif self.action == "maximize":
+            if self.window().isMaximized():
+                painter.drawRect(int(center_x - 4), int(center_y - 3), 8, 8)
+                painter.drawLine(int(center_x - 2), int(center_y - 5), int(center_x + 5), int(center_y - 5))
+                painter.drawLine(int(center_x + 5), int(center_y - 5), int(center_x + 5), int(center_y + 2))
+            else:
+                painter.drawRect(int(center_x - 5), int(center_y - 5), 10, 10)
+        else:
+            painter.drawLine(int(center_x - 5), int(center_y - 5), int(center_x + 5), int(center_y + 5))
+            painter.drawLine(int(center_x + 5), int(center_y - 5), int(center_x - 5), int(center_y + 5))
+
+    def enterEvent(self, event):  # noqa: N802 - assinatura do Qt
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):  # noqa: N802 - assinatura do Qt
+        self.update()
+        super().leaveEvent(event)
+
+
+class CaptionControls(QWidget):
+    """Grupo compacto de minimizar, maximizar/restaurar e fechar."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self.buttons = [CaptionButton(action, self) for action in ("minimize", "maximize", "close")]
+        for button in self.buttons:
+            layout.addWidget(button)
+
+    def refresh(self) -> None:
+        for button in self.buttons:
+            button.update()
 
 
 class NavItem(QAbstractButton):
@@ -175,6 +264,8 @@ class AppShell(_Base):
         self.setObjectName("appShell")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._nav_items: dict[QWidget, NavItem] = {}
+        self._sidebar_auto_compact = False
+        self._sidebar_before_auto = False
 
         self._setup_title_bar()
 
@@ -184,6 +275,7 @@ class AppShell(_Base):
 
         self.sidebar = Sidebar(self)
         self.sidebar.collapsedChanged.connect(self.sidebar_collapsed_changed)
+        self.sidebar.collapsedChanged.connect(self._remember_manual_sidebar_choice)
         root.addWidget(self.sidebar)
 
         self.contentArea = QWidget(self)
@@ -234,6 +326,19 @@ class AppShell(_Base):
                 button.setFixedHeight(theme.TITLEBAR_HEIGHT)
                 button.setFixedWidth(46)
                 button.show()
+
+        # Apenas no Windows: a versão do qframelesswindow presente na build
+        # desenha o fechar via SVG escalado e os demais via linhas fixas. Isso
+        # explica o X maior observado na barra personalizada.
+        if sys.platform.startswith("win") and layout is not None:
+            for name in ("minBtn", "maxBtn", "closeBtn"):
+                button = getattr(title_bar, name, None)
+                if button is not None:
+                    button.hide()
+            self.caption_controls = CaptionControls(title_bar)
+            layout.addWidget(self.caption_controls, 0, Qt.AlignmentFlag.AlignRight)
+        else:
+            self.caption_controls = None
         self.refresh_title_bar_colors()
 
     def refresh_title_bar_colors(self) -> None:
@@ -282,6 +387,8 @@ class AppShell(_Base):
                         function(value)
                     except Exception:  # noqa: BLE001
                         pass
+        if self.caption_controls is not None:
+            self.caption_controls.refresh()
 
     def set_brand(self, name: str, version: str, icon=None) -> None:
         self.brand_name.setText(name)
@@ -296,6 +403,37 @@ class AppShell(_Base):
     # ---------------------------------------------------------------- navegação
     def set_sidebar_collapsed(self, collapsed: bool) -> None:
         self.sidebar.set_collapsed(collapsed, emit=False)
+
+    def _remember_manual_sidebar_choice(self, collapsed: bool) -> None:
+        if self._sidebar_auto_compact:
+            self._sidebar_before_auto = bool(collapsed)
+
+    def resizeEvent(self, event):  # noqa: N802 - assinatura do Qt
+        super().resizeEvent(event)
+        if not hasattr(self, "sidebar"):
+            return
+        # Quando a janela fica estreita, manter só os ícones da navegação deixa
+        # a área principal utilizável. Ao voltar a ampliar, respeitamos a
+        # preferência que a pessoa tinha antes da contração.
+        compact = self.width() < 920
+        if compact and not self._sidebar_auto_compact:
+            self._sidebar_auto_compact = True
+            self._sidebar_before_auto = self.sidebar.collapsed
+            self.sidebar.set_collapsed(True, emit=False)
+        elif not compact and self._sidebar_auto_compact:
+            self._sidebar_auto_compact = False
+            self.sidebar.set_collapsed(self._sidebar_before_auto, emit=False)
+        if self.caption_controls is not None:
+            self.caption_controls.refresh()
+
+    def event(self, event):  # noqa: N802 - assinatura do Qt
+        # Duplo clique na barra e atalhos do sistema também podem alternar o
+        # estado maximizado. Nesse caso não há clique no nosso botão, então
+        # redesenhamos o ícone de restaurar explicitamente.
+        result = super().event(event)
+        if event.type() == QEvent.Type.WindowStateChange and self.caption_controls is not None:
+            self.caption_controls.refresh()
+        return result
 
     def add_nav_section(self, text: str) -> None:
         self.sidebar.add_section(text)

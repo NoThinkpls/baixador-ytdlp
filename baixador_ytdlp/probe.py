@@ -12,7 +12,7 @@ from typing import Optional
 
 from .config import IS_WINDOWS
 from .cookies import is_cookie_source_failure
-from .tools import CREATE_NO_WINDOW
+from .tools import CREATE_NO_WINDOW, decode_external_output
 from .diagnostics import log_event
 
 VCODEC_NAMES = {
@@ -139,7 +139,7 @@ def _popen(args: list[str], env: dict | None) -> subprocess.Popen:
     extra = {} if IS_WINDOWS else {"start_new_session": True}
     return subprocess.Popen(
         args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, encoding="utf-8", errors="replace",
+        text=False,
         creationflags=CREATE_NO_WINDOW, env=env, **extra,
     )
 
@@ -176,7 +176,7 @@ def _run_json(args: list[str], timeout: int, env: dict | None = None) -> dict:
         with _RUNNING_LOCK:
             _RUNNING.discard(proc)
 
-    proc = _Completed(proc.returncode, out, err)
+    proc = _Completed(proc.returncode, decode_external_output(out), decode_external_output(err))
 
     if proc.returncode != 0 or not proc.stdout.strip():
         log_event("yt-dlp análise falhou (código=%s): %s", proc.returncode,
@@ -227,11 +227,12 @@ def _resolve_cookies(common: list[str], cookies: list[str], url: str,
         with _RUNNING_LOCK:
             _RUNNING.discard(proc)
 
-    if proc.returncode == 0 or not is_cookie_source_failure(stderr or ""):
+    stderr_text = decode_external_output(stderr)
+    if proc.returncode == 0 or not is_cookie_source_failure(stderr_text):
         return common + cookies, ""
 
     log_event("Fonte de cookies indisponível, seguindo sem cookies: %s",
-              (stderr or "").strip()[-400:])
+              stderr_text.strip()[-400:])
     return common, ("\n\nOs cookies do navegador escolhido não puderam ser lidos "
                     "(o Chrome e o Edge no Windows não liberam mais os cookies para "
                     "outros programas). A análise seguiu sem cookies. Use o Firefox "
@@ -254,7 +255,8 @@ def _playlist_count(ytdlp: Path, base: list[str], url: str, timeout: int,
 def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = "",
           proxy: str = "", timeout: int = 120, extractor_args: str = "",
           env: dict | None = None) -> MediaInfo:
-    common = [str(ytdlp), "--no-warnings", "--ignore-config", "--socket-timeout", "20"]
+    common = [str(ytdlp), "--no-warnings", "--ignore-config", "--encoding", "utf-8",
+              "--socket-timeout", "20"]
     if proxy:
         common += ["--proxy", proxy]
     if extractor_args:

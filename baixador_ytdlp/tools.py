@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import locale
 import os
 import platform
 import sys
@@ -80,6 +81,35 @@ def run_hidden(args: list[str], timeout: int = 60) -> subprocess.CompletedProces
     )
 
 
+def decode_external_output(output: bytes | str | None) -> str:
+    """Decodifica a saída de ferramentas externas sem perder acentos no Windows.
+
+    Os executáveis *standalone* do yt-dlp mais antigos podem escrever na página
+    de código ativa do Windows quando a saída está redirecionada para um pipe.
+    Decodificar diretamente como UTF-8 transformava cada ``ã``/``ç`` em ``�``
+    antes que a interface recebesse o nome final do arquivo. UTF-8 continua
+    sendo a primeira escolha; só recorremos à página de código local quando os
+    bytes realmente não formam UTF-8 válido.
+    """
+    if output is None:
+        return ""
+    if isinstance(output, str):
+        return output
+    try:
+        return output.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+
+    encodings = ("mbcs", "cp1252") if IS_WINDOWS else (
+        locale.getpreferredencoding(False) or "utf-8", "utf-8")
+    for encoding in encodings:
+        try:
+            return output.decode(encoding)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return output.decode("utf-8", errors="replace")
+
+
 @dataclass
 class Toolchain:
     ytdlp: Path
@@ -108,6 +138,12 @@ class Toolchain:
         """
         env = os.environ.copy()
         env["PATH"] = str(self.bin_dir) + os.pathsep + env.get("PATH", "")
+        if IS_WINDOWS:
+            # Mantém stdout/stderr do yt-dlp em UTF-8 inclusive na edição
+            # standalone. A leitura binária com fallback em downloader.py ainda
+            # cobre versões antigas que não respeitam esta variável.
+            env["PYTHONUTF8"] = "1"
+            env["PYTHONIOENCODING"] = "utf-8"
         return env
 
 

@@ -11,7 +11,7 @@ from .hardware import default_fragments, default_parallel_downloads
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.4.5"
+APP_VERSION = "1.5.0"
 IS_WINDOWS = sys.platform.startswith("win")
 
 

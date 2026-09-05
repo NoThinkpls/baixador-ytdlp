@@ -38,6 +38,22 @@ class AmdEncodingTests(unittest.TestCase):
         self.assertIn("-qp_i", command)
         self.assertNotIn("cuda", command)
 
+    def test_keeps_nvenc_when_nvidia_smi_is_unavailable(self):
+        def fake_run(command, **_kwargs):
+            if command[0] == "nvidia-smi":
+                raise FileNotFoundError("nvidia-smi ausente")
+            if "-encoders" in command:
+                return SimpleNamespace(stdout=" V.... h264_nvenc\n")
+            return SimpleNamespace(stdout="Hardware acceleration methods:\ncuda\n")
+
+        with patch("baixador_ytdlp.gpu.sys.platform", "win32"), \
+             patch("baixador_ytdlp.gpu.run_hidden", side_effect=fake_run), \
+             patch("baixador_ytdlp.gpu.Path.exists", return_value=True):
+            info = detect(Path("ffmpeg.exe"))
+
+        self.assertEqual(info.name, "GPU detectada")
+        self.assertEqual(info.encoders, ["h264_nvenc"])
+
 
 if __name__ == "__main__":
     unittest.main()

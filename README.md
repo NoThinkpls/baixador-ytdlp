@@ -24,7 +24,8 @@ Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no 
 - Download de vídeo, áudio, playlists e trechos com escolha de qualidade e formato.
 - Entrada em lote pela própria tela: cole vários links, um por linha, e envie todos à fila.
 - Fila, perfis de saída, histórico, retomativa de falhas e organização por pasta.
-- Transcrição local com legendas SRT, VTT, ASS, karaoke, TXT e JSON.
+- Transcrição local com legendas SRT, VTT, ASS, karaoke, TXT e JSON; no Apple
+  Silicon ela usa MLX na GPU integrada.
 - Conversão por GPU com NVIDIA NVENC, AMD AMF ou VideoToolbox no Apple Silicon.
 - Ferramentas locais para recortar, extrair áudio, compactar, criar Shorts e queimar legendas.
 - Atualização opcional no Windows, conferida por SHA-256 antes de abrir o instalador.
@@ -51,8 +52,13 @@ Design da Microsoft — inclusive no Windows.
   yt-dlp e indica uma extensão de exportação que processa o arquivo localmente.
 
 AMD é acelerada pelo AMF do FFmpeg na conversão. A transcrição usa CUDA nas
-placas NVIDIA e CPU otimizada nas placas AMD, pois o motor de transcrição atual
-não possui backend AMD para Windows.
+placas NVIDIA, MLX na GPU integrada de Macs Apple Silicon e CPU otimizada nas
+placas AMD, pois o motor de transcrição atual não possui backend AMD para
+Windows. No Mac, o primeiro uso de cada modelo do Whisper ainda precisa baixá-lo
+para o perfil local do usuário; os usos seguintes reaproveitam esse cache.
+
+Os nomes de arquivos e os textos da interface usam UTF-8 de ponta a ponta,
+preservando acentos e caracteres especiais compatíveis com o sistema de arquivos.
 
 A tipografia pede SF Pro quando ela existe na máquina e cai em Inter e Segoe UI
 quando não existe — o projeto não distribui fontes proprietárias. As cores, os

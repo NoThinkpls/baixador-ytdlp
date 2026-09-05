@@ -1,16 +1,20 @@
-"""Transcrição local com faster-whisper e exportação de legendas.
+"""Transcrição local e exportação de legendas.
 
-O modelo é carregado somente quando a transcrição começa.  Em máquinas CUDA,
-o app tenta float16; se a pilha CUDA não estiver disponível, volta para CPU
-int8 sem impedir o uso do restante do programa.
+O modelo só é carregado quando a transcrição começa. NVIDIA usa
+faster-whisper/CUDA; no Apple Silicon o MLX Whisper usa a GPU integrada. Todo
+backend possui fallback para faster-whisper em CPU/int8, sem impedir o uso do
+restante do programa.
 """
 from __future__ import annotations
 
 import gc
+import importlib.util
 import json
+import os
 import platform
 import re
 import subprocess
+import sys
 import tempfile
 import threading
 import traceback
@@ -35,6 +39,20 @@ FORMATS = {
     "json": ("JSON — segmentos e timestamps", ".json"),
 }
 
+# Pesos já convertidos e mantidos pela comunidade oficial do MLX. Não usamos o
+# modelo CTranslate2 no Mac quando o runtime MLX está presente: além de tirar
+# proveito da GPU integrada, evita copiar o áudio pela memória mais vezes que o
+# necessário na arquitetura de memória unificada da Apple.
+MLX_MODEL_REPOS = {
+    "tiny": "mlx-community/whisper-tiny-mlx",
+    "base": "mlx-community/whisper-base-mlx",
+    "small": "mlx-community/whisper-small-mlx",
+    "medium": "mlx-community/whisper-medium-mlx",
+    "large": "mlx-community/whisper-large-v3-mlx",
+    "large-v2": "mlx-community/whisper-large-v3-mlx",
+    "large-v3": "mlx-community/whisper-large-v3-mlx",
+}
+
 
 class TranscriptionCancelled(RuntimeError):
     """Cancelamento solicitado pelo usuário."""
@@ -48,6 +66,26 @@ class TranscriptionOptions:
     model_size: str = "medium"
     output_format: str = "srt"
     aggressive_filter: bool = False
+
+
+@dataclass(frozen=True)
+class DecodedInfo:
+    """Campos comuns aos resultados do faster-whisper e do MLX Whisper."""
+
+    language: str
+    language_probability: float = 0.0
+
+
+def _is_apple_silicon() -> bool:
+    return sys.platform == "darwin" and platform.machine().lower() in {"arm64", "aarch64"}
+
+
+def _mlx_available() -> bool:
+    """Evita importar MLX na abertura; o pacote só existe na build macOS."""
+    try:
+        return importlib.util.find_spec("mlx_whisper") is not None
+    except (ImportError, AttributeError, ValueError):
+        return False
 
 
 class Transcriber:
@@ -76,7 +114,11 @@ class Transcriber:
         # Events do multiprocessing e preservam a pausa/cancelamento entre processos.
         self.cancel_event = cancel_event if cancel_event is not None else threading.Event()
         self.pause_event = pause_event if pause_event is not None else threading.Event()
-        self.device, self.compute_type, self.hardware_label = (("cpu", "int8", "CPU — CUDA interno indisponível (int8)") if force_cpu else self._detect_hardware())
+        if force_cpu:
+            self.backend, self.device, self.compute_type, self.hardware_label = (
+                "faster-whisper", "cpu", "int8", "CPU — CUDA interno indisponível (int8)")
+        else:
+            self.backend, self.device, self.compute_type, self.hardware_label = self._detect_hardware()
         self.model = None
 
     def cancel(self) -> None:
@@ -96,7 +138,7 @@ class Transcriber:
             raise TranscriptionCancelled("Transcrição cancelada")
 
     @staticmethod
-    def _detect_hardware() -> tuple[str, str, str]:
+    def _detect_hardware() -> tuple[str, str, str, str]:
         """Pergunta ao CTranslate2, que é quem de fato executa o modelo.
 
         Antes isso importava o PyTorch inteiro só para ler `cuda.is_available()`.
@@ -104,10 +146,12 @@ class Transcriber:
         pergunta em milissegundos — o torch continua sendo aceito como plano B
         para quem tiver uma instalação antiga.
         """
+        if _is_apple_silicon() and _mlx_available():
+            return "mlx", "metal", "float16", "Apple Silicon — MLX na GPU integrada"
         try:
             import ctranslate2
             if ctranslate2.get_cuda_device_count() > 0:
-                return "cuda", "float16", "CUDA — GPU NVIDIA detectada"
+                return "faster-whisper", "cuda", "float16", "CUDA — GPU NVIDIA detectada"
         except Exception:
             pass
         try:
@@ -115,13 +159,13 @@ class Transcriber:
             if torch.cuda.is_available():
                 name = torch.cuda.get_device_name(0)
                 vram = torch.cuda.get_device_properties(0).total_memory / 1024 ** 3
-                return "cuda", "float16", f"CUDA — {name} ({vram:.1f} GB VRAM)"
+                return "faster-whisper", "cuda", "float16", f"CUDA — {name} ({vram:.1f} GB VRAM)"
         except Exception:
             pass
         cores = whisper_threads()
-        if sys.platform == "darwin" and platform.machine().lower() in ("arm64", "aarch64"):
-            return "cpu", "int8", f"Apple Silicon — CPU/NEON em até {cores} threads (int8)"
-        return "cpu", "int8", f"CPU — até {cores} threads (int8)"
+        if _is_apple_silicon():
+            return "faster-whisper", "cpu", "int8", f"Apple Silicon — CPU/NEON em até {cores} threads (int8)"
+        return "faster-whisper", "cpu", "int8", f"CPU — até {cores} threads (int8)"
 
     def _load_model(self, model_size: str) -> None:
         from faster_whisper import WhisperModel
@@ -148,6 +192,20 @@ class Transcriber:
         self.progress(15)
         self.status(f"Modelo pronto: {self.hardware_label}")
 
+    def _prepare_mlx(self, model_size: str) -> None:
+        """Prepara o cache do MLX antes da importação preguiçosa do backend."""
+        cache = MODEL_DIR / "mlx"
+        cache.mkdir(parents=True, exist_ok=True)
+        # huggingface_hub lê HF_HOME no primeiro import. Como este método roda
+        # no processo auxiliar, não altera o ambiente do aplicativo Qt.
+        os.environ.setdefault("HF_HOME", str(cache))
+        self.status(f"Carregando Whisper {model_size} em {self.hardware_label}…")
+        self.progress(5)
+
+    @staticmethod
+    def _mlx_model_repo(model_size: str) -> str:
+        return MLX_MODEL_REPOS.get(model_size, MLX_MODEL_REPOS["medium"])
+
     def _switch_to_cpu(self, model_size: str, reason: Exception) -> None:
         """Troca de CUDA para CPU quando uma DLL/driver falha durante o uso."""
         from faster_whisper import WhisperModel
@@ -163,8 +221,18 @@ class Transcriber:
         )
         self.status(f"Modelo pronto: {self.hardware_label}")
 
-    def _decode(self, audio: Path, opts: TranscriptionOptions, duration: float) -> tuple[list[dict], object]:
-        """Consome o gerador do Whisper; erros de DLL podem ocorrer só aqui."""
+    def _switch_mlx_to_cpu(self, model_size: str, reason: Exception) -> None:
+        """Fallback seguro quando um Mac não consegue inicializar o MLX."""
+        self.status(f"MLX indisponível durante a transcrição ({reason}). Alternando para CPU int8…")
+        self.backend, self.device, self.compute_type = "faster-whisper", "cpu", "int8"
+        self.hardware_label = "Apple Silicon — fallback CPU/NEON (int8)"
+        self.model = None
+        gc.collect()
+        self._load_model(model_size)
+
+    def _decode_faster_whisper(self, audio: Path, opts: TranscriptionOptions,
+                               duration: float) -> tuple[list[dict], object]:
+        """Consome o gerador do faster-whisper; erros de DLL podem ocorrer só aqui."""
         segments, info = self.model.transcribe(
             str(audio), language=None if opts.language == "auto" else opts.language,
             word_timestamps=True, vad_filter=True,
@@ -191,6 +259,56 @@ class Transcriber:
             if duration:
                 self.progress(min(90, max(16, int(item.end * 74 / duration) + 16)))
         return raw, info
+
+    def _decode_mlx(self, audio: Path, opts: TranscriptionOptions,
+                    duration: float) -> tuple[list[dict], DecodedInfo]:
+        """Transcreve na GPU integrada Apple via MLX, preservando a saída comum."""
+        import mlx_whisper
+
+        options = self._model_options(opts.model_size).copy()
+        temperature = options.pop("temperature", 0.0)
+        condition = options.pop("condition_on_previous_text", True)
+        compression = options.pop("compression_ratio_threshold", 2.4)
+        log_probability = options.pop("log_prob_threshold", -1.0)
+        no_speech = options.pop("no_speech_threshold", 0.6)
+        result = mlx_whisper.transcribe(
+            str(audio), path_or_hf_repo=self._mlx_model_repo(opts.model_size), verbose=None,
+            language=None if opts.language == "auto" else opts.language,
+            word_timestamps=True, temperature=temperature,
+            condition_on_previous_text=condition,
+            compression_ratio_threshold=compression, logprob_threshold=log_probability,
+            no_speech_threshold=no_speech, **options,
+        )
+        raw: list[dict] = []
+        for item in result.get("segments") or ():
+            self._check_interrupt()
+            start = float(item.get("start") or 0.0)
+            end = float(item.get("end") or start)
+            words = []
+            for word in item.get("words") or ():
+                word_text = str(word.get("word") or word.get("text") or "").strip()
+                if word_text:
+                    words.append({
+                        "text": word_text,
+                        "start": float(word.get("start") if word.get("start") is not None else start),
+                        "end": float(word.get("end") if word.get("end") is not None else end),
+                    })
+            raw.append({
+                "start": start, "end": end, "text": str(item.get("text") or "").strip(),
+                "words": words, "avg_logprob": item.get("avg_logprob"),
+                "no_speech_prob": item.get("no_speech_prob"),
+            })
+            if duration:
+                self.progress(min(90, max(16, int(end * 74 / duration) + 16)))
+        language = str(result.get("language") or (opts.language if opts.language != "auto" else "auto"))
+        probability = float(result.get("language_probability") or 0.0)
+        return raw, DecodedInfo(language, probability)
+
+    def _decode(self, audio: Path, opts: TranscriptionOptions,
+                duration: float) -> tuple[list[dict], object]:
+        if self.backend == "mlx":
+            return self._decode_mlx(audio, opts, duration)
+        return self._decode_faster_whisper(audio, opts, duration)
 
     def _duration(self, media: Path) -> float:
         try:
@@ -223,7 +341,9 @@ class Transcriber:
         audio: Path | None = None
         try:
             self._check_interrupt()
-            if not self.model:
+            if self.backend == "mlx":
+                self._prepare_mlx(opts.model_size)
+            elif not self.model:
                 self._load_model(opts.model_size)
             audio = self._extract_audio(opts.media_path)
             duration = self._duration(opts.media_path)
@@ -233,15 +353,22 @@ class Transcriber:
             except TranscriptionCancelled:
                 raise
             except Exception as exc:
-                if self.device != "cuda":
+                if self.backend == "mlx":
+                    self._switch_mlx_to_cpu(opts.model_size, exc)
+                    raw, info = self._decode(audio, opts, duration)
+                elif self.device == "cuda":
+                    # A carga das DLLs CUDA é preguiçosa; erros como
+                    # cublas64_12.dll ausente aparecem ao iterar os segmentos.
+                    self._switch_to_cpu(opts.model_size, exc)
+                    raw, info = self._decode(audio, opts, duration)
+                else:
                     raise
-                # A carga das DLLs CUDA é preguiçosa; erros como
-                # cublas64_12.dll ausente aparecem ao iterar os segmentos.
-                self._switch_to_cpu(opts.model_size, exc)
-                raw, info = self._decode(audio, opts, duration)
-            self.status(f"{len(raw)} segmentos brutos · idioma {info.language} ({info.language_probability:.0%})")
+            language = str(getattr(info, "language", "auto"))
+            probability = float(getattr(info, "language_probability", 0.0) or 0.0)
+            confidence = f" ({probability:.0%})" if probability else ""
+            self.status(f"{len(raw)} segmentos brutos · idioma {language}{confidence}")
             result = self._fix_timing(self._split_segments(self._clean(raw)))
-            self._write(opts.output_path, opts.output_format, result, info.language)
+            self._write(opts.output_path, opts.output_format, result, language)
             self.progress(100)
             self.status(f"Legenda criada: {opts.output_path.name}")
             return result
