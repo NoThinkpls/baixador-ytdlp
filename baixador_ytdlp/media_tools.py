@@ -30,7 +30,7 @@ def default_destination(source: Path, operation: str) -> Path:
         "remux": ("_remux", ".mkv"),
         "compress": ("_compactado", ".mp4"),
         "shorts": ("_shorts", ".mp4"),
-        "burn": ("_legendado", ".mp4"),
+        "burn": ("_com_legendas", ".mp4"),
     }
     label, extension = suffixes.get(operation, ("_editado", ".mp4"))
     return source.with_name(f"{source.stem}{label}{extension}")
@@ -76,10 +76,17 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain) -> list[str]:
             "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart",
         ]
     elif options.operation == "burn":
+        # Não copie todas as faixas de entrada: arquivos MP4 podem ter dados ou
+        # legendas internas que não são aceitos pelo contêiner de saída. A
+        # legenda escolhida já entra na imagem pelo filtro abaixo.
         command += [
-            "-map", "0", "-vf", f"subtitles=filename='{_escape_filter_path(options.subtitles)}'",
+            "-map", "0:v:0", "-map", "0:a?",
+            "-vf", f"subtitles=filename='{_escape_filter_path(options.subtitles)}'",
             "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-            "-c:a", "copy", "-movflags", "+faststart",
+            # Reencodar o áudio evita uma segunda fonte de falhas ao salvar MP4
+            # quando a mídia de entrada traz Opus, DTS ou outro codec que o
+            # contêiner não aceita.
+            "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
         ]
     else:
         raise MediaToolError("Ferramenta de mídia desconhecida.")
@@ -102,9 +109,13 @@ def _escape_filter_path(path: Path | None) -> str:
         return ""
     # O filtro subtitles recebe uma string própria do FFmpeg, não um argumento de shell.
     value = str(path.resolve()).replace("\\", "/")
-    return (value.replace("\\", "\\\\")
-                 .replace(":", r"\\:")
-                 .replace("'", r"\\'")
-                 .replace(",", r"\\,")
-                 .replace("[", r"\\[")
-                 .replace("]", r"\\]"))
+    # Aqui cada caractere precisa de *uma* barra. Duas barras antes de `:`
+    # fazem o parser do FFmpeg interpretar `C\\:` como uma opção separada,
+    # gerando "Error opening output files: Invalid argument" no Windows.
+    return (value.replace("'", r"\'")
+                 .replace(":", r"\:")
+                 .replace(",", r"\,")
+                 .replace("[", r"\[")
+                 .replace("]", r"\]")
+                 .replace(";", r"\;")
+                 .replace("|", r"\|"))

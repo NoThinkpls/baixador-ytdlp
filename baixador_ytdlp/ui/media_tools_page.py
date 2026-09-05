@@ -46,9 +46,9 @@ OPERATIONS = {
         "action": "Criar versão vertical",
     },
     "burn": {
-        "title": "Queimar legendas", "icon": "captions", "tag": "Legenda fixa",
-        "summary": "Incorpore um arquivo SRT, VTT ou ASS na imagem do vídeo.",
-        "action": "Aplicar legendas",
+        "title": "Adicionar legendas ao vídeo", "icon": "captions", "tag": "Legenda fixa",
+        "summary": "Adicione um arquivo SRT, VTT ou ASS diretamente à imagem do vídeo.",
+        "action": "Adicionar legendas",
     },
 }
 
@@ -390,7 +390,9 @@ class MediaToolsPage(QWidget):
         self._show_error(message)
 
     def _show_error(self, message: str) -> None:
-        Toast.error("Não foi possível processar a mídia", message,
+        title = ("Não foi possível adicionar as legendas"
+                 if self._operation() == "burn" else "Não foi possível processar a mídia")
+        Toast.error(title, message,
                     parent=self.window(), duration=8000)
 
     def shutdown(self) -> None:

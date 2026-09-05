@@ -27,7 +27,7 @@ Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no 
 - Transcrição local com legendas SRT, VTT, ASS, karaoke, TXT e JSON; no Apple
   Silicon ela usa MLX na GPU integrada.
 - Conversão por GPU com NVIDIA NVENC, AMD AMF ou VideoToolbox no Apple Silicon.
-- Ferramentas locais para recortar, extrair áudio, compactar, criar Shorts e queimar legendas.
+- Ferramentas locais para recortar, extrair áudio, compactar, criar Shorts e adicionar legendas ao vídeo.
 - Atualização opcional no Windows, conferida por SHA-256 antes de abrir o instalador.
 
 ## Interface
