@@ -21,7 +21,9 @@ Enquanto a assinatura Developer ID e a notarização não estiverem configuradas
 
 ## Desempenho
 
-Downloads dependem sobretudo da rede. Para transcrição, o aplicativo usa CUDA quando uma NVIDIA compatível está disponível e CPU/int8 como fallback. No Apple Silicon, a transcrição usa CPU com instruções NEON; CTranslate2 não possui backend Metal/MPS para Whisper. A conversão de vídeo pode usar NVENC no Windows ou VideoToolbox no macOS quando o FFmpeg disponível oferecer suporte.
+Downloads dependem sobretudo da rede. Para transcrição, o aplicativo usa CUDA quando uma NVIDIA compatível está disponível e CPU/int8 como fallback. No Apple Silicon, usa **MLX Whisper** na GPU integrada; se esse backend não puder iniciar, cai automaticamente para CPU/NEON, usando somente os núcleos de desempenho que o macOS informa. O CTranslate2 não possui backend Metal/MPS para Whisper, por isso o MLX é o caminho acelerado no Mac. A conversão de vídeo pode usar NVENC ou AMD AMF no Windows e VideoToolbox no macOS quando o FFmpeg disponível oferecer suporte.
+
+O primeiro uso de cada modelo no macOS baixa os pesos MLX para os dados locais do aplicativo. Não há envio de áudio ou vídeo a um serviço remoto.
 
 ## Medidas de segurança
 

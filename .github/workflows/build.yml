@@ -203,6 +203,12 @@ jobs:
             --collect-all ctranslate2 \
             --collect-all av \
             --collect-all pip \
+            --collect-all mlx \
+            --hidden-import mlx_whisper \
+            --exclude-module torch \
+            --exclude-module torchvision \
+            --exclude-module torchaudio \
+            --exclude-module triton \
             --add-data "assets/icon.png:assets"
 
       - name: Conferir o bundle Apple Silicon
@@ -212,6 +218,10 @@ jobs:
           test -d "$app"
           test -x "$executable"
           lipo -archs "$executable" | grep -qw arm64
+          # A extensão MLX tem nomes internos diferentes entre versões; exigir
+          # qualquer módulo do pacote evita um falso negativo, sem deixar o
+          # backend opcional escapar do bundle.
+          find "$app" -type f -path '*mlx*' | grep -q .
           echo "OK: $app"
 
       - name: Empacotar o aplicativo
