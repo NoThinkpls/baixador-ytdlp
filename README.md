@@ -22,14 +22,16 @@ Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no 
 ## O que o aplicativo oferece
 
 - Download de vídeo, áudio, playlists e trechos com escolha de qualidade e formato.
+- Entrada em lote pela própria tela: cole vários links, um por linha, e envie todos à fila.
 - Fila, perfis de saída, histórico, retomativa de falhas e organização por pasta.
 - Transcrição local com legendas SRT, VTT, ASS, karaoke, TXT e JSON.
+- Conversão por GPU com NVIDIA NVENC, AMD AMF ou VideoToolbox no Apple Silicon.
 - Ferramentas locais para recortar, extrair áudio, compactar, criar Shorts e queimar legendas.
 - Atualização opcional no Windows, conferida por SHA-256 antes de abrir o instalador.
 
 ## Interface
 
-A partir da versão 1.4.4 a interface tem linguagem visual própria, sem o Fluent
+A partir da versão 1.4.5 a interface tem linguagem visual própria, sem o Fluent
 Design da Microsoft — inclusive no Windows.
 
 - **Estrutura Discord.** Barra lateral com seções em caixa alta, indicador do
@@ -45,6 +47,12 @@ Design da Microsoft — inclusive no Windows.
   escolher a tarefa, selecionar a origem, ajustar apenas o necessário e salvar.
 - **Avisos que não atrapalham:** aparecem no alto do conteúdo, longe dos botões
   do cabeçalho, e somem sozinhos.
+- **Cookies sem adivinhação:** o app mostra o passo a passo, abre o guia do
+  yt-dlp e indica uma extensão de exportação que processa o arquivo localmente.
+
+AMD é acelerada pelo AMF do FFmpeg na conversão. A transcrição usa CUDA nas
+placas NVIDIA e CPU otimizada nas placas AMD, pois o motor de transcrição atual
+não possui backend AMD para Windows.
 
 A tipografia pede SF Pro quando ela existe na máquina e cai em Inter e Segoe UI
 quando não existe — o projeto não distribui fontes proprietárias. As cores, os

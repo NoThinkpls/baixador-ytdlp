@@ -67,13 +67,13 @@ def describe_source(cfg: Settings) -> str:
 
 
 EXPORT_INSTRUCTIONS = (
-    "Como exportar o cookies.txt do jeito que o YouTube aceita:\n\n"
-    "1. Instale uma extensão de exportação de cookies no formato Netscape.\n"
-    "2. Abra uma janela ANÔNIMA e faça login no YouTube.\n"
-    "3. Na mesma aba, vá para youtube.com/robots.txt.\n"
-    "4. Exporte os cookies de youtube.com e feche a janela anônima em seguida.\n"
-    "5. Aponte o arquivo salvo no campo 'Arquivo cookies.txt'.\n\n"
-    "A janela anônima importa: o YouTube rotaciona os cookies de abas abertas por "
-    "segurança, então cookies tirados da sua sessão normal costumam já chegar "
-    "inválidos. Fechar a janela sem reabrir o YouTube congela a sessão exportada."
+    "Passo a passo simples para salvar um cookies.txt:\n\n"
+    "1. No Chrome, Edge ou Firefox, instale a extensão gratuita “Get cookies.txt LOCALLY”.\n"
+    "2. Abra uma janela anônima/privativa e entre na sua conta do YouTube.\n"
+    "3. Ainda nessa janela, abra youtube.com/robots.txt.\n"
+    "4. Clique na extensão e escolha o formato “Netscape cookies.txt”; salve o arquivo.\n"
+    "5. Feche a janela anônima e use “Escolher arquivo” aqui para selecionar o .txt.\n\n"
+    "Segurança: cookies dão acesso à sua conta. Nunca envie esse arquivo a ninguém; "
+    "o aplicativo só o lê no seu computador. Evite a extensão antiga “Get cookies.txt” "
+    "sem o sufixo LOCALLY."
 )

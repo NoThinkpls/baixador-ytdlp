@@ -8,12 +8,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QVBoxLayout, QWidget
 
 from ..config import Settings
 from ..cookies import EXPORT_INSTRUCTIONS
-from ..gpu import GpuInfo, NVENC_LABELS
+from ..gpu import GPU_ENCODER_LABELS, GpuInfo
 from ..hardware import default_fragments, default_parallel_downloads, usable_cores
 from . import theme
 from .components import (Button, Headline, InsetGroup, Muted, PageHeader, PrimaryButton,
@@ -127,7 +128,7 @@ class SettingsPage(QWidget):
 
         self._section("GPU e conversão")
         self._gpu_row()
-        self._switch_row("Converter após baixar (NVENC)",
+        self._switch_row("Converter após baixar (GPU)",
                          "Reencoda o arquivo final usando a GPU.", "transcode_enabled")
         self.codec_combo = Select(self)
         self.codec_combo.setMinimumWidth(230)
@@ -137,7 +138,7 @@ class SettingsPage(QWidget):
         self.codec_combo.currentIndexChanged.connect(
             lambda: self._set("transcode_codec", self.codec_combo.currentData()))
         self._add_row(self.codec_row)
-        self._combo_row("Preset do NVENC", "Mais lento = melhor compressão.", PRESETS,
+        self._combo_row("Preset NVIDIA", "Usado somente por NVENC. Mais lento = melhor compressão.", PRESETS,
                         "transcode_preset")
         self._spin_row("Qualidade (CQ)", "Menor = melhor qualidade e arquivo maior. 20 é bom.",
                        "transcode_cq", 10, 40)
@@ -341,6 +342,23 @@ class SettingsPage(QWidget):
         self.cookies_help.hide()
         column.addWidget(self.cookies_help)
 
+        self.cookies_guide_btn = Button("Abrir guia do yt-dlp", "external", "secondary", row)
+        self.cookies_guide_btn.setToolTip("Abre o guia oficial do yt-dlp no navegador")
+        self.cookies_guide_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp")))
+        extension_btn = Button("Instalar Get cookies.txt LOCALLY", "external", "secondary", row)
+        extension_btn.setToolTip("Extensão recomendada para Chrome, Edge e navegadores Chromium")
+        extension_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(
+            "https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc")))
+        actions = QWidget(row)
+        actions_layout = QHBoxLayout(actions)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(8)
+        actions_layout.addWidget(self.cookies_guide_btn)
+        actions_layout.addWidget(extension_btn)
+        actions_layout.addStretch(1)
+        column.addWidget(actions)
+
         self._refresh_cookies_status()
         self._add_row(row)
 
@@ -401,9 +419,9 @@ class SettingsPage(QWidget):
         self.gpu_label.setText(gpu.summary)
         self.codec_combo.clear()
         for codec in gpu.encoders:
-            self.codec_combo.addItem(NVENC_LABELS[codec], userData=codec)
+            self.codec_combo.addItem(GPU_ENCODER_LABELS[codec], userData=codec)
         if not gpu.encoders:
-            self.codec_combo.addItem("Nenhum encoder NVENC disponível", userData="")
+            self.codec_combo.addItem("Nenhum encoder de GPU disponível", userData="")
             self.codec_row.setEnabled(False)
         else:
             for i in range(self.codec_combo.count()):

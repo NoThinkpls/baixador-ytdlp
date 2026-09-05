@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileDialog, QHBoxLayout,
-                               QHeaderView, QInputDialog, QTableWidget, QTableWidgetItem,
+                               QHeaderView, QInputDialog, QPlainTextEdit, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
 from ..config import Settings
@@ -56,6 +56,9 @@ class HomePage(QWidget):
         root.addWidget(page, 1)
 
         page.add(self._link_card())
+        self.batch_card = self._batch_card()
+        self.batch_card.hide()
+        page.add(self.batch_card)
 
         self.busy = BusyBar(self)
         self.busy.hide()
@@ -101,6 +104,11 @@ class HomePage(QWidget):
         self.import_list_btn.setToolTip("Importar até 500 links de um arquivo de texto")
         self.import_list_btn.clicked.connect(self._import_url_list)
 
+        self.batch_btn = Button("Vários links", "plus", "secondary", card)
+        self.batch_btn.setMinimumHeight(42)
+        self.batch_btn.setToolTip("Adicionar vários links sem criar um arquivo")
+        self.batch_btn.clicked.connect(self._toggle_batch)
+
         self.analyze_btn = PrimaryButton("Analisar", "search", card)
         self.analyze_btn.setMinimumHeight(42)
         self.analyze_btn.clicked.connect(self.analyze)
@@ -108,8 +116,83 @@ class HomePage(QWidget):
         card.body.addWidget(self.url_edit, 1)
         card.body.addWidget(self.paste_btn)
         card.body.addWidget(self.import_list_btn)
+        card.body.addWidget(self.batch_btn)
         card.body.addWidget(self.analyze_btn)
         return card
+
+    def _batch_card(self) -> Card:
+        """Entrada de lote para quem tem muitos links, sem sobrecarregar o fluxo normal."""
+        card = Card(self, padding=(16, 14, 16, 14), spacing=10)
+        card.body.addWidget(Headline("Adicionar vários links", card))
+        card.body.addWidget(Muted(
+            "Cole ou digite um link por linha. Você pode adicionar quantos quiser; "
+            "links repetidos são ignorados e até 500 entram na fila de uma vez.", card))
+        self.batch_edit = QPlainTextEdit(card)
+        self.batch_edit.setPlaceholderText("https://www.youtube.com/watch?v=...\nhttps://www.youtube.com/watch?v=...")
+        self.batch_edit.setMinimumHeight(118)
+        self.batch_edit.textChanged.connect(self._update_batch_count)
+        card.body.addWidget(self.batch_edit)
+
+        row = QWidget(card)
+        actions = QHBoxLayout(row)
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(8)
+        self.batch_count = Muted("0 links encontrados", row)
+        clear = Button("Limpar", "close", "secondary", row)
+        clear.clicked.connect(self.batch_edit.clear)
+        self.enqueue_batch_btn = PrimaryButton("Adicionar à fila", "queue", row)
+        self.enqueue_batch_btn.clicked.connect(self._enqueue_batch_urls)
+        actions.addWidget(self.batch_count, 1)
+        actions.addWidget(clear)
+        actions.addWidget(self.enqueue_batch_btn)
+        card.body.addWidget(row)
+        return card
+
+    def _toggle_batch(self) -> None:
+        visible = not self.batch_card.isVisible()
+        self.batch_card.setVisible(visible)
+        self.batch_btn.setText("Ocultar lote" if visible else "Vários links")
+        if visible:
+            self.batch_edit.setFocus()
+
+    def _batch_urls(self) -> list[str]:
+        seen: set[str] = set()
+        urls: list[str] = []
+        for match in URL_LIST_RE.findall(self.batch_edit.toPlainText()):
+            url = match.rstrip(".,;:)]}>")
+            if url not in seen:
+                seen.add(url)
+                urls.append(url)
+            if len(urls) >= MAX_BATCH_URLS:
+                break
+        return urls
+
+    def _update_batch_count(self) -> None:
+        count = len(self._batch_urls())
+        suffix = "" if count != MAX_BATCH_URLS else " (limite de 500)"
+        self.batch_count.setText(f"{count} link(s) encontrado(s){suffix}")
+
+    def _enqueue_batch_urls(self) -> None:
+        urls = self._batch_urls()
+        if not urls:
+            self._warn("Cole ao menos um link válido, começando com http:// ou https://.")
+            return
+        output_dir = self._output_dir()
+        if output_dir is None:
+            return
+        audio_only = self.audio_switch.isChecked()
+        options = [
+            DownloadOptions(
+                url=url, output_dir=output_dir, selector="bv*+ba/b",
+                container=self.container_combo.currentData(), audio_only=audio_only,
+                audio_format=self.audio_combo.currentData(), playlist=True, title=url,
+            )
+            for url in urls
+        ]
+        self.enqueue_many.emit(options)
+        self.batch_edit.clear()
+        Toast.success("Links adicionados", f"{len(options)} item(ns) foram enviados para a fila.",
+                      parent=self.window(), duration=5500)
 
     def _info_card(self) -> Card:
         card = Card(self, padding=(16, 14, 16, 14), spacing=3)
