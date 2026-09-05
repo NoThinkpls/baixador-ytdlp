@@ -3,7 +3,6 @@ name: build
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -39,8 +38,9 @@ jobs:
       - name: Definir a versão
         id: ver
         run: |
-          if ($env:GITHUB_REF -like 'refs/tags/v*') {
-            $v = $env:GITHUB_REF -replace '^refs/tags/v', ''
+          if ($env:GITHUB_REF -eq 'refs/heads/main') {
+            $v = python -c "import ast,pathlib; t=ast.parse(pathlib.Path('baixador_ytdlp/config.py').read_text(encoding='utf-8')); print(next(n.value.value for n in t.body if isinstance(n,ast.Assign) and any(isinstance(x,ast.Name) and x.id=='APP_VERSION' for x in n.targets)))"
+            if ($LASTEXITCODE -ne 0 -or -not $v) { throw "Não foi possível ler APP_VERSION" }
           } else {
             $v = "0.0.0-build$env:GITHUB_RUN_NUMBER"
           }
@@ -87,7 +87,7 @@ jobs:
           if (-not (Test-Path $archive -PathType Leaf)) { throw "Arquivo portátil não gerado: $archive" }
 
       - name: Criar cópias de download estável
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.ref == 'refs/heads/main'
         run: |
           # Estes nomes são usados pelos botões do README:
           # /releases/latest/download/baixador-ytdlp-setup.exe
@@ -99,7 +99,7 @@ jobs:
           Copy-Item $portable.FullName dist\installer\baixador-ytdlp-portable-windows.zip -Force
 
       - name: Validar referências públicas do README
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.ref == 'refs/heads/main'
         run: |
           $readme = Get-Content README.md -Raw
           $required = @(
@@ -168,8 +168,9 @@ jobs:
       - name: Definir a versão
         id: ver
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            version="${GITHUB_REF#refs/tags/v}"
+          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            version="$(python -c "import ast,pathlib; t=ast.parse(pathlib.Path('baixador_ytdlp/config.py').read_text(encoding='utf-8')); print(next(n.value.value for n in t.body if isinstance(n,ast.Assign) and any(isinstance(x,ast.Name) and x.id=='APP_VERSION' for x in n.targets)))")"
+            test -n "$version"
           else
             version="0.0.0-build${GITHUB_RUN_NUMBER}"
           fi
@@ -253,7 +254,7 @@ jobs:
             sleep 3
           done
 
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
             cp "$archive" dist/installer/baixador-ytdlp-macos-arm64.zip
             cp "$dmg" dist/installer/baixador-ytdlp-macos-arm64.dmg
           fi
@@ -272,13 +273,63 @@ jobs:
   release:
     name: Publicar release
     needs: [windows, macos]
-    if: startsWith(github.ref, 'refs/tags/v')
+    # A tag só é criada depois que os dois pacotes foram validados. Assim, uma
+    # falha de plataforma nunca deixa uma release publicada sem downloads.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decidir a publicação automática
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(python -c "import ast,pathlib; t=ast.parse(pathlib.Path('baixador_ytdlp/config.py').read_text(encoding='utf-8')); print(next(n.value.value for n in t.body if isinstance(n,ast.Assign) and any(isinstance(x,ast.Name) and x.id=='APP_VERSION' for x in n.targets)))")"
+          test -n "$version"
+          tag="v${version}"
+          response="$(mktemp)"
+          status="$(curl --silent --show-error --output "$response" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$tag")"
+          case "$status" in
+            200) assets="$(jq '.assets | length' "$response")" ;;
+            404) assets=0 ;;
+            *)
+              cat "$response"
+              echo "::error::Não foi possível consultar a release $tag (HTTP $status)."
+              exit 1
+              ;;
+          esac
+          publish=false
+          if [[ "$status" == 404 || "$assets" == 0 ]]; then
+            publish=true
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "Release $tag: HTTP $status, $assets ativo(s), publicar=$publish"
+
+      - name: Criar ou atualizar a tag da versão
+        if: steps.release.outputs.publish == 'true'
+        shell: bash
+        run: |
+          tag="${{ steps.release.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag --annotate --force "$tag" "$GITHUB_SHA" --message "Release $tag"
+          git push --force origin "refs/tags/$tag"
+
       - name: Baixar os instaladores compilados
+        if: steps.release.outputs.publish == 'true'
         uses: actions/download-artifact@v4
         with:
           pattern: baixador-ytdlp-*
@@ -286,9 +337,10 @@ jobs:
           merge-multiple: true
 
       - name: Validar os ativos da Release
+        if: steps.release.outputs.publish == 'true'
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${{ steps.release.outputs.version }}"
           required=(
             "BaixadorYtdlp-${version}-setup.exe"
             "baixador-ytdlp-setup.exe"
@@ -309,12 +361,16 @@ jobs:
           done
 
       - name: Criar a release
+        if: steps.release.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          name: baixador-ytdlp ${{ github.ref_name }}
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: baixador-ytdlp ${{ steps.release.outputs.tag }}
           files: |
             release-assets/*.exe
             release-assets/*.dmg
             release-assets/*.zip
             release-assets/SHA256SUMS*.txt
           generate_release_notes: true
+          make_latest: true
