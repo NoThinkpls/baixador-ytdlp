@@ -11,7 +11,7 @@ from .hardware import default_fragments, default_parallel_downloads
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.5.2"
+APP_VERSION = "1.6.0"
 IS_WINDOWS = sys.platform.startswith("win")
 
 
@@ -34,6 +34,7 @@ UPDATE_DIR = DATA_DIR / "updates"
 SETTINGS_PATH = DATA_DIR / "settings.json"
 STATE_PATH = DATA_DIR / "tools_state.json"
 HISTORY_PATH = DATA_DIR / "history.json"
+QUEUE_STATE_PATH = DATA_DIR / "download_queue.json"
 
 
 def default_download_dir() -> str:
@@ -57,6 +58,7 @@ def default_download_dir() -> str:
 class Settings:
     """Preferências do usuário — gravadas em settings.json."""
 
+    settings_schema_version: int = 2
     download_dir: str = field(default_factory=default_download_dir)
     ask_output_dir: bool = False     # liberar a escolha de pasta na página Baixar
     last_output_dir: str = ""        # última pasta escolhida por download
@@ -79,7 +81,13 @@ class Settings:
     filename_template: str = "%(title).180B [%(id)s].%(ext)s"
     # Perfis de saída salvos na página Baixar; somente preferências, nunca credenciais.
     download_profiles: list[dict[str, object]] = field(default_factory=list)
-    archive_enabled: bool = False    # não rebaixar o que já foi baixado
+    # Ativado por padrão: o arquivo de histórico do yt-dlp por pasta evita
+    # baixar novamente o mesmo ID quando ele já foi concluído.
+    archive_enabled: bool = True
+    resume_queue: bool = True        # restaura itens interrompidos ao reabrir
+    auto_retry_attempts: int = 2     # tentativas extras para falhas transitórias
+    auto_retry_delay: int = 5        # espera base entre tentativas, em segundos
+    organize_audio_by_uploader: bool = False
     theme: str = "auto"              # auto | light | dark
     mica: bool = True
     sidebar_collapsed: bool = False
@@ -115,7 +123,20 @@ class Settings:
         except Exception:
             return cls()
         known = {f.name for f in fields(cls)}
-        return cls(**{k: v for k, v in raw.items() if k in known})
+        values = {k: v for k, v in raw.items() if k in known}
+        # Até 1.5.x a chave de archive era interna, sem controle na interface,
+        # e o valor salvo padrão era false. Na migração 1.6 ela passa a evitar
+        # repetição por padrão; após o primeiro save, a escolha feita na nova UI
+        # permanece intacta.
+        try:
+            schema = int(raw.get("settings_schema_version") or 0)
+        except (TypeError, ValueError):
+            schema = 0
+        if schema < 2:
+            values["archive_enabled"] = True
+            values["resume_queue"] = True
+            values["settings_schema_version"] = 2
+        return cls(**values)
 
     def save(self) -> None:
         """Grava de forma atômica. Nunca deixa o app cair por falha de disco."""

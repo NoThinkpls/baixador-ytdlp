@@ -4,7 +4,9 @@
 
 Cole o link, analise as qualidades disponíveis e escolha vídeo, áudio ou apenas um trecho. O aplicativo usa a melhor qualidade por padrão e permite selecionar contêiner, resolução, codec e pasta de saída.
 
-A fila permite processar mais de um item, cancelar, tentar novamente os que falharam e acompanhar velocidade, progresso e previsão de término. Também é possível importar uma lista de URLs e salvar perfis de saída para repetir uma configuração.
+A fila permite processar mais de um item, cancelar, tentar novamente os que falharam e acompanhar velocidade, progresso e previsão de término. Quedas transitórias de rede recebem retentativas automáticas; se o aplicativo fechar, a fila e os arquivos parciais voltam na próxima abertura. Também é possível importar uma lista de URLs e salvar perfis de saída para repetir uma configuração.
+
+A análise mostra as combinações de imagem e áudio, tamanho aproximado, idiomas de áudio e as legendas manuais ou automáticas que o site disponibiliza. Em downloads de áudio, capa, metadados e capítulos usam as opções de **Conteúdo extra**; também é possível organizar por canal/artista.
 
 ## Conteúdo que exige login
 
@@ -26,4 +28,4 @@ Em **Configurações → Atualizações do aplicativo**, você pode desligar a c
 
 ## Onde ficam os dados
 
-No Windows, configurações, histórico, modelos e dependências ficam em `%LOCALAPPDATA%\\BaixadorYtdlp`. No macOS, ficam em `~/Library/Application Support/BaixadorYtdlp`. A pasta dos downloads é configurável.
+No Windows, configurações, histórico, fila, modelos e dependências ficam em `%LOCALAPPDATA%\\BaixadorYtdlp`. No macOS, ficam em `~/Library/Application Support/BaixadorYtdlp`. No Linux, ficam em `~/.local/share/BaixadorYtdlp` (ou no diretório definido em `XDG_DATA_HOME`). A pasta dos downloads é configurável.

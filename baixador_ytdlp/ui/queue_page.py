@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QLabel, QVBox
 from ..config import Settings
 from ..downloader import DownloadOptions, Progress
 from ..probe import human_size
+from ..queue_state import QueueState
 from ..workers import DownloadWorker
 from . import icons, theme
 from .components import (Button, Chip, EmptyState, Headline, IconButton, ListRow, LogView,
@@ -138,6 +139,10 @@ class JobCard(ListRow):
             button.hide()
 
     def update_progress(self, prog: Progress) -> None:
+        if prog.status == "retrying":
+            self._set_state("Tentando novamente", "warning", "refresh")
+            self.status.setText(prog.stage or "Aguardando nova tentativa…")
+            return
         self._set_state("Baixando", "accent", "download")
         if prog.stage:
             self.status.setText(prog.stage)
@@ -250,6 +255,8 @@ class QueuePage(QWidget):
         self._next_id = 1
         self.jobs: dict[int, Job] = {}
         self.pending: list[int] = []
+        self._state = QueueState()
+        self._state_restored = False
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -280,6 +287,7 @@ class QueuePage(QWidget):
 
     def set_toolchain(self, toolchain) -> None:
         self.toolchain = toolchain
+        self._restore_pending()
 
     # ------------------------------------------------------------- fila
     def add(self, opts: DownloadOptions) -> bool:
@@ -296,10 +304,11 @@ class QueuePage(QWidget):
             self._pump()
         return added, len(options) - added
 
-    def _add(self, opts: DownloadOptions) -> bool:
-        if any(self._same_download(job.opts, opts)
-               for job in self.jobs.values()
-               if job.active or job.id in self.pending):
+    def _add(self, opts: DownloadOptions, *, persist: bool = True) -> bool:
+        # Dentro da mesma sessão um cartão existente já é a fonte de verdade:
+        # em caso de falha a pessoa pode usar o botão "Tentar de novo" sem
+        # criar dois jobs concorrentes para o mesmo arquivo.
+        if any(self._same_download(job.opts, opts) for job in self.jobs.values()):
             return False
         job_id = self._next_id
         self._next_id += 1
@@ -312,7 +321,31 @@ class QueuePage(QWidget):
         self.pending.append(job_id)
         self.empty.hide()
         self.scroll.show()
+        if persist:
+            self._persist()
         return True
+
+    def _restore_pending(self) -> None:
+        """Restaura uma fila deixada pela sessão anterior uma única vez."""
+        if self._state_restored or self.toolchain is None:
+            return
+        self._state_restored = True
+        if not self.cfg.resume_queue:
+            self._state.save([])
+            return
+        restored = sum(1 for opts in self._state.load() if self._add(opts, persist=False))
+        if restored:
+            self._pump()
+        else:
+            self._persist()
+
+    def _persist(self) -> None:
+        """Mantém somente jobs que ainda precisam de trabalho no próximo início."""
+        options = [
+            job.opts for job in self.jobs.values()
+            if job.active or job.id in self.pending
+        ]
+        self._state.save(options)
 
     @staticmethod
     def _same_download(first: DownloadOptions, second: DownloadOptions) -> bool:
@@ -334,6 +367,7 @@ class QueuePage(QWidget):
         job.card.reset()
         if job_id not in self.pending:
             self.pending.append(job_id)
+        self._persist()
         self._pump()
 
     def _running(self) -> int:
@@ -353,6 +387,7 @@ class QueuePage(QWidget):
             job.active = True
             job.card.status.setText("Iniciando…")
             worker.start()
+        self._persist()
         self._refresh_summary()
 
     def cancel(self, job_id: int) -> None:
@@ -364,6 +399,7 @@ class QueuePage(QWidget):
         elif job_id in self.pending:
             self.pending.remove(job_id)
             job.card.mark_failed("Cancelado")
+            self._persist()
             self._refresh_summary()
 
     def _on_progress(self, job_id: int, prog: Progress) -> None:
@@ -381,6 +417,7 @@ class QueuePage(QWidget):
             self.job_finished.emit(job.opts, paths)
             if self.cfg.open_folder_on_finish and paths:
                 reveal(paths[0])
+            self._persist()
         self._pump()
         self._emit_overall()
 
@@ -392,6 +429,7 @@ class QueuePage(QWidget):
             job.card.mark_failed(message, detail)
             if message != "Cancelado":
                 Toast.error("Falha no download", message, parent=self.window(), duration=9000)
+            self._persist()
         self._pump()
         self._emit_overall()
 
@@ -424,6 +462,7 @@ class QueuePage(QWidget):
         if not self.jobs:
             self.scroll.hide()
             self.empty.show()
+        self._persist()
         self._refresh_summary()
 
     def stop_all(self) -> None:
@@ -433,3 +472,4 @@ class QueuePage(QWidget):
         for job in self.jobs.values():
             if job.worker:
                 job.worker.wait(3000)
+        self._persist()

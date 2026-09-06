@@ -12,6 +12,11 @@ from baixador_ytdlp.updater import AppUpdater
 
 
 class ToolCheckTests(unittest.TestCase):
+    def test_accepts_sha256_digest_exposed_by_github_assets(self) -> None:
+        digest = "a" * 64
+        self.assertEqual(ToolManager._asset_sha256({"digest": f"sha256:{digest}"}), digest)
+        self.assertEqual(ToolManager._asset_sha256({"digest": "sha512:bad"}), "")
+
     def test_manual_ytdlp_check_does_not_redownload_current_version(self) -> None:
         """"Verificar agora" consulta a origem, mas preserva o binário atual."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -45,7 +50,9 @@ class ToolCheckTests(unittest.TestCase):
             manager._save_state = Mock()
             manager.state["ffmpeg_stamp"] = "99:2026-09-05T00:00:00Z"
 
-            with patch("baixador_ytdlp.tools.json.load", return_value={"assets": [asset]}):
+            with patch("baixador_ytdlp.tools.IS_WINDOWS", True), \
+                    patch("baixador_ytdlp.tools.sys.platform", "win32"), \
+                    patch("baixador_ytdlp.tools.json.load", return_value={"assets": [asset]}):
                 manager.ensure_ffmpeg(Mock(), check_now=True)
 
             manager._download.assert_not_called()

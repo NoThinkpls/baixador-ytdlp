@@ -6,7 +6,7 @@ import os
 import signal
 import subprocess
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -82,6 +82,9 @@ class MediaInfo:
     playlist_count: int
     rows: list[FormatRow]
     raw: dict
+    audio_languages: list[str] = field(default_factory=list)
+    subtitles: list[str] = field(default_factory=list)
+    auto_subtitles: list[str] = field(default_factory=list)
 
     @property
     def best_label(self) -> str:
@@ -89,6 +92,10 @@ class MediaInfo:
             if not row.audio_only:
                 return row.quality
         return "melhor disponível"
+
+    @property
+    def video_count(self) -> int:
+        return sum(1 for row in self.rows if not row.audio_only)
 
 
 class ProbeError(RuntimeError):
@@ -296,6 +303,9 @@ def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = 
         playlist_count=count,
         rows=build_rows(entry),
         raw=entry,
+        audio_languages=_audio_languages(entry),
+        subtitles=_caption_languages(entry.get("subtitles")),
+        auto_subtitles=_caption_languages(entry.get("automatic_captions")),
     )
 
 
@@ -418,3 +428,29 @@ def build_rows(info: dict) -> list[FormatRow]:
             trimmed.append(row)
 
     return trimmed + audio[:6]
+
+
+def _caption_languages(source: object) -> list[str]:
+    """Converte o mapa cru do yt-dlp numa lista curta, estável e exibível."""
+    if not isinstance(source, dict):
+        return []
+    return sorted(
+        {str(language).strip() for language, formats in source.items()
+         if language and isinstance(formats, list) and formats},
+        key=str.casefold,
+    )
+
+
+def _audio_languages(info: dict) -> list[str]:
+    languages: set[str] = set()
+    for fmt in info.get("formats") or []:
+        if (fmt.get("acodec") or "none") == "none":
+            continue
+        language = str(fmt.get("language") or "").strip()
+        if language and language.casefold() not in {"und", "none"}:
+            languages.add(language)
+    # Alguns extratores não colocam idioma por formato, mas informam o original.
+    fallback = str(info.get("language") or "").strip()
+    if not languages and fallback and fallback.casefold() not in {"und", "none"}:
+        languages.add(fallback)
+    return sorted(languages, key=str.casefold)

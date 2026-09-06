@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Baixador YT-DLP
+Comment=Baixe, organize e transcreva mídias locais
+Exec=baixador-ytdlp
+Icon=baixador-ytdlp
+Terminal=false
+Categories=AudioVideo;Network;Utility;
+Keywords=video;audio;youtube;yt-dlp;download;

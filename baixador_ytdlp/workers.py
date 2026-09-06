@@ -12,7 +12,8 @@ from PySide6.QtCore import QThread, Signal
 
 from .config import Settings
 from .diagnostics import get_logger, log_event, report_exception
-from .downloader import DownloadOptions, DownloadRunner, Progress, Transcoder
+from .downloader import (DownloadOptions, DownloadRunner, Progress, Transcoder,
+                         is_retryable_error)
 from .gpu import GpuInfo, detect
 from .media_tools import MediaToolError, MediaToolOptions, build_command
 from .probe import probe
@@ -203,8 +204,10 @@ class DownloadWorker(QThread):
         self.job_id, self.opts, self.cfg, self.tc = job_id, opts, cfg, tc
         self.runner = DownloadRunner(opts, cfg, tc)
         self.transcoder: Transcoder | None = None
+        self._cancelled = threading.Event()
 
     def cancel(self) -> None:
+        self._cancelled.set()
         self.runner.cancel()
         if self.transcoder:
             self.transcoder.cancel()
@@ -212,8 +215,48 @@ class DownloadWorker(QThread):
     def run(self) -> None:
         try:
             log_event("Download iniciado: job=%s url=%s", self.job_id, self.opts.url)
-            files = self.runner.run(lambda p: self.progress.emit(self.job_id, p))
-            if self.runner.cancelled:
+            files: list[Path] = []
+            last_error: Exception | None = None
+            retries = max(0, min(5, int(self.cfg.auto_retry_attempts)))
+            for attempt in range(retries + 1):
+                if self._cancelled.is_set():
+                    self.failed.emit(self.job_id, "Cancelado", "")
+                    return
+                # Uma nova execução é importante: o processo do yt-dlp que
+                # recebeu erro de rede não deve ser reutilizado. Os .part ficam
+                # no destino e --continue começa exatamente de onde parou.
+                self.runner = DownloadRunner(self.opts, self.cfg, self.tc)
+                try:
+                    files = self.runner.run(lambda p: self.progress.emit(self.job_id, p))
+                except Exception as exc:  # o detalhe final preserva a saída útil
+                    last_error = exc
+                    if (self._cancelled.is_set() or self.runner.cancelled
+                            or not is_retryable_error(str(exc)) or attempt >= retries):
+                        raise
+
+                    delay = max(1, min(60, int(self.cfg.auto_retry_delay))) * (attempt + 1)
+                    log_event(
+                        "Download transitório; job=%s tentativa=%s/%s nova tentativa em %ss: %s",
+                        self.job_id, attempt + 1, retries + 1, delay, exc,
+                    )
+                    self.progress.emit(self.job_id, Progress(
+                        status="retrying", stage=(
+                            f"Conexão instável — nova tentativa {attempt + 2} de {retries + 1} "
+                            f"em {delay}s"
+                        ),
+                    ))
+                    # Espera curta e cancelável: não há trabalho na interface e
+                    # o botão Cancelar continua respondendo imediatamente.
+                    if self._cancelled.wait(delay):
+                        self.failed.emit(self.job_id, "Cancelado", "")
+                        return
+                    continue
+                else:
+                    break
+            else:  # defesa para alterações futuras no laço
+                raise last_error or RuntimeError("O download não terminou.")
+
+            if self._cancelled.is_set() or self.runner.cancelled:
                 self.failed.emit(self.job_id, "Cancelado", "")
                 return
 

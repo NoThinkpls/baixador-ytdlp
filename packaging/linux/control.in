@@ -1,0 +1,10 @@
+Package: baixador-ytdlp
+Version: @VERSION@
+Section: video
+Priority: optional
+Architecture: amd64
+Maintainer: NoThinkpls <noreply@github.com>
+Depends: libdbus-1-3, libegl1, libgl1, libxcb-cursor0, libxkbcommon-x11-0
+Description: Downloader e ferramentas locais de mídia com yt-dlp
+ Interface gráfica para baixar vídeos, áudios, playlists e legendas com
+ yt-dlp e FFmpeg. Os binários de mídia são atualizados no perfil do usuário.

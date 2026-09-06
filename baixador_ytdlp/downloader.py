@@ -65,6 +65,37 @@ class DownloadError(RuntimeError):
     pass
 
 
+_RETRYABLE_FAILURES = (
+    "timed out", "timeout", "connection reset", "connection aborted",
+    "connection refused", "temporary failure", "temporarily unavailable",
+    "network is unreachable", "name or service not known", "getaddrinfo",
+    "urlopen error", "http error 408", "http error 429", "http error 500",
+    "http error 502", "http error 503", "http error 504", "incomplete read",
+    "unexpected eof", "tls", "ssl", "remote end closed",
+)
+
+
+def is_retryable_error(message: str) -> bool:
+    """Diz se uma nova execução tem chance real de resolver a falha.
+
+    Erros de URL, permissão, conta, vídeo removido ou formato inexistente não
+    entram nesta lista: repetir automaticamente esses casos só atrasa a fila e
+    transmite a impressão errada de que o aplicativo está "travado".
+    """
+    text = (message or "").casefold()
+    return any(marker in text for marker in _RETRYABLE_FAILURES)
+
+
+def _output_template(opts: DownloadOptions, cfg: Settings) -> str:
+    """Escolhe a nomenclatura final sem alterar a preferência base do usuário."""
+    template = cfg.filename_template
+    if opts.audio_only and cfg.organize_audio_by_uploader:
+        # O próprio yt-dlp sanitiza o nome em cada sistema. A pasta vem antes do
+        # template salvo, portanto o usuário ainda controla título, data e ID.
+        return "%(uploader|Canal desconhecido)s/" + template
+    return template
+
+
 def build_args(opts: DownloadOptions, cfg: Settings, tc: Toolchain) -> list[str]:
     args: list[str] = [
         str(tc.ytdlp),
@@ -77,9 +108,11 @@ def build_args(opts: DownloadOptions, cfg: Settings, tc: Toolchain) -> list[str]
         "--progress-template", PROGRESS_TEMPLATE,
         "--print", FILE_TEMPLATE,
         "--paths", opts.output_dir,
-        "--output", cfg.filename_template,
+        "--output", _output_template(opts, cfg),
         "--concurrent-fragments", str(max(1, cfg.concurrent_fragments)),
-        "--retries", "10", "--fragment-retries", "10",
+        # O yt-dlp lida com erros de fragmento; a fila aplica, além disso,
+        # poucas novas execuções completas para quedas temporárias de rede.
+        "--retries", "10", "--fragment-retries", "10", "--file-access-retries", "3",
         "--no-overwrites", "--continue",
     ]
     if IS_WINDOWS:
@@ -87,7 +120,7 @@ def build_args(opts: DownloadOptions, cfg: Settings, tc: Toolchain) -> list[str]
 
     if opts.playlist:
         args += ["--yes-playlist"]
-        args += ["--output", "%(playlist_title)s/%(playlist_index)03d - " + cfg.filename_template]
+        args += ["--output", "%(playlist_title)s/%(playlist_index)03d - " + _output_template(opts, cfg)]
     else:
         args += ["--no-playlist"]
 
@@ -114,8 +147,13 @@ def build_args(opts: DownloadOptions, cfg: Settings, tc: Toolchain) -> list[str]
         args.append("--embed-metadata")
     if cfg.embed_chapters:
         args.append("--embed-chapters")
-    if cfg.embed_thumbnail and opts.container != "webm":
+    if cfg.embed_thumbnail and (opts.audio_only or opts.container != "webm"):
         args.append("--embed-thumbnail")
+        # Capas WebP nem sempre são aceitas por players e tags MP3. Converter
+        # somente quando há capa a embutir deixa o áudio consistente sem custo
+        # para quem optou por não baixar miniaturas.
+        if opts.audio_only:
+            args += ["--convert-thumbnails", "jpg"]
     if cfg.write_subs and not opts.audio_only:
         args += ["--write-subs", "--write-auto-subs", "--sub-langs", cfg.sub_langs]
         if cfg.embed_subs:

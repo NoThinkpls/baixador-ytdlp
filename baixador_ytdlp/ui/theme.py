@@ -260,6 +260,17 @@ def stylesheet() -> str:
         border: 1px solid {p.border};
         border-radius: {RADIUS_CARD}px;
     }}
+    #analysisStat {{
+        background-color: {'rgba(255,255,255,0.035)' if dark else '#F7F8FB'};
+        border: 1px solid {p.separator};
+        border-radius: {RADIUS_SMALL}px;
+    }}
+    #analysisStat QLabel#muted {{
+        color: {p.text_tertiary};
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.7px;
+    }}
     #appUpdateBanner {{
         background-color: {p.accent_soft};
         border: none;
