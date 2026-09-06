@@ -352,7 +352,7 @@ jobs:
           root="build/linux-package"
           out="dist/installer"
           rm -rf "$root"
-          mkdir -p "$root/DEBIAN" "$root/opt/baixador-ytdlp" "$out"
+          mkdir -p "$root/DEBIAN" "$root/opt/baixador-ytdlp" "$root/usr/bin" "$out"
           cp -a dist/baixador-ytdlp/. "$root/opt/baixador-ytdlp/"
           install -Dm644 packaging/linux/control.in "$root/DEBIAN/control"
           sed -i "s/@VERSION@/$version/g" "$root/DEBIAN/control"
