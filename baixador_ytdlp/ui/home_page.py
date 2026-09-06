@@ -71,6 +71,10 @@ class HomePage(QWidget):
         self.quality_label = SectionLabel("Qualidade", self)
         self.quality_label.hide()
         page.add(self.quality_label)
+        self.quality_hint = Muted(
+            "O tamanho vem da estimativa do site e pode mudar um pouco após juntar vídeo e áudio.", self)
+        self.quality_hint.hide()
+        page.add(self.quality_hint)
         page.add(self._quality_table())
 
         page.add(SectionLabel("Saída", self))
@@ -195,18 +199,41 @@ class HomePage(QWidget):
                       parent=self.window(), duration=5500)
 
     def _info_card(self) -> Card:
-        card = Card(self, padding=(16, 14, 16, 14), spacing=3)
+        card = Card(self, padding=(16, 14, 16, 14), spacing=10)
         self.media_title = Headline("—", card, wrap=True)
         self.media_meta = Muted("", card)
         card.body.addWidget(self.media_title)
         card.body.addWidget(self.media_meta)
+
+        stats = QWidget(card)
+        stats.setObjectName("analysisStats")
+        row = QHBoxLayout(stats)
+        row.setContentsMargins(0, 2, 0, 0)
+        row.setSpacing(8)
+
+        def add_stat(label: str):
+            box = QWidget(stats)
+            box.setObjectName("analysisStat")
+            column = QVBoxLayout(box)
+            column.setContentsMargins(12, 9, 12, 10)
+            column.setSpacing(2)
+            column.addWidget(Muted(label, box))
+            value = Headline("—", box, wrap=True)
+            column.addWidget(value)
+            row.addWidget(box, 1)
+            return value
+
+        self.formats_stat = add_stat("FORMATOS")
+        self.audio_stat = add_stat("ÁUDIO")
+        self.subtitles_stat = add_stat("LEGENDAS")
+        card.body.addWidget(stats)
         return card
 
     def _quality_table(self) -> QTableWidget:
         self.table = QTableWidget(self)
-        self.table.setColumnCount(7)
+        self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(
-            ["Qualidade", "FPS", "Vídeo", "Áudio", "Container", "Tamanho", "Observações"])
+            ["Qualidade", "Vídeo", "Áudio", "Formato", "Tamanho aprox.", "Detalhes"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -223,9 +250,12 @@ class HomePage(QWidget):
         header.setFont(theme.font(11, 700, 0.4))
         header.setHighlightSections(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
-        self.table.setMinimumHeight(200)
-        self.table.setMaximumHeight(340)
+        for column in range(1, 5):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        self.table.setMinimumHeight(188)
+        self.table.setMaximumHeight(370)
+        self.table.setToolTip("Escolha uma opção ou deixe em Automático para o yt-dlp combinar a melhor imagem e áudio.")
         self.table.hide()
         return self.table
 
@@ -660,6 +690,14 @@ class HomePage(QWidget):
         if info.is_playlist:
             meta.append(f"playlist com {info.playlist_count} itens")
         self.media_meta.setText(" · ".join(meta))
+        self.formats_stat.setText(f"{info.video_count} opção(ões) · até {info.best_label}")
+        self.audio_stat.setText(self._short_languages(info.audio_languages, "Não informado"))
+        subtitle_parts = []
+        if info.subtitles:
+            subtitle_parts.append("Manuais: " + self._short_languages(info.subtitles))
+        if info.auto_subtitles:
+            subtitle_parts.append("Auto: " + self._short_languages(info.auto_subtitles))
+        self.subtitles_stat.setText(" · ".join(subtitle_parts) or "Não disponíveis")
         self.info_card.show()
 
         self.playlist_hint.setText(
@@ -668,6 +706,7 @@ class HomePage(QWidget):
 
         self._fill_table(info)
         self.quality_label.show()
+        self.quality_hint.show()
         self.table.show()
         self.download_btn.setEnabled(True)
         self.download_btn.setToolTip("")
@@ -679,23 +718,33 @@ class HomePage(QWidget):
         self.table.clearContents()
         self.table.setRowCount(len(rows) + 1)
 
-        auto = [f"Automático — {info.best_label}", "—", "melhor", "melhor", "—", "—",
-                "Deixa o yt-dlp escolher a melhor combinação"]
+        auto = [f"Automático — {info.best_label}", "melhor", "melhor", "—", "—",
+                "Combina imagem e áudio com a melhor qualidade disponível"]
         for col, text in enumerate(auto):
             self.table.setItem(0, col, QTableWidgetItem(text))
 
         for r, row in enumerate(rows, start=1):
             quality = row.quality + ("  (só áudio)" if row.audio_only else "")
-            cells = [quality, row.fps, row.vcodec, row.acodec, row.ext, row.size, row.note]
+            if row.fps != "—" and not row.audio_only:
+                quality += f" · {row.fps} fps"
+            cells = [quality, row.vcodec, row.acodec, row.ext.upper(), row.size, row.note or "—"]
             for col, text in enumerate(cells):
                 item = QTableWidgetItem(text)
-                if col in (1, 5):
+                if col == 4:
                     item.setTextAlignment(int(Qt.AlignmentFlag.AlignRight
                                               | Qt.AlignmentFlag.AlignVCenter))
                 self.table.setItem(r, col, item)
 
         self.table.selectRow(0)
         self.table.setUpdatesEnabled(True)
+
+    @staticmethod
+    def _short_languages(languages: list[str], empty: str = "—") -> str:
+        if not languages:
+            return empty
+        visible = languages[:4]
+        suffix = f" +{len(languages) - len(visible)}" if len(languages) > len(visible) else ""
+        return ", ".join(visible) + suffix
 
     def _emit_job(self) -> None:
         if not self.info:

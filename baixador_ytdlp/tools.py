@@ -3,10 +3,10 @@
 Os binários ficam em %LOCALAPPDATA%\\BaixadorYtdlp\\bin, fora de Program Files,
 para que a atualização automática não precise de elevação.
 
-Integridade: o yt-dlp.exe é conferido contra o arquivo SHA2-256SUMS assinado
-publicado no próprio release. O FFmpeg (BtbN) não publica checksums, então
-comparamos o id do asset retornado pela API do GitHub e gravamos no estado
-local — qualquer troca do binário exige um novo id vindo do GitHub por HTTPS.
+Integridade: o yt-dlp é conferido contra o arquivo SHA2-256SUMS publicado no
+release. Para FFmpeg, usamos o digest SHA-256 retornado pela API de Releases
+quando o fornecedor o disponibiliza; o id do asset também é gravado no estado
+local para detectar atualizações futuras.
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ import sys
 import re
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import time
 import urllib.error
@@ -49,6 +50,13 @@ DENO_RELEASE_API = "https://api.github.com/repos/denoland/deno/releases/latest"
 YTDLP_RELEASE_API = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
 FFMPEG_RELEASE_API = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest"
 FFMPEG_ASSET = "ffmpeg-master-latest-win64-gpl.zip"
+LINUX_FFMPEG_ASSETS = {
+    "x86_64": "ffmpeg-master-latest-linux64-gpl.tar.xz",
+    "amd64": "ffmpeg-master-latest-linux64-gpl.tar.xz",
+    # BtbN publica esta variante quando há build Linux ARM64 disponível.
+    "aarch64": "ffmpeg-master-latest-linuxarm64-gpl.tar.xz",
+    "arm64": "ffmpeg-master-latest-linuxarm64-gpl.tar.xz",
+}
 # Builds estáticas para macOS; os IDs dos assets são gravados como no fluxo Windows
 # quando o fornecedor não publica um arquivo de checksums separado.
 MAC_FFMPEG_RELEASE_API = "https://api.github.com/repos/descriptinc/ffmpeg-ffprobe-static/releases/latest"
@@ -279,6 +287,14 @@ class ToolManager:
         return digest.hexdigest()
 
     @staticmethod
+    def _asset_sha256(asset: dict) -> str:
+        """Lê o digest SHA-256 exposto pela API de assets do GitHub."""
+        digest = str(asset.get("digest") or "").strip().lower()
+        if digest.startswith("sha256:"):
+            digest = digest.split(":", 1)[1]
+        return digest if re.fullmatch(r"[0-9a-f]{64}", digest) else ""
+
+    @staticmethod
     def _extract_zip_member(zf: zipfile.ZipFile, member: str, destination: Path) -> None:
         """Extrai sem manter um executável inteiro duplicado na memória."""
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -327,12 +343,7 @@ class ToolManager:
     def ensure_ytdlp(self, progress: ProgressCB, check_now: bool = False) -> None:
         target = self.bin_dir / YTDLP_EXE
         current = self.local_ytdlp_version(target)
-
-        if sys.platform not in ("win32", "darwin") and not target.exists():
-            if shutil.which("yt-dlp"):
-                progress("yt-dlp encontrado no sistema", 100)
-                return
-            raise RuntimeError("Instale o yt-dlp (pip install yt-dlp) neste sistema.")
+        system_ytdlp = shutil.which("yt-dlp") if not target.exists() else None
 
         if current and not check_now and not self._should_check("ytdlp", 12):
             progress(f"yt-dlp {current} (verificado recentemente)", 100)
@@ -344,6 +355,9 @@ class ToolManager:
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             if current:
                 progress(f"Sem rede para checar atualização — usando yt-dlp {current}", 100)
+                return
+            if system_ytdlp:
+                progress("Sem rede — usando o yt-dlp disponível no sistema", 100)
                 return
             raise RuntimeError(f"Não foi possível baixar o yt-dlp: {exc}") from exc
 
@@ -446,6 +460,88 @@ class ToolManager:
         self._save_state()
         progress("FFmpeg para macOS instalado", 100)
 
+    def _ensure_linux_ffmpeg(self, progress: ProgressCB, check_now: bool = False) -> None:
+        """Instala FFmpeg estático no perfil do usuário em Debian/Ubuntu.
+
+        O pacote .deb não depende de uma versão do FFmpeg da distribuição. Isso
+        evita que instalações recém-feitas recebam recursos muito antigos para
+        mesclar streams, miniaturas ou legendas, e mantém o mesmo fluxo de
+        atualização em runtime usado no Windows e no macOS.
+        """
+        target = self.bin_dir / FFMPEG_EXE
+        current = self.local_ffmpeg_version(target)
+        if current and not check_now and not self._should_check("ffmpeg", 168):
+            progress(f"FFmpeg {current} (verificado recentemente)", 100)
+            return
+
+        machine = platform.machine().lower()
+        asset_name = LINUX_FFMPEG_ASSETS.get(machine)
+        if not asset_name:
+            system_ffmpeg = shutil.which("ffmpeg")
+            if system_ffmpeg:
+                progress("FFmpeg do sistema será usado nesta arquitetura", 100)
+                return
+            raise RuntimeError(
+                f"Não há build FFmpeg em runtime para a arquitetura Linux {machine}. "
+                "Instale o pacote ffmpeg da sua distribuição."
+            )
+
+        progress("Consultando a build mais recente do FFmpeg para Linux…", -1)
+        try:
+            with self._request(FFMPEG_RELEASE_API) as resp:
+                data = json.load(resp)
+            asset = next(a for a in data["assets"] if a["name"] == asset_name)
+        except (StopIteration, urllib.error.URLError, TimeoutError, OSError, KeyError) as exc:
+            if current:
+                progress(f"Sem rede para checar atualização — usando FFmpeg {current}", 100)
+                return
+            if shutil.which("ffmpeg"):
+                progress("Sem rede — usando o FFmpeg disponível no sistema", 100)
+                return
+            raise RuntimeError(f"Não foi possível baixar o FFmpeg para Linux: {exc}") from exc
+
+        self._mark_checked("ffmpeg")
+        stamp = f"{asset['id']}:{asset.get('updated_at', '')}"
+        if current and self.state.get("ffmpeg_stamp") == stamp:
+            progress(f"FFmpeg {current} já está atualizado", 100)
+            self._save_state()
+            return
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            archive_path = Path(tmpdir) / asset_name
+            self._download(asset["browser_download_url"], archive_path, progress,
+                           "Baixando FFmpeg para Linux")
+            expected = self._asset_sha256(asset)
+            if expected:
+                progress("Conferindo a integridade do FFmpeg…", -1)
+                if self._sha256(archive_path) != expected:
+                    raise RuntimeError("Hash SHA-256 do FFmpeg não confere. Download descartado.")
+            progress("Extraindo FFmpeg…", -1)
+            wanted = {FFMPEG_EXE, FFPROBE_EXE}
+            with tarfile.open(archive_path, mode="r:xz") as archive:
+                members = {
+                    Path(member.name).name: member for member in archive.getmembers()
+                    if member.isfile() and Path(member.name).name in wanted
+                }
+                missing = wanted - members.keys()
+                if missing:
+                    raise RuntimeError("O pacote FFmpeg não trouxe: " + ", ".join(sorted(missing)))
+                for name, member in members.items():
+                    stream = archive.extractfile(member)
+                    if stream is None:
+                        raise RuntimeError(f"Não foi possível extrair {name} do pacote FFmpeg")
+                    staged = self.bin_dir / f"{name}.new"
+                    staged.parent.mkdir(parents=True, exist_ok=True)
+                    with stream, open(staged, "wb") as destination:
+                        shutil.copyfileobj(stream, destination, length=1 << 20)
+                    self._replace(staged, self.bin_dir / name)
+
+        # O id/timestamp complementa a conferência de hash e indica ao cache
+        # local quando uma nova build foi publicada.
+        self.state["ffmpeg_stamp"] = stamp
+        self._save_state()
+        progress("FFmpeg para Linux instalado", 100)
+
     def ensure_ffmpeg(self, progress: ProgressCB, check_now: bool = False) -> None:
         target = self.bin_dir / FFMPEG_EXE
         current = self.local_ffmpeg_version(target)
@@ -454,11 +550,9 @@ class ToolManager:
             self._ensure_macos_ffmpeg(progress, check_now)
             return
 
-        if not IS_WINDOWS and not target.exists():
-            if shutil.which("ffmpeg"):
-                progress("FFmpeg encontrado no sistema", 100)
-                return
-            raise RuntimeError("Instale o FFmpeg neste sistema.")
+        if not IS_WINDOWS:
+            self._ensure_linux_ffmpeg(progress, check_now)
+            return
 
         if current and not check_now and not self._should_check("ffmpeg", 168):  # 7 dias
             progress(f"FFmpeg {current} (verificado recentemente)", 100)
@@ -485,6 +579,11 @@ class ToolManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             zip_path = Path(tmpdir) / FFMPEG_ASSET
             self._download(asset["browser_download_url"], zip_path, progress, "Baixando FFmpeg")
+            expected = self._asset_sha256(asset)
+            if expected:
+                progress("Conferindo a integridade do FFmpeg…", -1)
+                if self._sha256(zip_path) != expected:
+                    raise RuntimeError("Hash SHA-256 do FFmpeg não confere. Download descartado.")
             progress("Extraindo FFmpeg…", -1)
             wanted = {"ffmpeg.exe", "ffprobe.exe", "ffplay.exe"}
             with zipfile.ZipFile(zip_path) as zf:

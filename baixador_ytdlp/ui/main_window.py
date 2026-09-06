@@ -370,8 +370,8 @@ class MainWindow(AppShell):
         if self.queue.add(opts):
             self.switchTo(self.queue)
             return
-        Toast.warning("Já está na fila",
-                      "Este download já está aguardando ou em andamento.",
+        Toast.warning("Download repetido",
+                      "Este item já existe nesta sessão. Use o cartão da fila para acompanhar ou tentar novamente.",
                       parent=self, duration=4500)
 
     def _on_enqueue_many(self, options) -> None:
@@ -380,7 +380,7 @@ class MainWindow(AppShell):
             self.switchTo(self.queue)
         if skipped:
             Toast.info("Itens repetidos ignorados",
-                       f"{skipped} link(s) já estavam aguardando ou baixando.",
+                       f"{skipped} link(s) já existem nesta sessão.",
                        parent=self, duration=5000)
 
     def _on_finished(self, opts, files) -> None:

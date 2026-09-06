@@ -19,9 +19,18 @@ A compilação para macOS é arm64 e destina-se a Macs M1, M2, M3 e M4 com macOS
 
 Enquanto a assinatura Developer ID e a notarização não estiverem configuradas, o macOS pode pedir uma confirmação adicional em **Privacidade e Segurança**. A atualização automática do aplicativo permanece exclusiva do instalador Windows; no macOS, baixe a nova versão manualmente pela Release. A interface usa a SF Pro já presente no macOS, sem incluir ou redistribuir fontes da Apple.
 
+## Linux (Ubuntu/Debian)
+
+A distribuição oficial inicial é x86_64 e atende Ubuntu 22.04 ou superior e Debian 12 ou superior.
+
+- **`.deb`:** baixe o pacote e instale com `sudo apt install ./baixador-ytdlp-linux-amd64.deb`.
+- **Portable:** descompacte o `.tar.gz`, entre na pasta criada e execute `./baixador-ytdlp`.
+
+Na primeira abertura, yt-dlp, FFmpeg e Deno são obtidos das fontes oficiais para `~/.local/share/BaixadorYtdlp/bin`. Caso a rede esteja indisponível, o programa pode usar um yt-dlp ou FFmpeg já instalado no sistema, sem copiar nem alterar essa instalação. A atualização do aplicativo no Linux é manual pela Release.
+
 ## Desempenho
 
-Downloads dependem sobretudo da rede. Para transcrição, o aplicativo usa CUDA quando uma NVIDIA compatível está disponível e CPU/int8 como fallback. No Apple Silicon, usa **MLX Whisper** na GPU integrada; se esse backend não puder iniciar, cai automaticamente para CPU/NEON, usando somente os núcleos de desempenho que o macOS informa. O CTranslate2 não possui backend Metal/MPS para Whisper, por isso o MLX é o caminho acelerado no Mac. A conversão de vídeo pode usar NVENC ou AMD AMF no Windows e VideoToolbox no macOS quando o FFmpeg disponível oferecer suporte.
+Downloads dependem sobretudo da rede. Para transcrição, o aplicativo usa CUDA quando uma NVIDIA compatível está disponível e CPU/int8 como fallback. No Apple Silicon, usa **MLX Whisper** na GPU integrada; se esse backend não puder iniciar, cai automaticamente para CPU/NEON, usando somente os núcleos de desempenho que o macOS informa. O CTranslate2 não possui backend Metal/MPS para Whisper, por isso o MLX é o caminho acelerado no Mac. A conversão de vídeo pode usar NVENC ou AMD AMF no Windows e VideoToolbox no macOS quando o FFmpeg disponível oferecer suporte. No Linux, a primeira distribuição prioriza CPU/int8 e o mesmo fallback seguro.
 
 O primeiro uso de cada modelo no macOS baixa os pesos MLX para os dados locais do aplicativo. Não há envio de áudio ou vídeo a um serviço remoto.
 

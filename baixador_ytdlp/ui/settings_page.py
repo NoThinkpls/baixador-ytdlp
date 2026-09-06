@@ -97,6 +97,20 @@ class SettingsPage(QWidget):
                        "max_parallel_downloads", 1, 6)
         self._line_row("Limite de banda", "Ex.: 5M para 5 MB/s. Vazio = sem limite.",
                        "limit_rate", "sem limite")
+        self._switch_row("Evitar baixar a mesma mídia novamente",
+                         "Guarda os IDs concluídos por pasta. Um item repetido é ignorado "
+                         "sem gastar banda; desligue temporariamente para refazer outro formato.",
+                         "archive_enabled")
+        self._switch_row("Retomar a fila ao reabrir",
+                         "Itens interrompidos voltam como pendentes. Os arquivos .part são "
+                         "continuados do ponto onde o yt-dlp parou.", "resume_queue")
+        self._spin_row("Retentativas automáticas",
+                       "Para quedas de rede, limite temporário do site e respostas 5xx. "
+                       "Erros de link, conta ou conteúdo removido não são repetidos.",
+                       "auto_retry_attempts", 0, 5)
+        self._spin_row("Espera entre retentativas (segundos)",
+                       "A cada nova tentativa a espera aumenta um pouco, para não sobrecarregar o site.",
+                       "auto_retry_delay", 1, 60)
 
         self._section("Conteúdo extra")
         self._switch_row("Embutir capa", "Usa a thumbnail como capa do arquivo.",
@@ -105,6 +119,10 @@ class SettingsPage(QWidget):
                          "Título, canal e data dentro do arquivo.", "embed_metadata")
         self._switch_row("Embutir capítulos",
                          "Marcadores de capítulo navegáveis no player.", "embed_chapters")
+        self._switch_row("Organizar áudio por canal",
+                         "Em downloads de áudio, cria uma pasta por canal/artista antes do nome "
+                         "definido acima. Capa, metadados e capítulos usam as opções deste bloco.",
+                         "organize_audio_by_uploader")
         self._switch_row("Baixar legendas", "Inclui legendas manuais e automáticas.",
                          "write_subs")
         self._switch_row("Embutir as legendas no vídeo",
