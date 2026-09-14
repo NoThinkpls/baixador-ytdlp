@@ -53,6 +53,10 @@ Design da Microsoft — inclusive no Windows.
   escolher a tarefa, selecionar a origem, ajustar apenas o necessário e salvar.
 - **Avisos que não atrapalham:** aparecem no alto do conteúdo, longe dos botões
   do cabeçalho, e somem sozinhos.
+- **Barra de tarefas do Windows.** O ícone do aplicativo é mantido mesmo com a
+  janela sem moldura; ele exibe o andamento dos downloads e das transcrições.
+  Ao concluir, o botão fica em 100% por instantes e pisca para avisar mesmo com
+  a janela minimizada.
 - **Cookies sem adivinhação:** o app mostra o passo a passo, abre o guia do
   yt-dlp e indica uma extensão de exportação que processa o arquivo localmente.
 

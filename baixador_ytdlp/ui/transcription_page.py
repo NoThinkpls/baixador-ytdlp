@@ -29,6 +29,8 @@ MEDIA_FILTER = ("Mídias (*.mp4 *.mkv *.mov *.avi *.webm *.m4v *.flv *.wmv *.mpe
 class TranscriptionPage(QWidget):
     # saída (a legenda) e origem (a mídia) — alimentam o histórico
     transcription_finished = Signal(str, str)
+    # -1 informa que não há nenhuma transcrição ativa.
+    taskbar_progress = Signal(float)
 
     def __init__(self, cfg: Settings, parent=None):
         super().__init__(parent)
@@ -282,6 +284,7 @@ class TranscriptionPage(QWidget):
                                     fmt, self.aggressive.isChecked())
         self.log.clear()
         self.progress.setValue(0)
+        self.taskbar_progress.emit(0.0)
         self.progress_label.setText("Iniciando…")
         self.start_btn.setEnabled(False)
         self.pause_btn.setEnabled(True)
@@ -289,7 +292,7 @@ class TranscriptionPage(QWidget):
         worker = TranscriptionWorker(opts, self.toolchain, self)
         self.worker = worker
         worker.status.connect(self._status)
-        worker.progress.connect(self.progress.setValue)
+        worker.progress.connect(self._set_progress)
         worker.finished_ok.connect(self._done)
         worker.cancelled.connect(self._cancelled)
         worker.failed.connect(self._failed)
@@ -303,6 +306,12 @@ class TranscriptionPage(QWidget):
         self.progress_label.setText(message)
         if message.startswith("Modelo pronto:"):
             self.hardware.setText(message.removeprefix("Modelo pronto: "))
+
+    def _set_progress(self, value: int) -> None:
+        """Atualiza a tela e o progresso nativo sem executar trabalho extra."""
+        percent = max(0, min(100, int(value)))
+        self.progress.setValue(percent)
+        self.taskbar_progress.emit(float(percent))
 
     def toggle_pause(self) -> None:
         if not self.worker:
@@ -345,6 +354,7 @@ class TranscriptionPage(QWidget):
         self.pause_btn.setText("Pausar")
         self.cancel_btn.setEnabled(False)
         self._paused = False
+        self.taskbar_progress.emit(-1.0)
 
     def shutdown(self) -> None:
         """Finaliza o worker antes de o Qt destruir a janela principal."""

@@ -65,7 +65,12 @@ def main() -> int:
         return 0
 
     cfg = Settings.load()
-    window = MainWindow(cfg, ToolManager(runtime_check_hours=cfg.runtime_check_hours), icon)
+    window = MainWindow(
+        cfg,
+        ToolManager(runtime_check_hours=cfg.runtime_check_hours),
+        icon,
+        icon_path,
+    )
     window.show()
 
     if not window.run_setup() and window.toolchain is None:

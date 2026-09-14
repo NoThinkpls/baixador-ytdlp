@@ -178,7 +178,8 @@ class SettingsPage(QWidget):
                          "open_folder_on_finish")
         self._switch_row("Mostrar o progresso na barra de tarefas",
                          "O ícone do app na barra de tarefas do Windows enche conforme o "
-                         "download avança.", "taskbar_progress")
+                         "download ou a transcrição avança e pisca ao concluir.",
+                         "taskbar_progress")
 
         self._section("Histórico")
         self._switch_row("Guardar o que foi baixado",
