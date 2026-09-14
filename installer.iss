@@ -5,7 +5,7 @@
 #define AppName "baixador-ytdlp"
 ; A versão pode vir da linha de comando: ISCC /DAppVersion=1.2.3 installer.iss
 #ifndef AppVersion
-  #define AppVersion "1.6.0"
+  #define AppVersion "1.6.1"
 #endif
 #define AppExe "baixador-ytdlp.exe"
 
@@ -17,6 +17,7 @@ DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
+SetupIconFile=assets\icon.ico
 OutputDir=dist\installer
 OutputBaseFilename=BaixadorYtdlp-{#AppVersion}-setup
 PrivilegesRequired=lowest
@@ -44,8 +45,8 @@ Source: "dist\{#AppName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdi
 Type: filesandordirs; Name: "{app}\_internal"
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"; IconIndex: 0
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"; IconIndex: 0; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Criar atalho na área de trabalho"; GroupDescription: "Atalhos:"

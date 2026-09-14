@@ -33,7 +33,13 @@ WM_NCHITTEST = 0x0084
 
 
 class MainWindow(AppShell):
-    def __init__(self, cfg: Settings, manager: ToolManager, icon: QIcon | None = None):
+    def __init__(
+        self,
+        cfg: Settings,
+        manager: ToolManager,
+        icon: QIcon | None = None,
+        icon_path: Path | None = None,
+    ):
         super().__init__()
         self.cfg = cfg
         self.manager = manager
@@ -44,6 +50,12 @@ class MainWindow(AppShell):
         self._app_update_download: AppUpdateDownloadWorker | None = None
         self._available_update: ReleaseInfo | None = None
         self.taskbar = TaskbarProgress()
+        self._icon_path = icon_path
+        self._download_taskbar_progress: float | None = None
+        self._transcription_taskbar_progress: float | None = None
+        self._taskbar_completion_timer = QTimer(self)
+        self._taskbar_completion_timer.setSingleShot(True)
+        self._taskbar_completion_timer.timeout.connect(self._clear_taskbar_completion)
 
         self.history = History(limit=max(20, cfg.history_limit)).load()
 
@@ -109,7 +121,12 @@ class MainWindow(AppShell):
             # O qframelesswindow termina a criação do HWND durante o showEvent.
             # Rodar no próximo ciclo garante que a moldura redimensionável não
             # seja removida depois da nossa configuração inicial.
-            QTimer.singleShot(0, self._enable_windows_resize_style)
+            QTimer.singleShot(0, self._apply_native_window_integration)
+
+    def _apply_native_window_integration(self) -> None:
+        """Restaura borda e ícone depois que o qframelesswindow cria o HWND."""
+        self._enable_windows_resize_style()
+        self.taskbar.apply_window_icon(int(self.winId()), self._icon_path)
 
     def _enable_windows_resize_style(self) -> None:
         """Garante que a janela frameless mantenha bordas arrastáveis no Windows."""
@@ -209,6 +226,7 @@ class MainWindow(AppShell):
         self.history_page.reopen_requested.connect(self._on_reopen)
         self.history_page.transcribe_requested.connect(self._on_transcribe)
         self.transcription.transcription_finished.connect(self._on_transcribed)
+        self.transcription.taskbar_progress.connect(self._on_transcription_progress)
         self.settings.update_requested.connect(lambda: self.run_setup(check_now=True))
         self.settings.app_update_requested.connect(lambda: self._check_app_update(force=True))
         self.settings.gpu_detection_requested.connect(self._detect_gpu)
@@ -386,6 +404,7 @@ class MainWindow(AppShell):
     def _on_finished(self, opts, files) -> None:
         title = opts.title or opts.url
         Toast.success("Download concluído", title, parent=self, duration=6000)
+        self._notify_taskbar_completion()
         if not self.cfg.history_enabled:
             return
         # A URL vem do próprio job, não do campo da tela: entre o início e o fim
@@ -409,6 +428,7 @@ class MainWindow(AppShell):
 
     def _on_transcribed(self, output: str, source: str) -> None:
         """Registra a legenda no histórico, ao lado dos downloads."""
+        self._notify_taskbar_completion()
         if not self.cfg.history_enabled or not output:
             return
         legenda = Path(output)
@@ -432,13 +452,42 @@ class MainWindow(AppShell):
         self.home.analyze()
 
     def _on_overall_progress(self, percent: float) -> None:
+        self._download_taskbar_progress = None if percent < 0 else max(0.0, min(100.0, percent))
+        self._sync_taskbar_progress()
+
+    def _on_transcription_progress(self, percent: float) -> None:
+        """Combina o andamento do legendador ao mesmo botão da barra de tarefas."""
+        self._transcription_taskbar_progress = (
+            None if percent < 0 else max(0.0, min(100.0, percent))
+        )
+        self._sync_taskbar_progress()
+
+    def _sync_taskbar_progress(self) -> None:
         if not self.cfg.taskbar_progress:
             return
+        active = [
+            value for value in (
+                self._download_taskbar_progress,
+                self._transcription_taskbar_progress,
+            ) if value is not None
+        ]
         handle = int(self.winId())
-        if percent < 0:
-            self.taskbar.clear(handle)
+        if active:
+            self._taskbar_completion_timer.stop()
+            self.taskbar.set_value(handle, sum(active) / len(active))
         else:
-            self.taskbar.set_value(handle, percent)
+            self.taskbar.clear(handle)
+
+    def _notify_taskbar_completion(self) -> None:
+        """Deixa a conclusão visível mesmo quando a janela está minimizada."""
+        if not self.cfg.taskbar_progress:
+            return
+        self.taskbar.complete(int(self.winId()))
+        self._taskbar_completion_timer.start(1500)
+
+    def _clear_taskbar_completion(self) -> None:
+        if self._download_taskbar_progress is None and self._transcription_taskbar_progress is None:
+            self.taskbar.clear(int(self.winId()))
 
     # ------------------------------------------------------- área de transf.
     def nativeEvent(self, event_type, message):  # noqa: N802 - assinatura do Qt
@@ -507,7 +556,8 @@ class MainWindow(AppShell):
             self.home.set_url(text)
 
     def closeEvent(self, event):  # noqa: N802 - assinatura do Qt
-        self.taskbar.clear(int(self.winId()))
+        self._taskbar_completion_timer.stop()
+        self.taskbar.shutdown(int(self.winId()))
         self.home.shutdown()
         self.transcription.shutdown()
         self.media_tools.shutdown()
