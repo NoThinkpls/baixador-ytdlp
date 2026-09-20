@@ -15,19 +15,26 @@ import json
 import locale
 import os
 import platform
-import sys
 import re
 import shutil
+import ssl
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
+
+try:
+    import certifi
+except ImportError:  # pragma: no cover - só ocorre fora das builds oficiais
+    certifi = None
 
 from .config import APP_NAME, APP_VERSION, BIN_DIR, IS_WINDOWS, STATE_PATH, ensure_dirs
 from .diagnostics import get_logger
@@ -61,11 +68,36 @@ LINUX_FFMPEG_ASSETS = {
 # quando o fornecedor não publica um arquivo de checksums separado.
 MAC_FFMPEG_RELEASE_API = "https://api.github.com/repos/descriptinc/ffmpeg-ffprobe-static/releases/latest"
 USER_AGENT = f"{APP_NAME}/{APP_VERSION} (+https://github.com/yt-dlp/yt-dlp)"
+TLS_FALLBACK_HOSTS = frozenset({"api.github.com", "github.com"})
 
 # Esconde a janela preta do console em cada subprocesso no Windows.
 CREATE_NO_WINDOW = 0x08000000 if IS_WINDOWS else 0
 
 ProgressCB = Callable[[str, int], None]  # (mensagem, percentual 0-100 ou -1 = indeterminado)
+
+
+def _verified_ssl_context() -> ssl.SSLContext:
+    """Cria TLS verificado mesmo quando o Python do .app não vê o Keychain.
+
+    O bundle de CAs do ``certifi`` viaja dentro do aplicativo PyInstaller e
+    evita depender do caminho de certificados da instalação local do Python.
+    """
+    if certifi is not None:
+        return ssl.create_default_context(cafile=certifi.where())
+    return ssl.create_default_context()
+
+
+def _is_certificate_error(exc: BaseException) -> bool:
+    reason = getattr(exc, "reason", exc)
+    return (isinstance(reason, ssl.SSLCertVerificationError)
+            or "CERTIFICATE_VERIFY_FAILED" in str(reason))
+
+
+def _allow_macos_tls_fallback(url: str) -> bool:
+    """Limita o bypass ao .app macOS e aos endpoints oficiais conhecidos."""
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    return (sys.platform == "darwin" and bool(getattr(sys, "frozen", False))
+            and host in TLS_FALLBACK_HOSTS)
 
 
 def _quiet_unlink(path: Path) -> None:
@@ -260,7 +292,21 @@ class ToolManager:
     @staticmethod
     def _request(url: str, accept: str = "application/vnd.github+json"):
         req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
-        return urllib.request.urlopen(req, timeout=30)
+        try:
+            return urllib.request.urlopen(req, timeout=30, context=_verified_ssl_context())
+        except (urllib.error.URLError, ssl.SSLCertVerificationError) as exc:
+            if not (_is_certificate_error(exc) and _allow_macos_tls_fallback(url)):
+                raise
+            # Compatibilidade final para bundles macOS antigos/quebrados. O
+            # escopo é propositalmente mínimo: somente o app congelado e os
+            # hosts oficiais usados para obter metadados e ativos assinados.
+            get_logger().warning(
+                "A cadeia de certificados do macOS não pôde ser validada; "
+                "repetindo a requisição oficial com o fallback TLS restrito."
+            )
+            return urllib.request.urlopen(
+                req, timeout=30, context=ssl._create_unverified_context()
+            )
 
     def _download(self, url: str, dest: Path, progress: ProgressCB, label: str) -> Path:
         dest.parent.mkdir(parents=True, exist_ok=True)

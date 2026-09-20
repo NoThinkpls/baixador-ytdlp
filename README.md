@@ -66,7 +66,9 @@ placas AMD, pois o motor de transcrição atual não possui backend AMD para Win
 No Linux da primeira versão, a transcrição usa CPU/int8 e a conversão por GPU fica
 desativada quando o FFmpeg não oferecer um encoder compatível. No Mac, o primeiro
 uso de cada modelo do Whisper ainda precisa baixá-lo para o perfil local do usuário;
-os usos seguintes reaproveitam esse cache.
+os usos seguintes reaproveitam esse cache. A build do macOS inclui sua própria
+cadeia atualizada de certificados para que a preparação do ambiente consiga baixar
+o yt-dlp e o FFmpeg mesmo quando o Python empacotado não encontra o Keychain.
 
 Os nomes de arquivos e os textos da interface usam UTF-8 de ponta a ponta,
 preservando acentos e caracteres especiais compatíveis com o sistema de arquivos.
