@@ -13,6 +13,7 @@ class ProcessTreeTests(unittest.TestCase):
         process = Mock(pid=4321)
         process.poll.return_value = None
 
+        # O atributo não existe no módulo ``os`` do runner Windows.
         with patch("baixador_ytdlp.processes.IS_WINDOWS", False), \
                 patch("baixador_ytdlp.processes.os.killpg", create=True) as kill_group:
             terminate_process_tree(process)
