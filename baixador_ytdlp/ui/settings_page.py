@@ -295,9 +295,8 @@ class SettingsPage(QWidget):
     def _gpu_row(self) -> None:
         row, column = self._custom_row(
             "Placa detectada",
-            "O download em si não usa a GPU — é rede e cópia de arquivo. A placa entra "
-            "quando você converte o vídeo depois de baixar. Toda conversão perde qualidade "
-            "em relação ao original.")
+            "Downloads normais são rede e cópia de arquivo. A GPU entra em recortes exatos "
+            "e na conversão após baixar; nesses casos o vídeo precisa ser reencodado.")
         self.gpu_label = Muted("A detecção será feita ao abrir Configurações.", row)
         column.addWidget(self.gpu_label)
         self._add_row(row)

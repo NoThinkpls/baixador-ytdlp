@@ -23,7 +23,7 @@ Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no 
 
 ## O que o aplicativo oferece
 
-- Download de vídeo, áudio, playlists e trechos com escolha de qualidade e formato.
+- Download de vídeo, áudio, playlists e trechos com escolha de qualidade e formato. Recortes exatos mostram o andamento e usam NVENC, AMF ou VideoToolbox quando o encoder realmente funciona na máquina, com fallback seguro para CPU.
 - Análise prévia com tamanhos aproximados, codecs, formatos, idiomas de áudio e legendas manuais/automáticas disponíveis.
 - Entrada em lote pela própria tela: cole vários links, um por linha, e envie todos à fila.
 - Fila persistente, retomada de arquivos parciais e retentativas automáticas para falhas transitórias. Itens podem ser removidos mesmo durante a inicialização; solicitações repetidas só entram após confirmação.
@@ -72,6 +72,11 @@ o yt-dlp e o FFmpeg mesmo quando o Python empacotado não encontra o Keychain.
 
 Os nomes de arquivos e os textos da interface usam UTF-8 de ponta a ponta,
 preservando acentos e caracteres especiais compatíveis com o sistema de arquivos.
+
+Downloads, análises, conversões e preparação de áudio rodam em grupos de processos
+isolados. Ao cancelar ou fechar o aplicativo, o processo principal e seus filhos
+(como FFmpeg e Deno) são encerrados juntos no Windows, macOS e Linux, evitando
+processamento órfão em segundo plano.
 
 A tipografia pede SF Pro quando ela existe na máquina e cai em Inter e Segoe UI
 quando não existe — o projeto não distribui fontes proprietárias. As cores, os

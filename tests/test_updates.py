@@ -17,6 +17,24 @@ class ToolCheckTests(unittest.TestCase):
         self.assertEqual(ToolManager._asset_sha256({"digest": f"sha256:{digest}"}), digest)
         self.assertEqual(ToolManager._asset_sha256({"digest": "sha512:bad"}), "")
 
+    def test_reads_current_deno_powershell_checksum_format(self) -> None:
+        digest = "a0c3101b4158d1dfb7d6a78a7bf0f3de80c96bb423c152beec8beb22786f2238"
+        response = Mock()
+        response.read.return_value = (
+            f"\r\nAlgorithm : SHA256\r\nHash      : {digest.upper()}\r\n"
+            "Path      : C:\\a\\deno.zip\r\n"
+        ).encode()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        manager = ToolManager()
+        manager._request = Mock(return_value=response)
+
+        actual = manager._remote_sha256({
+            "browser_download_url": "https://example.invalid/deno.sha256sum",
+        })
+
+        self.assertEqual(actual, digest)
+
     def test_manual_ytdlp_check_does_not_redownload_current_version(self) -> None:
         """"Verificar agora" consulta a origem, mas preserva o binário atual."""
         with tempfile.TemporaryDirectory() as tmp:

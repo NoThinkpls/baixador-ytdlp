@@ -2,17 +2,15 @@
 from __future__ import annotations
 
 import json
-import os
-import signal
 import subprocess
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .config import IS_WINDOWS
 from .cookies import is_cookie_source_failure
-from .tools import CREATE_NO_WINDOW, decode_external_output
+from .processes import isolated_process_kwargs, terminate_process_tree
+from .tools import decode_external_output
 from .diagnostics import log_event
 
 VCODEC_NAMES = {
@@ -125,29 +123,15 @@ def _kill_tree(proc: subprocess.Popen) -> None:
     bloqueado esperando um EOF que nunca chega. O aplicativo travava no
     fechamento em vez de encerrar.
     """
-    if proc.poll() is not None:
-        return
-    try:
-        if IS_WINDOWS:
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-                           capture_output=True, timeout=10,
-                           creationflags=CREATE_NO_WINDOW)
-        else:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-    except (OSError, subprocess.SubprocessError):
-        try:
-            proc.kill()
-        except OSError:
-            pass
+    terminate_process_tree(proc)
 
 
 def _popen(args: list[str], env: dict | None) -> subprocess.Popen:
     """Popen com o grupo de processos isolado, para o kill alcançar os filhos."""
-    extra = {} if IS_WINDOWS else {"start_new_session": True}
     return subprocess.Popen(
         args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=False,
-        creationflags=CREATE_NO_WINDOW, env=env, **extra,
+        env=env, **isolated_process_kwargs(),
     )
 
 

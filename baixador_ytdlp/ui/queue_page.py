@@ -147,7 +147,10 @@ class JobCard(ListRow):
             self._set_state("Tentando novamente", "warning", "refresh")
             self.status.setText(prog.stage or "Aguardando nova tentativa…")
             return
-        self._set_state("Baixando", "accent", "download")
+        if prog.status == "processing":
+            self._set_state("Processando", "accent", "tools")
+        else:
+            self._set_state("Baixando", "accent", "download")
         if prog.stage:
             self.status.setText(prog.stage)
             if prog.percent:

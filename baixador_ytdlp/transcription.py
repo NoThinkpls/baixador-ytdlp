@@ -25,6 +25,7 @@ from typing import Callable
 from .config import MODEL_DIR
 from .diagnostics import install_diagnostics, log_event, report_exception
 from .hardware import whisper_threads
+from .processes import isolated_process_kwargs, terminate_process_tree
 from .tools import CREATE_NO_WINDOW, Toolchain
 
 StatusCB = Callable[[str], None]
@@ -328,11 +329,29 @@ class Transcriber:
         self.status("Preparando áudio em 16 kHz mono…")
         cmd = [str(self.toolchain.ffmpeg), "-y", "-i", str(media), "-vn", "-ac", "1", "-ar", "16000",
                "-c:a", "pcm_s16le", str(target)]
-        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                              creationflags=CREATE_NO_WINDOW)
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace",
+            **isolated_process_kwargs(),
+        )
+        try:
+            while True:
+                try:
+                    _, stderr = proc.communicate(timeout=0.2)
+                    break
+                except subprocess.TimeoutExpired:
+                    self._check_interrupt()
+        except BaseException:
+            terminate_process_tree(proc)
+            try:
+                proc.communicate(timeout=3)
+            except (subprocess.TimeoutExpired, OSError, ValueError):
+                pass
+            target.unlink(missing_ok=True)
+            raise
         if proc.returncode:
             target.unlink(missing_ok=True)
-            raise RuntimeError("Não foi possível extrair o áudio: " + proc.stderr[-600:])
+            raise RuntimeError("Não foi possível extrair o áudio: " + (stderr or "")[-600:])
         return target
 
     def run(self, opts: TranscriptionOptions) -> list[dict]:
