@@ -178,28 +178,51 @@ def qcolor(name: str) -> QColor:
 # ------------------------------------------------------------------ tipografia
 
 def font_families() -> list[str]:
-    """SF Pro quando existir na máquina; nunca distribuímos a fonte."""
+    """Famílias priorizadas por plataforma, sem distribuir fontes proprietárias."""
     if sys.platform == "darwin":
         return ["SF Pro Text", "SF Pro Display", ".AppleSystemUIFont", "Helvetica Neue"]
     if sys.platform.startswith("win"):
-        return ["SF Pro Text", "SF Pro Display", "Inter", "Segoe UI Variable Text", "Segoe UI"]
+        # A SF Pro não tem o mesmo hinting da família de sistema do Windows e,
+        # em monitores de resolução mais baixa, pode parecer serrilhada. Segoe
+        # UI Variable é a fonte que o Windows 11 usa na própria interface e
+        # aproveita ClearType, inclusive nas escalas 100% e 125%.
+        return ["Segoe UI Variable Text", "Segoe UI", "Inter", "SF Pro Text", "SF Pro Display"]
     return ["SF Pro Text", "SF Pro Display", "Inter", "Noto Sans", "DejaVu Sans"]
 
 
 def mono_families() -> list[str]:
+    if sys.platform.startswith("win"):
+        return ["Cascadia Mono", "Consolas", "JetBrains Mono", "SF Mono", "Menlo", "monospace"]
     return ["SF Mono", "JetBrains Mono", "Cascadia Mono", "Consolas", "Menlo", "monospace"]
 
 
 def font(size: int = 13, weight: int = 400, tracking: float = 0.0,
          mono: bool = False) -> QFont:
-    """Fonte da escala tipográfica. Tamanhos em pixels lógicos, como no iOS."""
+    """Fonte da escala tipográfica com rasterização adequada a cada sistema.
+
+    No Windows, usar pixels deixa ``pointSize`` em -1. Alguns widgets Qt e
+    extensões Fluent reutilizam essa propriedade e tentam aplicá-la de novo,
+    provocando o aviso ``QFont::setPointSize <= 0`` e uma renderização menos
+    nítida. Pontos preservam a escala visual de 96 DPI e permitem o hinting
+    completo do ClearType. Nos demais sistemas mantemos pixels lógicos, que já
+    correspondem à métrica adotada pelas respectivas interfaces nativas.
+    """
+    if size <= 0:
+        raise ValueError("O tamanho da fonte deve ser maior que zero")
     result = QFont()
     result.setFamilies(mono_families() if mono else font_families())
-    result.setPixelSize(size)
+    if sys.platform.startswith("win"):
+        result.setPointSizeF(size * 72.0 / 96.0)
+        result.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
+    else:
+        result.setPixelSize(size)
+        result.setHintingPreference(QFont.HintingPreference.PreferDefaultHinting)
     result.setWeight(QFont.Weight(weight))
     if tracking:
         result.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, tracking)
-    result.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    result.setKerning(True)
+    result.setStyleStrategy(
+        QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.PreferQuality)
     return result
 
 

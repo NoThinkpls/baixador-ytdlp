@@ -78,10 +78,11 @@ isolados. Ao cancelar ou fechar o aplicativo, o processo principal e seus filhos
 (como FFmpeg e Deno) são encerrados juntos no Windows, macOS e Linux, evitando
 processamento órfão em segundo plano.
 
-A tipografia pede SF Pro quando ela existe na máquina e cai em Inter e Segoe UI
-quando não existe — o projeto não distribui fontes proprietárias. As cores, os
-raios e a escala tipográfica ficam em `baixador_ytdlp/ui/theme.py`, que é a
-única fonte de verdade visual do aplicativo.
+No Windows, a tipografia usa Segoe UI Variable com hinting completo para manter
+o texto nítido inclusive em telas de resolução mais baixa; no macOS, prioriza a
+SF Pro nativa. O projeto não distribui fontes proprietárias. As cores, os raios
+e a escala tipográfica ficam em `baixador_ytdlp/ui/theme.py`, que é a única
+fonte de verdade visual do aplicativo.
 
 ## Documentação
 
