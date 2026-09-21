@@ -104,6 +104,7 @@ def build_args(
     tc: Toolchain,
     *,
     section_encoder: str = "",
+    section_hwaccel: bool = True,
 ) -> list[str]:
     args: list[str] = [
         str(tc.ytdlp),
@@ -162,6 +163,12 @@ def build_args(
             # recortes longos em vez de deixá-la parada em "Iniciando".
             ffmpeg_args = ["-progress", "pipe:1", "-nostats"]
             ffmpeg_args += _section_encoder_args(section_encoder, cfg)
+            if section_hwaccel and (input_args := _section_input_args(section_encoder)):
+                # ``ffmpeg_i`` posiciona os argumentos antes de cada ``-i``;
+                # em ``ffmpeg_o`` eles chegariam tarde demais para ativar a
+                # decodificação CUDA/VideoToolbox. O recorte reexecuta somente
+                # o encoder na GPU se o decoder por hardware não aceitar a mídia.
+                args += ["--downloader-args", "ffmpeg_i:" + " ".join(input_args)]
             args += ["--downloader-args", "ffmpeg_o:" + " ".join(ffmpeg_args)]
 
     if cfg.embed_metadata:
@@ -231,11 +238,13 @@ def preview_command(
     tc: Toolchain,
     *,
     section_encoder: str = "",
+    section_hwaccel: bool = True,
 ) -> str:
     """Linha de comando equivalente — útil para auditoria e para reproduzir no terminal."""
     return " ".join(
         shlex.quote(a) for a in build_args(
             opts, cfg, tc, section_encoder=section_encoder,
+            section_hwaccel=section_hwaccel,
         )
     )
 
@@ -258,6 +267,21 @@ def _section_encoder_args(codec: str, cfg: Settings) -> list[str]:
     # O áudio costuma vir em Opus/WebM e não pode ser apenas copiado para todos
     # os MP4. AAC mantém compatibilidade; o custo é desprezível perto do vídeo.
     return [*args, "-c:a", "aac", "-b:a", "192k"]
+
+
+def _section_input_args(codec: str) -> list[str]:
+    """Pede decoder de hardware só para backends em que é confiável.
+
+    AMF continua usando a codificação AMD, mas não força D3D11 na entrada: há
+    drivers AMD que codificam bem via AMF e falham ao receber superfícies D3D11
+    de certos VP9/AV1. NVENC e VideoToolbox têm uma nova tentativa automática
+    sem estes argumentos quando o decoder não suporta a mídia.
+    """
+    if codec.endswith("_nvenc"):
+        return ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+    if codec.endswith("_videotoolbox"):
+        return ["-hwaccel", "videotoolbox"]
+    return []
 
 
 class DownloadRunner:
@@ -297,47 +321,79 @@ class DownloadRunner:
             preferred = self.cfg.transcode_codec if self.cfg.transcode_enabled else ""
             section_encoder = select_section_encoder(self.tc.ffmpeg, preferred)
 
+        return self._run_section(on_progress, section_encoder)
+
+    def _run_section(
+        self,
+        on_progress: Callable[[Progress], None],
+        section_encoder: str,
+    ) -> list[Path]:
+        """Executa recorte em camadas, sem abandonar a GPU cedo demais."""
+        if not section_encoder:
+            return self._run_once(on_progress, "", section_hwaccel=False)
         try:
-            return self._run_once(on_progress, section_encoder)
+            return self._run_once(on_progress, section_encoder, section_hwaccel=True)
         except DownloadError:
-            # O teste sintético elimina a maioria dos falsos positivos, mas o
-            # driver ainda pode recusar um codec/resolução de um vídeo real.
-            # Nessa situação específica, repetir na CPU preserva o resultado.
-            if (not section_encoder or self._cancelled.is_set()
-                    or not self._is_encoder_failure(section_encoder)):
+            if self._cancelled.is_set() or not self._is_encoder_failure(section_encoder):
                 raise
+            if _section_input_args(section_encoder):
+                # VP9, AV1, HDR e alguns drivers não aceitam o decoder CUDA ou
+                # VideoToolbox. Isso não significa que o encoder de vídeo não
+                # funcione, então mantemos a codificação na GPU na segunda vez.
+                log_event(
+                    "Recorte %s: decoder de hardware falhou; mantendo encoder GPU: %s",
+                    section_encoder, self.tail(40),
+                )
+                self.files.clear()
+                self._emit_progress(on_progress, Progress(
+                    status="processing",
+                    stage="Decoder GPU incompatível — mantendo a codificação na GPU…",
+                ), force=True)
+                try:
+                    return self._run_once(on_progress, section_encoder, section_hwaccel=False)
+                except DownloadError:
+                    if self._cancelled.is_set() or not self._is_encoder_failure(section_encoder):
+                        raise
+            # O teste sintético é apenas um indício. Só depois de a mídia real
+            # recusar o encoder seguimos para CPU, preservando a conclusão.
             log_event(
                 "Encoder %s falhou no recorte; repetindo com FFmpeg/CPU: %s",
                 section_encoder, self.tail(40),
             )
             self.log.append(
-                f"A aceleração {section_encoder} falhou; nova tentativa segura na CPU."
+                f"A aceleração {section_encoder} falhou na mídia; nova tentativa segura na CPU."
             )
             self.files.clear()
             self._emit_progress(on_progress, Progress(
                 status="processing", stage="GPU indisponível para esta mídia — usando CPU…",
             ), force=True)
-            return self._run_once(on_progress, "")
+            return self._run_once(on_progress, "", section_hwaccel=False)
 
     def _run_once(
         self,
         on_progress: Callable[[Progress], None],
         section_encoder: str,
+        *,
+        section_hwaccel: bool,
     ) -> list[Path]:
         args = build_args(
             self.opts, self.cfg, self.tc, section_encoder=section_encoder,
+            section_hwaccel=section_hwaccel,
         )
         log_event(
             "yt-dlp download iniciado%s: %s",
-            f" (recorte={section_encoder or 'cpu'})" if _section_range(self.opts) else "",
+            (f" (recorte={section_encoder or 'cpu'}, "
+             f"decoder={'gpu' if section_hwaccel and _section_input_args(section_encoder) else 'cpu'})")
+            if _section_range(self.opts) else "",
             preview_command(
                 self.opts, self.cfg, self.tc, section_encoder=section_encoder,
+                section_hwaccel=section_hwaccel,
             ),
         )
         prog = Progress(status="downloading")
         if section := _section_range(self.opts):
             prog.status = "processing"
-            prog.stage = self._section_stage(section_encoder)
+            prog.stage = self._section_stage(section_encoder, section_hwaccel)
         else:
             prog.stage = "Conectando ao servidor…"
         self._emit_progress(on_progress, prog, force=True)
@@ -408,13 +464,15 @@ class DownloadRunner:
         return True
 
     @staticmethod
-    def _section_stage(codec: str) -> str:
+    def _section_stage(codec: str, hwaccel: bool) -> str:
         if codec.endswith("_nvenc"):
-            return "Baixando e recortando com NVIDIA NVENC…"
+            return ("Baixando e recortando com NVIDIA NVENC…" if hwaccel
+                    else "NVIDIA NVENC ativo — decodificando na CPU por compatibilidade…")
         if codec.endswith("_amf"):
             return "Baixando e recortando com AMD AMF…"
         if codec.endswith("_videotoolbox"):
-            return "Baixando e recortando com Apple VideoToolbox…"
+            return ("Baixando e recortando com Apple VideoToolbox…" if hwaccel
+                    else "Apple VideoToolbox ativo — decodificando na CPU por compatibilidade…")
         return "Baixando e recortando com FFmpeg na CPU…"
 
     def _is_encoder_failure(self, codec: str) -> bool:
@@ -423,6 +481,7 @@ class DownloadRunner:
             codec.casefold(), "nvenc", "nvcuda", "no capable devices",
             "amf", "videotoolbox", "initializing output stream",
             "error while opening encoder", "hardware accelerator failed",
+            "hwaccel", "device creation failed", "failed setup for format cuda",
         )
         return any(marker in output for marker in markers)
 

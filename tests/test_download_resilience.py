@@ -11,7 +11,9 @@ from unittest.mock import Mock, patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from baixador_ytdlp.config import Settings
-from baixador_ytdlp.downloader import DownloadOptions, build_args, is_retryable_error
+from baixador_ytdlp.downloader import (
+    DownloadError, DownloadOptions, DownloadRunner, build_args, is_retryable_error,
+)
 from baixador_ytdlp.probe import _audio_languages, _caption_languages
 from baixador_ytdlp.queue_state import QueueState
 
@@ -95,10 +97,59 @@ class DownloadArgumentsTests(unittest.TestCase):
         )
 
         self.assertIn("--force-keyframes-at-cuts", args)
-        downloader = args[args.index("--downloader-args") + 1]
-        self.assertIn("-progress pipe:1", downloader)
-        self.assertIn("-c:v h264_nvenc", downloader)
-        self.assertIn("-cq 18", downloader)
+        downloader_args = [
+            args[index + 1]
+            for index, value in enumerate(args)
+            if value == "--downloader-args"
+        ]
+        self.assertIn(
+            "ffmpeg_i:-hwaccel cuda -hwaccel_output_format cuda",
+            downloader_args,
+        )
+        output_args = next(value for value in downloader_args if value.startswith("ffmpeg_o:"))
+        self.assertIn("-progress pipe:1", output_args)
+        self.assertIn("-c:v h264_nvenc", output_args)
+        self.assertIn("-cq 18", output_args)
+
+    def test_exact_video_cut_can_keep_gpu_encoder_without_gpu_decoder(self) -> None:
+        tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))
+        args = build_args(
+            DownloadOptions(
+                "https://example.invalid/video", "downloads",
+                section_start="10", section_end="20",
+            ),
+            Settings(), tools, section_encoder="h264_nvenc", section_hwaccel=False,
+        )
+
+        downloader_args = [
+            args[index + 1]
+            for index, value in enumerate(args)
+            if value == "--downloader-args"
+        ]
+        self.assertFalse(any(value.startswith("ffmpeg_i:") for value in downloader_args))
+        self.assertTrue(any("-c:v h264_nvenc" in value for value in downloader_args))
+
+    def test_exact_cut_retries_nvenc_without_gpu_decoder_before_cpu_fallback(self) -> None:
+        tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))
+        runner = DownloadRunner(
+            DownloadOptions(
+                "https://example.invalid/video", "downloads",
+                section_start="10", section_end="20",
+            ),
+            Settings(), tools,
+        )
+        callback = Mock()
+        expected = [Path("downloads/trecho.mp4")]
+        with patch.object(
+            runner, "_run_once", side_effect=[DownloadError("nvcuda falhou"), expected],
+        ) as run_once, patch.object(runner, "_is_encoder_failure", return_value=True), \
+                patch("baixador_ytdlp.downloader.log_event"):
+            self.assertEqual(runner._run_section(callback, "h264_nvenc"), expected)
+
+        self.assertEqual(run_once.call_count, 2)
+        self.assertTrue(run_once.call_args_list[0].kwargs["section_hwaccel"])
+        self.assertFalse(run_once.call_args_list[1].kwargs["section_hwaccel"])
+        self.assertEqual(run_once.call_args_list[1].args[1], "h264_nvenc")
 
     def test_audio_cut_does_not_force_a_pointless_video_reencode(self) -> None:
         tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))
