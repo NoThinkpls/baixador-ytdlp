@@ -26,7 +26,7 @@ Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no 
 - Download de vídeo, áudio, playlists e trechos com escolha de qualidade e formato.
 - Análise prévia com tamanhos aproximados, codecs, formatos, idiomas de áudio e legendas manuais/automáticas disponíveis.
 - Entrada em lote pela própria tela: cole vários links, um por linha, e envie todos à fila.
-- Fila persistente, retomada de arquivos parciais, retentativas automáticas para falhas transitórias e bloqueio de mídia repetida por pasta.
+- Fila persistente, retomada de arquivos parciais e retentativas automáticas para falhas transitórias. Itens podem ser removidos mesmo durante a inicialização; solicitações repetidas só entram após confirmação.
 - Capa, metadados e capítulos incorporados também em áudio; opção de organizar músicas por canal/artista.
 - Transcrição local com legendas SRT, VTT, ASS, karaoke, TXT e JSON; no Apple
   Silicon ela usa MLX na GPU integrada.

@@ -98,7 +98,7 @@ class JobCard(ListRow):
         self.open_btn.clicked.connect(self._reveal)
         self.open_btn.hide()
 
-        self.cancel_btn = IconButton("close", "Cancelar", self)
+        self.cancel_btn = IconButton("close", "Cancelar e remover da fila", self)
         self.cancel_btn.clicked.connect(lambda: self.cancel_requested.emit(self.job_id))
 
         for button in (self.transcribe_btn, self.detail_btn, self.retry_btn,
@@ -137,6 +137,10 @@ class JobCard(ListRow):
         self.cancel_btn.show()
         for button in (self.retry_btn, self.detail_btn, self.open_btn, self.transcribe_btn):
             button.hide()
+
+    def mark_starting(self) -> None:
+        self.status.setText("Iniciando…")
+        self._set_state("Iniciando", "accent", "download")
 
     def update_progress(self, prog: Progress) -> None:
         if prog.status == "retrying":
@@ -238,6 +242,7 @@ class Job:
     card: JobCard
     worker: DownloadWorker | None = None
     active: bool = False
+    removing: bool = False
 
 
 class QueuePage(QWidget):
@@ -290,25 +295,45 @@ class QueuePage(QWidget):
         self._restore_pending()
 
     # ------------------------------------------------------------- fila
-    def add(self, opts: DownloadOptions) -> bool:
+    def add(self, opts: DownloadOptions, *, allow_duplicate: bool = False) -> bool:
         """Inclui um job, exceto se o mesmo item já estiver pendente ou em andamento."""
-        added = self._add(opts)
+        added = self._add(opts, allow_duplicate=allow_duplicate)
         if added:
             self._pump()
         return added
 
-    def add_many(self, options: list[DownloadOptions]) -> tuple[int, int]:
-        """Importa uma lista e agenda todos os novos jobs de uma única vez."""
-        added = sum(1 for opts in options if self._add(opts))
+    def add_many(
+        self,
+        options: list[DownloadOptions],
+        *,
+        allow_duplicates: bool = False,
+    ) -> tuple[int, list[DownloadOptions]]:
+        """Importa uma lista e devolve os itens repetidos para confirmação."""
+        added = 0
+        duplicates: list[DownloadOptions] = []
+        for opts in options:
+            if self._add(opts, allow_duplicate=allow_duplicates):
+                added += 1
+            else:
+                duplicates.append(opts)
         if added:
             self._pump()
-        return added, len(options) - added
+        return added, duplicates
 
-    def _add(self, opts: DownloadOptions, *, persist: bool = True) -> bool:
+    def _add(
+        self,
+        opts: DownloadOptions,
+        *,
+        persist: bool = True,
+        allow_duplicate: bool = False,
+    ) -> bool:
         # Dentro da mesma sessão um cartão existente já é a fonte de verdade:
         # em caso de falha a pessoa pode usar o botão "Tentar de novo" sem
         # criar dois jobs concorrentes para o mesmo arquivo.
-        if any(self._same_download(job.opts, opts) for job in self.jobs.values()):
+        if not allow_duplicate and any(
+            not job.removing and self._same_download(job.opts, opts)
+            for job in self.jobs.values()
+        ):
             return False
         job_id = self._next_id
         self._next_id += 1
@@ -333,7 +358,12 @@ class QueuePage(QWidget):
         if not self.cfg.resume_queue:
             self._state.save([])
             return
-        restored = sum(1 for opts in self._state.load() if self._add(opts, persist=False))
+        # O arquivo pode conter repetições que o usuário confirmou na sessão
+        # anterior. A restauração deve preservar essa escolha.
+        restored = sum(
+            1 for opts in self._state.load()
+            if self._add(opts, persist=False, allow_duplicate=True)
+        )
         if restored:
             self._pump()
         else:
@@ -343,7 +373,7 @@ class QueuePage(QWidget):
         """Mantém somente jobs que ainda precisam de trabalho no próximo início."""
         options = [
             job.opts for job in self.jobs.values()
-            if job.active or job.id in self.pending
+            if not job.removing and (job.active or job.id in self.pending)
         ]
         self._state.save(options)
 
@@ -373,7 +403,9 @@ class QueuePage(QWidget):
     def _running(self) -> int:
         # Contador barato: o estado 'active' é mantido pelos próprios callbacks,
         # sem interrogar cada QThread a cada evento de progresso.
-        return sum(1 for job in self.jobs.values() if job.active)
+        # Um item que o usuário removeu deixa de ocupar a fila imediatamente,
+        # mesmo enquanto o processo recebe o sinal de encerramento.
+        return sum(1 for job in self.jobs.values() if job.active and not job.removing)
 
     def _pump(self) -> None:
         while self.pending and self._running() < max(1, self.cfg.max_parallel_downloads):
@@ -385,22 +417,50 @@ class QueuePage(QWidget):
             worker.finished.connect(worker.deleteLater)
             job.worker = worker
             job.active = True
-            job.card.status.setText("Iniciando…")
+            job.card.mark_starting()
             worker.start()
         self._persist()
         self._refresh_summary()
 
     def cancel(self, job_id: int) -> None:
+        """Remove o cartão e cancela qualquer processo associado sem restaurá-lo."""
         job = self.jobs.get(job_id)
-        if not job:
+        if not job or job.removing:
             return
+        job.removing = True
+        job.card.hide()
+        if job_id in self.pending:
+            self.pending.remove(job_id)
+        # Remover da persistência acontece antes de esperar o processo: mesmo
+        # que o SO demore a encerrá-lo, o cartão não volta na próxima abertura.
+        self._persist()
+        self._refresh_visibility()
+        self._refresh_summary()
+        self._emit_overall()
         if job.active and job.worker:
             job.worker.cancel()
-        elif job_id in self.pending:
+            self._pump()
+            return
+        self._finalize_removal(job_id)
+        self._pump()
+
+    def _finalize_removal(self, job_id: int) -> None:
+        job = self.jobs.pop(job_id, None)
+        if not job:
+            return
+        if job_id in self.pending:
             self.pending.remove(job_id)
-            job.card.mark_failed("Cancelado")
-            self._persist()
-            self._refresh_summary()
+        job.card.setParent(None)
+        job.card.deleteLater()
+        self._refresh_visibility()
+
+    def _refresh_visibility(self) -> None:
+        if any(not job.removing for job in self.jobs.values()):
+            self.empty.hide()
+            self.scroll.show()
+        else:
+            self.scroll.hide()
+            self.empty.show()
 
     def _on_progress(self, job_id: int, prog: Progress) -> None:
         if job := self.jobs.get(job_id):
@@ -412,6 +472,11 @@ class QueuePage(QWidget):
         if job:
             job.active = False
             job.worker = None
+            if job.removing:
+                self._finalize_removal(job_id)
+                self._pump()
+                self._emit_overall()
+                return
             paths = [Path(f) for f in files]
             job.card.mark_done(paths)
             self.job_finished.emit(job.opts, paths)
@@ -426,6 +491,11 @@ class QueuePage(QWidget):
         if job:
             job.active = False
             job.worker = None
+            if job.removing:
+                self._finalize_removal(job_id)
+                self._pump()
+                self._emit_overall()
+                return
             job.card.mark_failed(message, detail)
             if message != "Cancelado":
                 Toast.error("Falha no download", message, parent=self.window(), duration=9000)
@@ -435,7 +505,8 @@ class QueuePage(QWidget):
 
     # ------------------------------------------------------------ resumo
     def _refresh_summary(self) -> None:
-        running, waiting = self._running(), len(self.pending)
+        running = sum(1 for job in self.jobs.values() if job.active and not job.removing)
+        waiting = sum(1 for job_id in self.pending if not self.jobs[job_id].removing)
         parts = []
         if running:
             parts.append(f"{running} baixando")
@@ -445,7 +516,7 @@ class QueuePage(QWidget):
 
     def _emit_overall(self) -> None:
         """Média dos downloads ativos — alimenta a barra de tarefas do Windows."""
-        active = [job for job in self.jobs.values() if job.active]
+        active = [job for job in self.jobs.values() if job.active and not job.removing]
         if not active:
             self.overall_progress.emit(-1.0)
             return
