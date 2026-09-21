@@ -16,6 +16,7 @@ from .downloader import (DownloadOptions, DownloadRunner, Progress, Transcoder,
                          is_retryable_error)
 from .gpu import GpuInfo, detect
 from .media_tools import MediaToolError, MediaToolOptions, build_command
+from .processes import isolated_process_kwargs, terminate_process_tree
 from .probe import probe
 from .tools import ToolManager, Toolchain
 from .updater import AppUpdater, ReleaseInfo
@@ -131,13 +132,12 @@ class MediaToolWorker(QThread):
         self._cancelled.set()
         process = self._process
         if process and process.poll() is None:
-            try:
-                process.terminate()
-            except OSError:
-                pass
+            terminate_process_tree(process)
 
     def run(self) -> None:
         try:
+            if self._cancelled.is_set():
+                raise MediaToolError("Operação cancelada.")
             command = build_command(self.options, self.tc)
             self.options.destination.parent.mkdir(parents=True, exist_ok=True)
             self.progress.emit("Processando com FFmpeg…")
@@ -148,8 +148,10 @@ class MediaToolWorker(QThread):
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                creationflags=getattr(__import__("subprocess"), "CREATE_NO_WINDOW", 0),
+                **isolated_process_kwargs(),
             )
+            if self._cancelled.is_set():
+                terminate_process_tree(self._process)
             _, stderr = self._process.communicate()
             if self._cancelled.is_set():
                 raise MediaToolError("Operação cancelada.")
@@ -267,7 +269,12 @@ class DownloadWorker(QThread):
                 self.failed.emit(self.job_id, "Cancelado", "")
                 return
 
-            if self.cfg.transcode_enabled and not self.opts.audio_only and files:
+            # Um recorte exato já precisa reencodar dentro do FFmpeg downloader
+            # e usa o codec acelerado selecionado quando disponível. Rodar o
+            # Transcoder novamente só perderia qualidade e dobraria o trabalho.
+            has_section = bool(self.opts.section_start.strip() or self.opts.section_end.strip())
+            if (self.cfg.transcode_enabled and not has_section
+                    and not self.opts.audio_only and files):
                 self.transcoder = Transcoder(self.tc, self.cfg)
                 converted: list[Path] = []
                 for path in files:

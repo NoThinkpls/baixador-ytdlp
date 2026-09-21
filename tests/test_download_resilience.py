@@ -83,6 +83,37 @@ class DownloadArgumentsTests(unittest.TestCase):
         self.assertFalse(is_retryable_error("ERROR: Unsupported URL"))
         self.assertFalse(is_retryable_error("ERROR: Private video"))
 
+    def test_exact_video_cut_reports_progress_and_uses_nvenc(self) -> None:
+        cfg = Settings(transcode_enabled=False)
+        tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))
+        args = build_args(
+            DownloadOptions(
+                "https://example.invalid/video", "downloads",
+                section_start="01:04:30", section_end="01:46:00",
+            ),
+            cfg, tools, section_encoder="h264_nvenc",
+        )
+
+        self.assertIn("--force-keyframes-at-cuts", args)
+        downloader = args[args.index("--downloader-args") + 1]
+        self.assertIn("-progress pipe:1", downloader)
+        self.assertIn("-c:v h264_nvenc", downloader)
+        self.assertIn("-cq 18", downloader)
+
+    def test_audio_cut_does_not_force_a_pointless_video_reencode(self) -> None:
+        tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))
+        args = build_args(
+            DownloadOptions(
+                "https://example.invalid/audio", "downloads", audio_only=True,
+                section_start="10", section_end="20",
+            ),
+            Settings(), tools, section_encoder="h264_nvenc",
+        )
+
+        self.assertIn("--download-sections", args)
+        self.assertNotIn("--force-keyframes-at-cuts", args)
+        self.assertNotIn("--downloader-args", args)
+
 
 @unittest.skipUnless(QApplication is not None, "PySide6 não está instalado neste ambiente")
 class QueuePageTests(unittest.TestCase):

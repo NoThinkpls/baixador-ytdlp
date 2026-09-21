@@ -311,16 +311,21 @@ class ToolManager:
     def _download(self, url: str, dest: Path, progress: ProgressCB, label: str) -> Path:
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(dest.suffix + ".part")
-        with self._request(url, accept="application/octet-stream") as resp, open(tmp, "wb") as fh:
-            total = int(resp.headers.get("Content-Length") or 0)
-            done = 0
-            while chunk := resp.read(256 * 1024):
-                fh.write(chunk)
-                done += len(chunk)
-                pct = int(done * 100 / total) if total else -1
-                mb = done / 1_048_576
-                suffix = f"{mb:.1f} MB" if not total else f"{mb:.1f} / {total / 1_048_576:.1f} MB"
-                progress(f"{label} — {suffix}", pct)
+        try:
+            with self._request(url, accept="application/octet-stream") as resp, open(tmp, "wb") as fh:
+                total = int(resp.headers.get("Content-Length") or 0)
+                done = 0
+                while chunk := resp.read(256 * 1024):
+                    fh.write(chunk)
+                    done += len(chunk)
+                    pct = int(done * 100 / total) if total else -1
+                    mb = done / 1_048_576
+                    suffix = (f"{mb:.1f} MB" if not total
+                              else f"{mb:.1f} / {total / 1_048_576:.1f} MB")
+                    progress(f"{label} — {suffix}", pct)
+        except Exception:
+            _quiet_unlink(tmp)
+            raise
         tmp.replace(dest)
         return dest
 
@@ -497,11 +502,16 @@ class ToolManager:
                 progress,
                 f"Baixando {target_name} para macOS",
             )
+            expected = self._asset_sha256(assets[asset_name])
+            if expected and self._sha256(staged) != expected:
+                _quiet_unlink(staged)
+                raise RuntimeError(
+                    f"Hash SHA-256 do {target_name} para macOS não confere."
+                )
             self._replace(staged, self.bin_dir / target_name)
 
-        # O fornecedor publica artefatos estáticos no GitHub, mas não um
-        # SHA-256 separado. Preservamos o id/versionamento do asset para detectar
-        # qualquer troca posterior antes da próxima atualização.
+        # O digest exposto pela API é validado quando disponível. O
+        # id/versionamento continua no estado para detectar a próxima build.
         self.state["ffmpeg_stamp"] = stamp
         self._save_state()
         progress("FFmpeg para macOS instalado", 100)
@@ -723,7 +733,11 @@ class ToolManager:
                 self._download(asset["browser_download_url"], zip_path, progress,
                                f"Baixando o runtime JavaScript (Deno {tag})")
 
-                expected = self._remote_sha256(assets.get(asset_name + ".sha256sum"))
+                # Releases atuais expõem o digest do próprio ZIP na API. O
+                # .sha256sum do Deno no Windows é um relatório PowerShell
+                # ("Hash : ..."), não o formato tradicional "hash arquivo".
+                expected = (self._asset_sha256(asset)
+                            or self._remote_sha256(assets.get(asset_name + ".sha256sum")))
                 if expected:
                     progress("Conferindo a integridade do Deno…", -1)
                     if self._sha256(zip_path) != expected:
@@ -755,7 +769,9 @@ class ToolManager:
             return ""
         try:
             with self._request(asset["browser_download_url"], accept="text/plain") as resp:
-                return resp.read().decode("utf-8", "replace").split()[0].strip().lower()
+                content = resp.read().decode("utf-8", "replace")
+                match = re.search(r"(?i)\b([0-9a-f]{64})\b", content)
+                return match.group(1).lower() if match else ""
         except Exception:
             return ""
 
