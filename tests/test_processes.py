@@ -12,13 +12,15 @@ class ProcessTreeTests(unittest.TestCase):
     def test_posix_cancels_the_whole_process_group(self) -> None:
         process = Mock(pid=4321)
         process.poll.return_value = None
+        sigkill = getattr(signal, "SIGKILL", 9)
 
-        # O atributo não existe no módulo ``os`` do runner Windows.
+        # Estes atributos POSIX não existem nos módulos do runner Windows.
         with patch("baixador_ytdlp.processes.IS_WINDOWS", False), \
+                patch("baixador_ytdlp.processes.signal.SIGKILL", sigkill, create=True), \
                 patch("baixador_ytdlp.processes.os.killpg", create=True) as kill_group:
             terminate_process_tree(process)
 
-        kill_group.assert_called_once_with(4321, signal.SIGKILL)
+        kill_group.assert_called_once_with(4321, sigkill)
         process.kill.assert_not_called()
 
     def test_windows_uses_taskkill_for_descendants(self) -> None:
