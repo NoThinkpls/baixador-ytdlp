@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from baixador_ytdlp.config import Settings
 from baixador_ytdlp.downloader import Transcoder
-from baixador_ytdlp.gpu import detect
+from baixador_ytdlp.gpu import GpuInfo, detect, select_section_encoder
 
 
 class AmdEncodingTests(unittest.TestCase):
@@ -70,6 +70,19 @@ class AmdEncodingTests(unittest.TestCase):
 
         self.assertEqual(info.name, "GPU detectada")
         self.assertEqual(info.encoders, ["h264_nvenc"])
+
+    def test_section_tries_advertised_encoder_after_a_transient_probe_failure(self):
+        # O DownloadRunner tem fallback para CPU. Portanto, não devemos perder
+        # uma GPU real apenas porque o teste curto ocorreu enquanto o driver
+        # ainda estava iniciando.
+        for advertised in ("h264_nvenc", "h264_amf", "h264_videotoolbox"):
+            with self.subTest(advertised=advertised), patch(
+                "baixador_ytdlp.gpu.detect",
+                return_value=GpuInfo(advertised_encoders=[advertised]),
+            ):
+                codec = select_section_encoder(Path("ffmpeg"))
+
+            self.assertEqual(codec, advertised)
 
 
 if __name__ == "__main__":
