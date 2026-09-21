@@ -1,16 +1,25 @@
 """Regressões da retomada, anti-duplicidade e metadados da análise."""
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from baixador_ytdlp.config import Settings
 from baixador_ytdlp.downloader import DownloadOptions, build_args, is_retryable_error
 from baixador_ytdlp.probe import _audio_languages, _caption_languages
 from baixador_ytdlp.queue_state import QueueState
+
+try:
+    from PySide6.QtWidgets import QApplication
+    from baixador_ytdlp.ui.queue_page import QueuePage
+except ModuleNotFoundError:
+    QApplication = None
 
 
 class QueueStateTests(unittest.TestCase):
@@ -60,6 +69,7 @@ class DownloadArgumentsTests(unittest.TestCase):
 
         self.assertIn("--continue", args)
         self.assertIn("--file-access-retries", args)
+        self.assertEqual(args[args.index("--socket-timeout") + 1], "30")
         self.assertIn("--embed-thumbnail", args)
         self.assertIn("--convert-thumbnails", args)
         self.assertIn("--embed-metadata", args)
@@ -72,6 +82,65 @@ class DownloadArgumentsTests(unittest.TestCase):
         self.assertTrue(is_retryable_error("ERROR: connection reset by peer"))
         self.assertFalse(is_retryable_error("ERROR: Unsupported URL"))
         self.assertFalse(is_retryable_error("ERROR: Private video"))
+
+
+@unittest.skipUnless(QApplication is not None, "PySide6 não está instalado neste ambiente")
+class QueuePageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_pending_item_is_removed_from_ui_and_persisted_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            page = QueuePage(Settings())
+            page._state = QueueState(Path(temporary) / "queue.json")
+            options = DownloadOptions("https://example.invalid/video", temporary)
+            self.assertTrue(page._add(options))
+            job_id = next(iter(page.jobs))
+
+            page.cancel(job_id)
+
+            self.assertNotIn(job_id, page.jobs)
+            self.assertEqual(page._state.load(), [])
+            self.assertFalse(page.empty.isHidden())
+            page.deleteLater()
+
+    def test_confirmed_duplicate_can_be_added_and_restored(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            page = QueuePage(Settings())
+            page._state = QueueState(Path(temporary) / "queue.json")
+            options = DownloadOptions("https://example.invalid/video", temporary)
+
+            self.assertTrue(page._add(options))
+            self.assertFalse(page._add(options))
+            self.assertTrue(page._add(options, allow_duplicate=True))
+            self.assertEqual(len(page._state.load()), 2)
+            page.deleteLater()
+
+    def test_active_item_disappears_and_is_not_restored_while_worker_stops(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            page = QueuePage(Settings())
+            page._state = QueueState(Path(temporary) / "queue.json")
+            options = DownloadOptions("https://example.invalid/video", temporary)
+            self.assertTrue(page._add(options))
+            job_id = next(iter(page.jobs))
+            job = page.jobs[job_id]
+            page.pending.remove(job_id)
+            job.active = True
+            job.worker = Mock()
+            page._persist()
+
+            page.cancel(job_id)
+
+            job.worker.cancel.assert_called_once_with()
+            self.assertTrue(job.removing)
+            self.assertTrue(job.card.isHidden())
+            self.assertEqual(page._state.load(), [])
+            self.assertEqual(page._running(), 0)
+
+            page._on_failed(job_id, "Cancelado")
+            self.assertNotIn(job_id, page.jobs)
+            page.deleteLater()
 
 
 class ProbeMetadataTests(unittest.TestCase):

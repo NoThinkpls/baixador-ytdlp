@@ -86,6 +86,32 @@ class StartupRuntimeTests(unittest.TestCase):
 
 
 class DownloadProgressTests(unittest.TestCase):
+    def test_cancel_before_worker_start_does_not_launch_ytdlp(self) -> None:
+        options = DownloadOptions("https://example.invalid/video", ".")
+        toolchain = Toolchain(Path("yt-dlp"), Path("ffmpeg"), Path("ffprobe"), Path("."))
+        runner = DownloadRunner(options, Settings(), toolchain)
+        runner.cancel()
+
+        with patch("baixador_ytdlp.downloader.subprocess.Popen") as popen:
+            self.assertEqual(runner.run(lambda _progress: None), [])
+
+        popen.assert_not_called()
+
+    def test_cancel_during_process_start_terminates_new_process(self) -> None:
+        options = DownloadOptions("https://example.invalid/video", ".")
+        toolchain = Toolchain(Path("yt-dlp"), Path("ffmpeg"), Path("ffprobe"), Path("."))
+        runner = DownloadRunner(options, Settings(), toolchain)
+        process = Mock()
+
+        def start_process(*_args, **_kwargs):
+            runner.cancel()  # reproduz o clique enquanto Popen ainda não retornou
+            return process
+
+        with patch("baixador_ytdlp.downloader.subprocess.Popen", side_effect=start_process):
+            self.assertEqual(runner.run(lambda _progress: None), [])
+
+        process.terminate.assert_called_once_with()
+
     def test_coalesces_rapid_progress_but_preserves_state_changes(self) -> None:
         options = DownloadOptions("https://example.invalid/video", ".")
         toolchain = Toolchain(Path("yt-dlp"), Path("ffmpeg"), Path("ffprobe"), Path("."))

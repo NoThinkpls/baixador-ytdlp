@@ -226,6 +226,13 @@ class DownloadWorker(QThread):
                 # recebeu erro de rede não deve ser reutilizado. Os .part ficam
                 # no destino e --continue começa exatamente de onde parou.
                 self.runner = DownloadRunner(self.opts, self.cfg, self.tc)
+                # cancel() pode ocorrer entre a verificação no início do laço e
+                # esta nova instância. Reaplicar o estado impede que um yt-dlp
+                # nasça depois de o usuário já ter removido o item da fila.
+                if self._cancelled.is_set():
+                    self.runner.cancel()
+                    self.failed.emit(self.job_id, "Cancelado", "")
+                    return
                 try:
                     files = self.runner.run(lambda p: self.progress.emit(self.job_id, p))
                 except Exception as exc:  # o detalhe final preserva a saída útil
