@@ -107,10 +107,11 @@ class DownloadProgressTests(unittest.TestCase):
             runner.cancel()  # reproduz o clique enquanto Popen ainda não retornou
             return process
 
-        with patch("baixador_ytdlp.downloader.subprocess.Popen", side_effect=start_process):
+        with patch("baixador_ytdlp.downloader.subprocess.Popen", side_effect=start_process), \
+                patch("baixador_ytdlp.downloader.terminate_process_tree") as terminate:
             self.assertEqual(runner.run(lambda _progress: None), [])
 
-        process.terminate.assert_called_once_with()
+        terminate.assert_called_once_with(process)
 
     def test_coalesces_rapid_progress_but_preserves_state_changes(self) -> None:
         options = DownloadOptions("https://example.invalid/video", ".")
@@ -130,6 +131,20 @@ class DownloadProgressTests(unittest.TestCase):
 
         self.assertEqual([item.downloaded for item in received], [10, 20, 20])
         self.assertEqual(received[1].stage, "Juntando áudio e vídeo")
+
+    def test_reads_ffmpeg_progress_during_an_exact_cut(self) -> None:
+        options = DownloadOptions(
+            "https://example.invalid/video", ".",
+            section_start="01:04:30", section_end="01:46:00",
+        )
+        toolchain = Toolchain(Path("yt-dlp"), Path("ffmpeg"), Path("ffprobe"), Path("."))
+        runner = DownloadRunner(options, Settings(), toolchain)
+        progress = Progress(status="processing", stage="Recortando…")
+
+        handled = runner._apply_ffmpeg_progress("out_time_us=1245000000", progress)
+
+        self.assertTrue(handled)
+        self.assertAlmostEqual(progress.percent, 50.0)
 
 
 if __name__ == "__main__":

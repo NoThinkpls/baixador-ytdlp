@@ -12,6 +12,23 @@ from baixador_ytdlp.gpu import detect
 
 
 class AmdEncodingTests(unittest.TestCase):
+    def test_does_not_offer_an_encoder_that_only_exists_in_the_ffmpeg_build(self):
+        def fake_run(command, **_kwargs):
+            if command[0] == "nvidia-smi":
+                raise FileNotFoundError("sem driver")
+            if "-encoders" in command:
+                return SimpleNamespace(stdout=" V.... h264_nvenc\n", returncode=0)
+            if "-f" in command and "lavfi" in command:
+                return SimpleNamespace(stdout="", returncode=1)
+            return SimpleNamespace(stdout="Hardware acceleration methods:\ncuda\n", returncode=0)
+
+        with patch("baixador_ytdlp.gpu.sys.platform", "win32"), \
+             patch("baixador_ytdlp.gpu.run_hidden", side_effect=fake_run), \
+             patch("baixador_ytdlp.gpu.Path.exists", return_value=True):
+            info = detect(Path("ffmpeg-unavailable.exe"))
+
+        self.assertEqual(info.encoders, [])
+
     def test_detects_amf_without_nvidia_driver(self):
         def fake_run(command, **_kwargs):
             if command[0] == "nvidia-smi":

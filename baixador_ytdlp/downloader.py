@@ -17,6 +17,8 @@ from typing import Callable, Optional
 
 from .config import IS_WINDOWS, Settings
 from .cookies import cookie_args
+from .gpu import select_section_encoder
+from .processes import isolated_process_kwargs, terminate_process_tree
 from .tools import CREATE_NO_WINDOW, Toolchain, decode_external_output
 from .diagnostics import log_event
 
@@ -96,7 +98,13 @@ def _output_template(opts: DownloadOptions, cfg: Settings) -> str:
     return template
 
 
-def build_args(opts: DownloadOptions, cfg: Settings, tc: Toolchain) -> list[str]:
+def build_args(
+    opts: DownloadOptions,
+    cfg: Settings,
+    tc: Toolchain,
+    *,
+    section_encoder: str = "",
+) -> list[str]:
     args: list[str] = [
         str(tc.ytdlp),
         "--ignore-config",
@@ -143,8 +151,18 @@ def build_args(opts: DownloadOptions, cfg: Settings, tc: Toolchain) -> list[str]
 
     section = _section_range(opts)
     if section:
-        # Recorte exige um único fluxo por vez; o yt-dlp baixa só o intervalo pedido.
-        args += ["--download-sections", section, "--force-keyframes-at-cuts"]
+        # Recorte exige um único fluxo por vez; o yt-dlp baixa só o intervalo.
+        # Áudio não possui keyframes. Forçar nesse caso apenas criava uma
+        # recompressão extra sem melhorar a precisão.
+        args += ["--download-sections", section]
+        if not opts.audio_only:
+            args.append("--force-keyframes-at-cuts")
+            # O FFmpeg usado como downloader não participa do progress-template
+            # do yt-dlp. O canal -progress mantém a interface informada durante
+            # recortes longos em vez de deixá-la parada em "Iniciando".
+            ffmpeg_args = ["-progress", "pipe:1", "-nostats"]
+            ffmpeg_args += _section_encoder_args(section_encoder, cfg)
+            args += ["--downloader-args", "ffmpeg_o:" + " ".join(ffmpeg_args)]
 
     if cfg.embed_metadata:
         args.append("--embed-metadata")
@@ -185,9 +203,61 @@ def _section_range(opts: DownloadOptions) -> str:
     return f"*{start or '0'}-{end or 'inf'}"
 
 
-def preview_command(opts: DownloadOptions, cfg: Settings, tc: Toolchain) -> str:
+def _time_seconds(value: str) -> float:
+    """Aceita segundos, mm:ss ou hh:mm:ss sem depender da localidade."""
+    try:
+        parts = [float(part) for part in value.strip().split(":")]
+    except (TypeError, ValueError):
+        return 0.0
+    if not 1 <= len(parts) <= 3:
+        return 0.0
+    seconds = 0.0
+    for part in parts:
+        seconds = seconds * 60 + part
+    return seconds
+
+
+def _section_duration(opts: DownloadOptions) -> float:
+    start = _time_seconds(opts.section_start) if opts.section_start.strip() else 0.0
+    if not opts.section_end.strip():
+        return 0.0
+    end = _time_seconds(opts.section_end)
+    return max(0.0, end - start)
+
+
+def preview_command(
+    opts: DownloadOptions,
+    cfg: Settings,
+    tc: Toolchain,
+    *,
+    section_encoder: str = "",
+) -> str:
     """Linha de comando equivalente — útil para auditoria e para reproduzir no terminal."""
-    return " ".join(shlex.quote(a) for a in build_args(opts, cfg, tc))
+    return " ".join(
+        shlex.quote(a) for a in build_args(
+            opts, cfg, tc, section_encoder=section_encoder,
+        )
+    )
+
+
+def _section_encoder_args(codec: str, cfg: Settings) -> list[str]:
+    if not codec:
+        return []
+    args = ["-c:v", codec]
+    if codec.endswith("_nvenc"):
+        preset = cfg.transcode_preset if cfg.transcode_enabled else "p5"
+        cq = cfg.transcode_cq if cfg.transcode_enabled else 18
+        args += ["-preset", preset, "-rc", "vbr", "-cq", str(cq), "-b:v", "0"]
+    elif codec.endswith("_amf"):
+        quality = max(1, min(51, cfg.transcode_cq if cfg.transcode_enabled else 18))
+        args += ["-quality", "balanced", "-rc", "cqp",
+                 "-qp_i", str(quality), "-qp_p", str(quality)]
+    elif codec.endswith("_videotoolbox"):
+        quality = max(1, min(100, (cfg.transcode_cq if cfg.transcode_enabled else 18) * 3))
+        args += ["-q:v", str(quality), "-b:v", "0"]
+    # O áudio costuma vir em Opus/WebM e não pode ser apenas copiado para todos
+    # os MP4. AAC mantém compatibilidade; o custo é desprezível perto do vídeo.
+    return [*args, "-c:a", "aac", "-b:a", "192k"]
 
 
 class DownloadRunner:
@@ -206,12 +276,7 @@ class DownloadRunner:
     def cancel(self) -> None:
         self._cancelled.set()
         if self._proc and self._proc.poll() is None:
-            try:
-                self._proc.terminate()
-            except OSError:
-                # O processo pode encerrar entre poll() e terminate(). O estado
-                # cancelado continua sendo a fonte de verdade para o worker.
-                pass
+            terminate_process_tree(self._proc)
 
     @property
     def cancelled(self) -> bool:
@@ -222,24 +287,72 @@ class DownloadRunner:
         # Nesse caso não devemos abrir um novo yt-dlp depois do cancelamento.
         if self._cancelled.is_set():
             return []
-        args = build_args(self.opts, self.cfg, self.tc)
-        log_event("yt-dlp download iniciado: %s", preview_command(self.opts, self.cfg, self.tc))
+
+        section_encoder = ""
+        section = _section_range(self.opts)
+        if section and not self.opts.audio_only and self.opts.container in {"mp4", "mkv"}:
+            self._emit_progress(on_progress, Progress(
+                status="processing", stage="Verificando aceleração para o recorte…",
+            ), force=True)
+            preferred = self.cfg.transcode_codec if self.cfg.transcode_enabled else ""
+            section_encoder = select_section_encoder(self.tc.ffmpeg, preferred)
+
+        try:
+            return self._run_once(on_progress, section_encoder)
+        except DownloadError:
+            # O teste sintético elimina a maioria dos falsos positivos, mas o
+            # driver ainda pode recusar um codec/resolução de um vídeo real.
+            # Nessa situação específica, repetir na CPU preserva o resultado.
+            if (not section_encoder or self._cancelled.is_set()
+                    or not self._is_encoder_failure(section_encoder)):
+                raise
+            log_event(
+                "Encoder %s falhou no recorte; repetindo com FFmpeg/CPU: %s",
+                section_encoder, self.tail(40),
+            )
+            self.log.append(
+                f"A aceleração {section_encoder} falhou; nova tentativa segura na CPU."
+            )
+            self.files.clear()
+            self._emit_progress(on_progress, Progress(
+                status="processing", stage="GPU indisponível para esta mídia — usando CPU…",
+            ), force=True)
+            return self._run_once(on_progress, "")
+
+    def _run_once(
+        self,
+        on_progress: Callable[[Progress], None],
+        section_encoder: str,
+    ) -> list[Path]:
+        args = build_args(
+            self.opts, self.cfg, self.tc, section_encoder=section_encoder,
+        )
+        log_event(
+            "yt-dlp download iniciado%s: %s",
+            f" (recorte={section_encoder or 'cpu'})" if _section_range(self.opts) else "",
+            preview_command(
+                self.opts, self.cfg, self.tc, section_encoder=section_encoder,
+            ),
+        )
         prog = Progress(status="downloading")
+        if section := _section_range(self.opts):
+            prog.status = "processing"
+            prog.stage = self._section_stage(section_encoder)
+        else:
+            prog.stage = "Conectando ao servidor…"
+        self._emit_progress(on_progress, prog, force=True)
         self._proc = subprocess.Popen(
             args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             # Ler bytes permite reconhecer de forma segura uma versão antiga
             # do yt-dlp que imprima na página de código do Windows.
             text=False, bufsize=0,
-            creationflags=CREATE_NO_WINDOW, env=self.tc.env(),
+            env=self.tc.env(), **isolated_process_kwargs(),
         )
         # Fecha a janela de corrida entre a verificação acima e a atribuição de
         # _proc: se o cancelamento aconteceu durante o Popen, encerra o processo
         # recém-criado antes de começar a leitura bloqueante de stdout.
         if self._cancelled.is_set():
-            try:
-                self._proc.terminate()
-            except OSError:
-                pass
+            terminate_process_tree(self._proc)
             return []
         assert self._proc.stdout is not None
         for raw_line in self._proc.stdout:
@@ -253,6 +366,8 @@ class DownloadRunner:
                 path = Path(line.split(SEP, 1)[1].strip())
                 if path.name:
                     self.files.append(path)
+            elif self._apply_ffmpeg_progress(line, prog):
+                self._emit_progress(on_progress, prog)
             else:
                 self.log.append(line)
                 stage = _stage_from_line(line)
@@ -262,6 +377,7 @@ class DownloadRunner:
                     self._emit_progress(on_progress, prog, force=True)
 
         code = self._proc.wait()
+        self._proc = None
         if self._cancelled.is_set():
             prog.status = "cancelled"
             self._emit_progress(on_progress, prog, force=True)
@@ -275,6 +391,40 @@ class DownloadRunner:
         prog.stage = ""
         self._emit_progress(on_progress, prog, force=True)
         return self.files
+
+    def _apply_ffmpeg_progress(self, line: str, prog: Progress) -> bool:
+        """Converte ``-progress pipe:1`` do FFmpeg em avanço do recorte."""
+        key, separator, value = line.partition("=")
+        if not separator or key not in _FFMPEG_PROGRESS_KEYS:
+            return False
+        prog.status = "processing"
+        prog.stage = prog.stage or "Processando o trecho com FFmpeg…"
+        duration = _section_duration(self.opts)
+        if key == "out_time_us" and duration:
+            elapsed = _to_float(value) / 1_000_000
+            prog.percent = min(99.0, max(0.0, elapsed * 100 / duration))
+        elif key == "out_time" and duration:
+            prog.percent = min(99.0, max(0.0, _time_seconds(value) * 100 / duration))
+        return True
+
+    @staticmethod
+    def _section_stage(codec: str) -> str:
+        if codec.endswith("_nvenc"):
+            return "Baixando e recortando com NVIDIA NVENC…"
+        if codec.endswith("_amf"):
+            return "Baixando e recortando com AMD AMF…"
+        if codec.endswith("_videotoolbox"):
+            return "Baixando e recortando com Apple VideoToolbox…"
+        return "Baixando e recortando com FFmpeg na CPU…"
+
+    def _is_encoder_failure(self, codec: str) -> bool:
+        output = self.tail(300).casefold()
+        markers = (
+            codec.casefold(), "nvenc", "nvcuda", "no capable devices",
+            "amf", "videotoolbox", "initializing output stream",
+            "error while opening encoder", "hardware accelerator failed",
+        )
+        return any(marker in output for marker in markers)
 
     def _emit_progress(
         self,
@@ -339,6 +489,11 @@ _STAGES = {
     "SplitChapters": "Separando capítulos…",
 }
 
+_FFMPEG_PROGRESS_KEYS = frozenset({
+    "frame", "fps", "stream_0_0_q", "bitrate", "total_size", "out_time_us",
+    "out_time_ms", "out_time", "dup_frames", "drop_frames", "speed", "progress",
+})
+
 
 def _stage_from_line(line: str) -> str:
     """Uma busca de dicionário por linha, em vez de varrer todos os prefixos."""
@@ -374,7 +529,7 @@ class Transcoder:
     def cancel(self) -> None:
         self._cancelled.set()
         if self._proc and self._proc.poll() is None:
-            self._proc.terminate()
+            terminate_process_tree(self._proc)
 
     def duration(self, path: Path) -> float:
         try:
@@ -432,14 +587,18 @@ class Transcoder:
         dst = src.with_name(f"{src.stem} [{suffix.get(codec, 'acelerado')}]{src.suffix}")
         attempts = (True, False) if codec.endswith("_nvenc") else (True,)
         for attempt, hwaccel in enumerate(attempts):
+            if self._cancelled.is_set():
+                raise DownloadError("Conversão cancelada.")
             args = self.build_args(src, dst, hwaccel=hwaccel)
             self._proc = subprocess.Popen(
                 # Mesclar stderr evita o deadlock clássico: o FFmpeg pode
                 # encher a pipe de erro antes de o processo principal chegar a
                 # lê-la. Mantemos somente o final para a mensagem ao usuário.
                 args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=False,
-                bufsize=0, creationflags=CREATE_NO_WINDOW,
+                bufsize=0, **isolated_process_kwargs(),
             )
+            if self._cancelled.is_set():
+                terminate_process_tree(self._proc)
             assert self._proc.stdout is not None
             errors: deque[str] = deque(maxlen=40)
             for raw_line in self._proc.stdout:
@@ -450,6 +609,7 @@ class Transcoder:
                 elif line:
                     errors.append(line)
             code = self._proc.wait()
+            self._proc = None
             if code == 0:
                 break
             if self._cancelled.is_set():
