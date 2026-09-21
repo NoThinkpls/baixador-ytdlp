@@ -141,7 +141,7 @@ class NavItem(QAbstractButton):
 
         active = self.isChecked()
         hovered = self.underMouse()
-        pill = QRectF(8, 2, self.width() - 16, self.height() - 4)
+        pill = QRectF(6, 2, self.width() - 12, self.height() - 4)
         if active:
             painter.setBrush(theme.qcolor("accent_soft"))
             painter.drawRoundedRect(pill, 9, 9)
@@ -152,7 +152,7 @@ class NavItem(QAbstractButton):
         if active:
             painter.setBrush(theme.qcolor("accent"))
             painter.drawRoundedRect(
-                QRectF(0, (self.height() - 20) / 2, 3.5, 20), 2, 2)
+                QRectF(5, (self.height() - 20) / 2, 3.5, 20), 2, 2)
 
         icon_tone = "accent" if active else ("text" if hovered else "text_secondary")
         icon_x = int((self.width() - 18) / 2) if self._compact else 20
@@ -195,17 +195,21 @@ class Sidebar(QWidget):
         self._column.setContentsMargins(0, 8, 0, 12)
         self._column.setSpacing(2)
 
-        header = QWidget(self)
-        header.setFixedHeight(38)
-        self._header_layout = QHBoxLayout(header)
+        self.header = QWidget(self)
+        self.header.setFixedHeight(44)
+        self._header_layout = QHBoxLayout(self.header)
         self._header_layout.setContentsMargins(14, 0, 14, 0)
-        self._header_layout.setSpacing(0)
-        self.toggle = IconButton("sidebar-collapse", "Recolher navegação", header,
+        self._header_layout.setSpacing(6)
+        # O botão de recolher faz parte do cabeçalho da navegação, em vez de
+        # ficar isolado acima dele. O cabeçalho conserva a mesma faixa vertical
+        # no modo compacto; só o texto some e o botão vira o ponto de retorno.
+        self.header_section = SectionLabel("", self.header)
+        self.toggle = IconButton("sidebar-collapse", "Recolher navegação", self.header,
                                  size=32, icon_size=18)
         self.toggle.clicked.connect(self.toggle_collapsed)
-        self._header_layout.addWidget(self.toggle)
-        self._header_layout.addStretch(1)
-        self._column.addWidget(header)
+        self._header_layout.addWidget(self.header_section, 1, Qt.AlignmentFlag.AlignVCenter)
+        self._header_layout.addWidget(self.toggle, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._column.addWidget(self.header)
         self._top_count = 1
         self._column.addStretch(1)
 
@@ -227,6 +231,7 @@ class Sidebar(QWidget):
         self._header_layout.setContentsMargins(margin, 0, margin, 0)
         self.toggle.set_icon_name("sidebar-expand" if collapsed else "sidebar-collapse")
         self.toggle.setToolTip("Expandir navegação" if collapsed else "Recolher navegação")
+        self.header_section.setVisible(not collapsed and bool(self.header_section.text()))
         for label in self._sections:
             label.setVisible(not collapsed)
         for item in self._items:
@@ -235,6 +240,13 @@ class Sidebar(QWidget):
             self.collapsedChanged.emit(collapsed)
 
     def add_section(self, text: str) -> QLabel:
+        # A primeira seção é o cabeçalho da própria barra. Isso alinha
+        # “NAVEGAÇÃO” ao controle de recolher e elimina o ícone solto acima do
+        # menu. As seções extras continuam possíveis para telas futuras.
+        if not self.header_section.text():
+            self.header_section.setText(text.upper())
+            self.header_section.setVisible(not self._collapsed)
+            return self.header_section
         label = SectionLabel(text, self)
         label.setContentsMargins(20, 12, 20, 6)
         label.setVisible(not self._collapsed)

@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QLabel, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QLabel, QSizePolicy,
+                               QVBoxLayout, QWidget)
 
 from ..config import Settings
 from ..downloader import DownloadOptions, Progress
@@ -79,31 +79,42 @@ class JobCard(ListRow):
         texts.addWidget(self.status)
         top.addLayout(texts, 1)
 
-        self.chip = Chip("Na fila", "neutral", self)
-        top.addWidget(self.chip, 0, Qt.AlignmentFlag.AlignTop)
+        # Estado e ações dividem o mesmo grupo: assim seus centros verticais
+        # permanecem alinhados, em vez de o chip ficar alguns pixels acima dos
+        # ícones por estar ancorado ao topo do cartão.
+        self.action_group = QWidget(self)
+        self.action_group.setObjectName("jobActions")
+        self.action_group.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        actions = QHBoxLayout(self.action_group)
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(4)
 
-        self.transcribe_btn = IconButton("captions", "Gerar legenda deste arquivo", self)
+        self.chip = Chip("Na fila", "neutral", self.action_group)
+        actions.addWidget(self.chip)
+
+        self.transcribe_btn = IconButton("captions", "Gerar legenda deste arquivo", self.action_group)
         self.transcribe_btn.clicked.connect(self._transcribe)
         self.transcribe_btn.hide()
 
-        self.detail_btn = IconButton("info", "Ver o erro completo", self)
+        self.detail_btn = IconButton("info", "Ver o erro completo", self.action_group)
         self.detail_btn.clicked.connect(self._show_detail)
         self.detail_btn.hide()
 
-        self.retry_btn = IconButton("refresh", "Tentar de novo", self)
+        self.retry_btn = IconButton("refresh", "Tentar de novo", self.action_group)
         self.retry_btn.clicked.connect(lambda: self.retry_requested.emit(self.job_id))
         self.retry_btn.hide()
 
-        self.open_btn = IconButton("folder", "Mostrar na pasta", self)
+        self.open_btn = IconButton("folder", "Mostrar na pasta", self.action_group)
         self.open_btn.clicked.connect(self._reveal)
         self.open_btn.hide()
 
-        self.cancel_btn = IconButton("close", "Cancelar e remover da fila", self)
+        self.cancel_btn = IconButton("close", "Cancelar e remover da fila", self.action_group)
         self.cancel_btn.clicked.connect(lambda: self.cancel_requested.emit(self.job_id))
 
         for button in (self.transcribe_btn, self.detail_btn, self.retry_btn,
                        self.open_btn, self.cancel_btn):
-            top.addWidget(button, 0, Qt.AlignmentFlag.AlignTop)
+            actions.addWidget(button)
+        top.addWidget(self.action_group, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self.bar = ProgressBar(self)
         self.bar.setRange(0, 100)
