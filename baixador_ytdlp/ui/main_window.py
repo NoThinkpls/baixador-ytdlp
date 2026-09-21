@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QIcon, QKeySequence, QShortcut
-from PySide6.QtWidgets import QApplication, QSizePolicy
+from PySide6.QtWidgets import QApplication, QMessageBox, QSizePolicy
 
 from ..config import APP_NAME, APP_VERSION, Settings
 from ..history import DOWNLOAD, TRANSCRIPTION, History, HistoryEntry
@@ -388,18 +388,35 @@ class MainWindow(AppShell):
         if self.queue.add(opts):
             self.switchTo(self.queue)
             return
-        Toast.warning("Download repetido",
-                      "Este item já existe nesta sessão. Use o cartão da fila para acompanhar ou tentar novamente.",
-                      parent=self, duration=4500)
+        if self._confirm_duplicate(1) and self.queue.add(opts, allow_duplicate=True):
+            self.switchTo(self.queue)
 
     def _on_enqueue_many(self, options) -> None:
-        added, skipped = self.queue.add_many(options)
+        added, duplicates = self.queue.add_many(options)
+        if duplicates and self._confirm_duplicate(len(duplicates)):
+            repeated, _ = self.queue.add_many(duplicates, allow_duplicates=True)
+            added += repeated
         if added:
             self.switchTo(self.queue)
-        if skipped:
-            Toast.info("Itens repetidos ignorados",
-                       f"{skipped} link(s) já existem nesta sessão.",
-                       parent=self, duration=5000)
+
+    def _confirm_duplicate(self, count: int) -> bool:
+        plural = count != 1
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Download repetido")
+        dialog.setIcon(QMessageBox.Icon.Question)
+        dialog.setText(
+            f"{'Estes itens já existem' if plural else 'Este item já existe'} na fila."
+        )
+        dialog.setInformativeText(
+            f"Deseja adicionar {'as solicitações repetidas' if plural else 'outra solicitação'} "
+            "mesmo assim?"
+        )
+        confirm = dialog.addButton(
+            "Adicionar mesmo assim", QMessageBox.ButtonRole.AcceptRole
+        )
+        dialog.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
+        dialog.exec()
+        return dialog.clickedButton() is confirm
 
     def _on_finished(self, opts, files) -> None:
         title = opts.title or opts.url

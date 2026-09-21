@@ -110,6 +110,9 @@ def build_args(opts: DownloadOptions, cfg: Settings, tc: Toolchain) -> list[str]
         "--paths", opts.output_dir,
         "--output", _output_template(opts, cfg),
         "--concurrent-fragments", str(max(1, cfg.concurrent_fragments)),
+        # Evita permanecer indefinidamente em "Iniciando" quando a conexão
+        # aceita o processo, mas não entrega resposta alguma.
+        "--socket-timeout", "30",
         # O yt-dlp lida com erros de fragmento; a fila aplica, além disso,
         # poucas novas execuções completas para quedas temporárias de rede.
         "--retries", "10", "--fragment-retries", "10", "--file-access-retries", "3",
@@ -203,13 +206,22 @@ class DownloadRunner:
     def cancel(self) -> None:
         self._cancelled.set()
         if self._proc and self._proc.poll() is None:
-            self._proc.terminate()
+            try:
+                self._proc.terminate()
+            except OSError:
+                # O processo pode encerrar entre poll() e terminate(). O estado
+                # cancelado continua sendo a fonte de verdade para o worker.
+                pass
 
     @property
     def cancelled(self) -> bool:
         return self._cancelled.is_set()
 
     def run(self, on_progress: Callable[[Progress], None]) -> list[Path]:
+        # O clique em remover pode chegar antes de a thread realmente começar.
+        # Nesse caso não devemos abrir um novo yt-dlp depois do cancelamento.
+        if self._cancelled.is_set():
+            return []
         args = build_args(self.opts, self.cfg, self.tc)
         log_event("yt-dlp download iniciado: %s", preview_command(self.opts, self.cfg, self.tc))
         prog = Progress(status="downloading")
@@ -220,6 +232,15 @@ class DownloadRunner:
             text=False, bufsize=0,
             creationflags=CREATE_NO_WINDOW, env=self.tc.env(),
         )
+        # Fecha a janela de corrida entre a verificação acima e a atribuição de
+        # _proc: se o cancelamento aconteceu durante o Popen, encerra o processo
+        # recém-criado antes de começar a leitura bloqueante de stdout.
+        if self._cancelled.is_set():
+            try:
+                self._proc.terminate()
+            except OSError:
+                pass
+            return []
         assert self._proc.stdout is not None
         for raw_line in self._proc.stdout:
             line = decode_external_output(raw_line).rstrip("\r\n")
