@@ -14,7 +14,7 @@ class ProcessTreeTests(unittest.TestCase):
         process.poll.return_value = None
 
         with patch("baixador_ytdlp.processes.IS_WINDOWS", False), \
-                patch("baixador_ytdlp.processes.os.killpg") as kill_group:
+                patch("baixador_ytdlp.processes.os.killpg", create=True) as kill_group:
             terminate_process_tree(process)
 
         kill_group.assert_called_once_with(4321, signal.SIGKILL)
