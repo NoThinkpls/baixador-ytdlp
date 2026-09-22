@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from ..config import Settings
 from ..diagnostics import log_event
+from ..media_tools import available_destination
 from ..transcription import FORMATS, TranscriptionOptions
 from ..workers import TranscriptionWorker
 from .components import (Button, Card, Divider, Headline, InsetGroup, LogView, Muted,
@@ -277,8 +278,9 @@ class TranscriptionPage(QWidget):
             self._warn("Selecione um arquivo de áudio ou vídeo existente.")
             return
         fmt = self.output_format.currentData()
-        output = Path(self.output_edit.text().strip()
-                      or str(media.with_suffix(FORMATS[fmt][1]))).with_suffix(FORMATS[fmt][1])
+        output = available_destination(Path(
+            self.output_edit.text().strip() or str(media.with_suffix(FORMATS[fmt][1]))
+        ).with_suffix(FORMATS[fmt][1]))
         self.output_edit.setText(str(output))
         opts = TranscriptionOptions(media, output, self.language.currentData(), self.model.currentData(),
                                     fmt, self.aggressive.isChecked())

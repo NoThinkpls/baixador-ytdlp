@@ -7,15 +7,10 @@ from PySide6.QtCore import QEvent, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (QAbstractButton, QHBoxLayout, QLabel, QSizePolicy,
                                QStackedWidget, QVBoxLayout, QWidget)
+from qframelesswindow import FramelessWindow as _Base
 
 from . import icons, theme
 from .components import Chip, IconButton, SectionLabel
-
-try:  # o qfluentwidgets já traz o qframelesswindow como dependência
-    from qframelesswindow import FramelessWindow as _Base
-except Exception:  # pragma: no cover - fallback defensivo
-    _Base = QWidget
-
 
 class CaptionButton(QAbstractButton):
     """Botão de moldura com os três glifos desenhados na mesma métrica.
@@ -34,6 +29,7 @@ class CaptionButton(QAbstractButton):
         self.setFixedSize(self.WIDTH, theme.TITLEBAR_HEIGHT)
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.setToolTip({"minimize": "Minimizar", "maximize": "Maximizar", "close": "Fechar"}[action])
+        self.setAccessibleName(self.toolTip())
         self.pressed.connect(self.update)
         self.released.connect(self.update)
         self.clicked.connect(self._activate)
@@ -79,6 +75,10 @@ class CaptionButton(QAbstractButton):
         else:
             painter.drawLine(int(center_x - 5), int(center_y - 5), int(center_x + 5), int(center_y + 5))
             painter.drawLine(int(center_x + 5), int(center_y - 5), int(center_x - 5), int(center_y + 5))
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(theme.qcolor("accent"), 2))
+            painter.drawRect(QRectF(self.rect()).adjusted(1, 1, -1, -1))
 
     def enterEvent(self, event):  # noqa: N802 - assinatura do Qt
         self.update()
@@ -116,6 +116,7 @@ class NavItem(QAbstractButton):
         self._icon_name = icon_name
         self._compact = False
         self.setText(text)
+        self.setAccessibleName(text)
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedHeight(self.HEIGHT)
@@ -167,6 +168,10 @@ class NavItem(QAbstractButton):
         painter.drawText(QRectF(50, 0, self.width() - 60, self.height()),
                          int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
                          self.text())
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(theme.qcolor("accent"), 2))
+            painter.drawRoundedRect(pill.adjusted(1, 1, -1, -1), 9, 9)
 
     def enterEvent(self, event):  # noqa: N802 - assinatura do Qt
         self.update()

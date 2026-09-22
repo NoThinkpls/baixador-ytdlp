@@ -5,8 +5,8 @@ import re
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, Qt, QTimer
-from PySide6.QtGui import QGuiApplication, QIcon, QKeySequence, QShortcut
+from PySide6.QtCore import QByteArray, QEvent, Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QGuiApplication, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QMessageBox, QSizePolicy
 
 from ..config import APP_NAME, APP_VERSION, Settings
@@ -105,6 +105,14 @@ class MainWindow(AppShell):
         if self.cfg.mica and sys.platform.startswith("win"):
             self.setMicaEffectEnabled(True)
         self._enable_windows_resize_style()
+        if self.cfg.window_geometry:
+            try:
+                geometry = QByteArray.fromBase64(self.cfg.window_geometry.encode("ascii"))
+                self.restoreGeometry(geometry)
+            except Exception:
+                pass
+        if self.cfg.window_maximized:
+            self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
 
         # No modo automático, seguir a troca de tema do sistema sem reabrir o app.
         hints = QGuiApplication.styleHints()
@@ -200,6 +208,9 @@ class MainWindow(AppShell):
                       activated=lambda p=page: self.switchTo(p))
         QShortcut(QKeySequence("Ctrl+,"), self, activated=lambda: self.switchTo(self.settings))
         QShortcut(QKeySequence.StandardKey.Paste, self, activated=self._shortcut_paste)
+        QShortcut(QKeySequence("Ctrl+L"), self, activated=self._shortcut_focus_link)
+        QShortcut(QKeySequence.StandardKey.Open, self, activated=self._shortcut_import)
+        QShortcut(QKeySequence.StandardKey.HelpContents, self, activated=self._shortcut_help)
         QShortcut(QKeySequence("Ctrl+Return"), self, activated=self._shortcut_download)
         QShortcut(QKeySequence("Ctrl+Enter"), self, activated=self._shortcut_download)
         QShortcut(QKeySequence("Esc"), self, activated=self._shortcut_cancel)
@@ -212,10 +223,36 @@ class MainWindow(AppShell):
         if self.stackedWidget.currentWidget() is self.home and self.home.download_btn.isEnabled():
             self.home.download_btn.click()
 
+    def _shortcut_focus_link(self) -> None:
+        self.switchTo(self.home)
+        self.home.url_edit.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        self.home.url_edit.selectAll()
+
+    def _shortcut_import(self) -> None:
+        self.switchTo(self.home)
+        self.home._import_url_list()
+
+    @staticmethod
+    def _shortcut_help() -> None:
+        QDesktopServices.openUrl(QUrl(
+            "https://github.com/NoThinkpls/baixador-ytdlp/blob/main/docs/GUIA-DE-USO.md"))
+
     def _shortcut_cancel(self) -> None:
         current = self.stackedWidget.currentWidget()
         if current is self.transcription and self.transcription.cancel_btn.isEnabled():
             self.transcription.cancel()
+        elif current is self.media_tools and self.media_tools.cancel_button.isVisible():
+            self.media_tools.cancel_current()
+        elif current is self.queue and self.queue.has_pending_work():
+            answer = QMessageBox.question(
+                self,
+                "Cancelar a fila?",
+                "Deseja cancelar e remover todos os downloads pendentes ou em andamento?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                self.queue.cancel_all()
 
     def _wire(self) -> None:
         self.home.enqueue.connect(self._on_enqueue)
@@ -468,6 +505,19 @@ class MainWindow(AppShell):
         self.switchTo(self.home)
         self.home.analyze()
 
+    def handle_external_arguments(self, arguments: list[str]) -> None:
+        """Traz a janela à frente e recebe links enviados por uma segunda abertura."""
+        if self.isMinimized():
+            self.showNormal()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        url = next((value for value in arguments if value.startswith(("http://", "https://"))), "")
+        if url:
+            self.home.set_url(url)
+            self.switchTo(self.home)
+            self.home.analyze()
+
     def _on_overall_progress(self, percent: float) -> None:
         self._download_taskbar_progress = None if percent < 0 else max(0.0, min(100.0, percent))
         self._sync_taskbar_progress()
@@ -573,6 +623,21 @@ class MainWindow(AppShell):
             self.home.set_url(text)
 
     def closeEvent(self, event):  # noqa: N802 - assinatura do Qt
+        if self.queue.has_pending_work():
+            dialog = QMessageBox(self)
+            dialog.setWindowTitle("Downloads em andamento")
+            dialog.setIcon(QMessageBox.Icon.Warning)
+            dialog.setText("Há downloads ativos ou aguardando na fila.")
+            dialog.setInformativeText(
+                "Ao sair, os processos serão pausados e os arquivos .part poderão ser "
+                "retomados na próxima abertura."
+            )
+            leave = dialog.addButton("Pausar e sair", QMessageBox.ButtonRole.DestructiveRole)
+            dialog.addButton("Continuar no aplicativo", QMessageBox.ButtonRole.RejectRole)
+            dialog.exec()
+            if dialog.clickedButton() is not leave:
+                event.ignore()
+                return
         self._taskbar_completion_timer.stop()
         self.taskbar.shutdown(int(self.winId()))
         self.home.shutdown()
@@ -580,5 +645,7 @@ class MainWindow(AppShell):
         self.media_tools.shutdown()
         self.queue.stop_all()
         self.history.flush()
+        self.cfg.window_geometry = bytes(self.saveGeometry().toBase64()).decode("ascii")
+        self.cfg.window_maximized = self.isMaximized()
         self.cfg.save()
         super().closeEvent(event)

@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 
 HAS_QT = all(importlib.util.find_spec(module) is not None
-             for module in ("PySide6", "qfluentwidgets"))
+             for module in ("PySide6", "qframelesswindow"))
 
 if HAS_QT:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -25,7 +25,7 @@ if HAS_QT:
     from baixador_ytdlp.ui.shell import Sidebar
 
 
-@unittest.skipUnless(HAS_QT, "requer PySide6 e PySide6-Fluent-Widgets")
+@unittest.skipUnless(HAS_QT, "requer PySide6 e PySideSix-Frameless-Window")
 class UiPolishTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

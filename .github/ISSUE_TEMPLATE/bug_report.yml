@@ -1,0 +1,34 @@
+name: Relatar um problema
+description: Informe uma falha reproduzível sem publicar dados sensíveis.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Não anexe cookies.txt, settings.json sem revisão, tokens ou credenciais de proxy.
+  - type: input
+    id: version
+    attributes:
+      label: Versão
+      placeholder: Ex. 1.7.0
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Plataforma
+      options: [Windows 10/11, macOS Apple Silicon, Ubuntu/Debian, Outra]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Como reproduzir
+      description: Liste os passos, o resultado esperado e o resultado observado.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnóstico redigido
+      description: Cole somente o trecho necessário, removendo links privados e dados pessoais.

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
@@ -11,11 +12,15 @@ from .hardware import default_fragments, default_parallel_downloads
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.6.6"
+APP_VERSION = "1.7.0"
 IS_WINDOWS = sys.platform.startswith("win")
 
 
 def _data_root() -> Path:
+    executable_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) \
+        else Path(__file__).resolve().parents[1]
+    if (executable_dir / "portable.txt").is_file():
+        return executable_dir / "data"
     if IS_WINDOWS:
         base = os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local"
     elif sys.platform == "darwin":
@@ -29,6 +34,7 @@ DATA_DIR = _data_root()
 BIN_DIR = DATA_DIR / "bin"
 LOG_DIR = DATA_DIR / "logs"
 MODEL_DIR = DATA_DIR / "models"
+COOKIES_DIR = DATA_DIR / "cookies"
 RUNTIME_DIR = DATA_DIR / "runtime"
 UPDATE_DIR = DATA_DIR / "updates"
 SETTINGS_PATH = DATA_DIR / "settings.json"
@@ -58,7 +64,7 @@ def default_download_dir() -> str:
 class Settings:
     """Preferências do usuário — gravadas em settings.json."""
 
-    settings_schema_version: int = 2
+    settings_schema_version: int = 3
     download_dir: str = field(default_factory=default_download_dir)
     ask_output_dir: bool = False     # liberar a escolha de pasta na página Baixar
     last_output_dir: str = ""        # última pasta escolhida por download
@@ -104,6 +110,7 @@ class Settings:
     history_enabled: bool = True
     history_limit: int = 200
     runtime_check_hours: int = 24    # intervalo entre checagens do runtime do Whisper
+    allow_system_tools: bool = False # PATH só entra quando a pessoa opta explicitamente
     # Transcodificação opcional por GPU (NVENC no Windows, VideoToolbox no macOS)
     transcode_enabled: bool = False
     transcode_codec: str = "hevc_nvenc"   # NVENC ou VideoToolbox, conforme a plataforma
@@ -115,15 +122,59 @@ class Settings:
     transcription_model: str = "medium"
     transcription_format: str = "srt"    # srt | vtt | ass | txt | json
     transcription_aggressive_filter: bool = False
+    window_geometry: str = ""
+    window_maximized: bool = False
+
+    @staticmethod
+    def _coerce(value, default):
+        """Converte valores antigos/editados à mão sem deixar o erro vazar."""
+        if isinstance(default, bool):
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str) and value.strip().casefold() in {"true", "1", "yes", "sim"}:
+                return True
+            if isinstance(value, str) and value.strip().casefold() in {"false", "0", "no", "não", "nao"}:
+                return False
+            raise ValueError("booleano inválido")
+        if isinstance(default, list):
+            if not isinstance(value, list):
+                raise ValueError("lista inválida")
+            return value
+        if isinstance(default, dict):
+            if not isinstance(value, dict):
+                raise ValueError("objeto inválido")
+            return value
+        if isinstance(value, type(default)):
+            return value
+        return type(default)(value)
 
     @classmethod
     def load(cls) -> "Settings":
         try:
             raw = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
-        except Exception:
+            if not isinstance(raw, dict):
+                raise ValueError("a raiz das configurações precisa ser um objeto")
+        except FileNotFoundError:
+            return cls()
+        except (OSError, ValueError, json.JSONDecodeError):
+            try:
+                backup = SETTINGS_PATH.with_name(
+                    f"{SETTINGS_PATH.stem}.corrompido-{int(time.time())}{SETTINGS_PATH.suffix}"
+                )
+                SETTINGS_PATH.replace(backup)
+            except OSError:
+                pass
             return cls()
         known = {f.name for f in fields(cls)}
-        values = {k: v for k, v in raw.items() if k in known}
+        defaults = cls()
+        values = {}
+        for key, value in raw.items():
+            if key not in known:
+                continue
+            try:
+                values[key] = cls._coerce(value, getattr(defaults, key))
+            except (TypeError, ValueError):
+                continue
         # Até 1.5.x a chave de archive era interna, sem controle na interface,
         # e o valor salvo padrão era false. Na migração 1.6 ela passa a evitar
         # repetição por padrão; após o primeiro save, a escolha feita na nova UI
@@ -136,6 +187,8 @@ class Settings:
             values["archive_enabled"] = True
             values["resume_queue"] = True
             values["settings_schema_version"] = 2
+        if schema < 3:
+            values["settings_schema_version"] = 3
         return cls(**values)
 
     def save(self) -> None:
@@ -151,5 +204,5 @@ class Settings:
 
 
 def ensure_dirs() -> None:
-    for path in (DATA_DIR, BIN_DIR, LOG_DIR, MODEL_DIR, RUNTIME_DIR, UPDATE_DIR):
+    for path in (DATA_DIR, BIN_DIR, LOG_DIR, MODEL_DIR, COOKIES_DIR, RUNTIME_DIR, UPDATE_DIR):
         path.mkdir(parents=True, exist_ok=True)

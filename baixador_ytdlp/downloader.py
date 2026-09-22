@@ -21,6 +21,7 @@ from .gpu import select_section_encoder
 from .processes import isolated_process_kwargs, terminate_process_tree
 from .tools import CREATE_NO_WINDOW, Toolchain, decode_external_output
 from .diagnostics import log_event
+from .security import validate_media_url
 
 SEP = "\x1f"  # unit separator: nunca aparece em título de vídeo
 PROGRESS_TEMPLATE = (
@@ -198,7 +199,9 @@ def build_args(
     if cfg.archive_enabled:
         args += ["--download-archive", str(Path(opts.output_dir) / ".ytdl-archive.txt")]
 
-    args.append(opts.url)
+    # ``--`` encerra as opções. Mesmo uma entrada malformada iniciada por hífen
+    # nunca poderá virar --exec/--batch-file para o yt-dlp.
+    args += ["--", validate_media_url(opts.url)]
     return args
 
 
@@ -391,7 +394,7 @@ class DownloadRunner:
             ),
         )
         prog = Progress(status="downloading")
-        if section := _section_range(self.opts):
+        if _section_range(self.opts):
             prog.status = "processing"
             prog.stage = self._section_stage(section_encoder, section_hwaccel)
         else:
@@ -526,10 +529,12 @@ class DownloadRunner:
         prog.stage = ""
 
     def _last_error(self) -> str:
+        from .probe import friendly_error
+
         for line in reversed(self.log):
             if line.startswith("ERROR"):
-                return line.replace("ERROR: ", "")
-        return self.log[-1] if self.log else "O yt-dlp terminou com erro."
+                return friendly_error(line)
+        return friendly_error(self.log[-1]) if self.log else "O yt-dlp terminou com erro."
 
     def tail(self, lines: int = 40) -> str:
         """Últimas linhas da saída — alimenta o botão 'Ver detalhes' na fila."""
@@ -629,11 +634,27 @@ class Transcoder:
                      "-qp_i", str(quality), "-qp_p", str(quality)]
         else:
             raise DownloadError("O encoder acelerado selecionado não é suportado.")
-        args += [
-            "-c:a", "copy", "-c:s", "copy", "-map", "0",
-            "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(dst),
-        ]
+        # Containers MP4 rejeitam PGS/ASS/WebVTT, anexos e streams de dados.
+        # O vídeo e o áudio são sempre preservados; MKV também mantém legendas.
+        args += ["-map", "0:v?", "-map", "0:a?", "-c:a", "copy"]
+        if dst.suffix.casefold() == ".mkv":
+            args += ["-map", "0:s?", "-c:s", "copy"]
+        args += ["-map", "-0:d?", "-map", "-0:t?"]
+        if dst.suffix.casefold() in {".mp4", ".mov", ".m4v"}:
+            args += ["-movflags", "+faststart"]
+        args += ["-progress", "pipe:1", "-nostats", str(dst)]
         return args
+
+    def _has_video(self, path: Path) -> bool:
+        try:
+            result = subprocess.run(
+                [str(self.tc.ffprobe), "-v", "error", "-select_streams", "v:0",
+                 "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(path)],
+                capture_output=True, text=True, timeout=30, creationflags=CREATE_NO_WINDOW,
+            )
+            return result.returncode == 0 and result.stdout.strip() == "video"
+        except Exception:
+            return False
 
     def run(self, src: Path, on_progress: Callable[[float], None]) -> Path:
         total = self.duration(src)
@@ -679,8 +700,23 @@ class Transcoder:
                 dst.unlink(missing_ok=True)
                 raise DownloadError(f"Falha na conversão acelerada: {err.strip()[:300]}")
         on_progress(100.0)
+        output_duration = self.duration(dst)
+        tolerance = max(1.0, total * 0.02)
+        if (not dst.is_file() or not self._has_video(dst) or output_duration <= 0
+                or (total > 0 and abs(output_duration - total) > tolerance)):
+            raise DownloadError(
+                "A conversão terminou, mas o arquivo resultante não passou na validação. "
+                "O original foi preservado."
+            )
         if self.cfg.transcode_replace:
-            src.unlink(missing_ok=True)
+            try:
+                from send2trash import send2trash
+                send2trash(str(src))
+            except Exception as exc:
+                raise DownloadError(
+                    "A conversão foi validada, mas o original não pôde ser enviado à Lixeira; "
+                    f"os dois arquivos foram preservados ({exc})."
+                ) from exc
             final = src
             dst.replace(final)
             return final

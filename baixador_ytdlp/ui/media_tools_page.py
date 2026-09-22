@@ -8,7 +8,7 @@ from PySide6.QtGui import QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (QAbstractButton, QButtonGroup, QFileDialog, QGridLayout,
                                QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget)
 
-from ..media_tools import MediaToolOptions, default_destination
+from ..media_tools import MediaToolOptions, available_destination, default_destination
 from ..workers import MediaToolWorker
 from . import icons, theme
 from .components import (BusyBar, Button, Divider, Headline, InsetGroup, Muted, PageHeader,
@@ -344,9 +344,11 @@ class MediaToolsPage(QWidget):
         if not destination_text:
             self._show_error("Escolha onde salvar o resultado.")
             return
+        destination = available_destination(Path(destination_text))
+        self.destination_edit.setText(str(destination))
         options = MediaToolOptions(
             source=source,
-            destination=Path(destination_text),
+            destination=destination,
             operation=self._operation(),
             start=self.start_edit.text().strip(),
             end=self.end_edit.text().strip(),
@@ -373,6 +375,9 @@ class MediaToolsPage(QWidget):
         if self.worker and self.worker.isRunning():
             self.worker.cancel()
             self.status.setText("Cancelando…")
+
+    def cancel_current(self) -> None:
+        self._cancel()
 
     def _done(self, output: str) -> None:
         self.progress.hide()

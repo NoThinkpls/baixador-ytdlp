@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -554,7 +555,28 @@ class QueuePage(QWidget):
         for job in self.jobs.values():
             if job.active and job.worker:
                 job.worker.cancel()
+        deadline = time.monotonic() + 3.0
         for job in self.jobs.values():
-            if job.worker:
-                job.worker.wait(3000)
+            if job.worker and job.worker.isRunning():
+                remaining_ms = max(0, int((deadline - time.monotonic()) * 1000))
+                if not remaining_ms:
+                    break
+                job.worker.wait(remaining_ms)
         self._persist()
+
+    def cancel_all(self) -> None:
+        """Cancela e remove a fila inteira sem iniciar novos itens no intervalo."""
+        self.pending.clear()
+        for job_id, job in list(self.jobs.items()):
+            job.removing = True
+            job.card.hide()
+            if job.active and job.worker:
+                job.worker.cancel()
+            else:
+                self._finalize_removal(job_id)
+        self._persist()
+        self._refresh_summary()
+        self._emit_overall()
+
+    def has_pending_work(self) -> bool:
+        return bool(self.pending) or any(job.active for job in self.jobs.values())

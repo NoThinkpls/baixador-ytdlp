@@ -7,7 +7,6 @@ from PyInstaller.utils.hooks import collect_all
 fw_datas, fw_binaries, fw_hidden = collect_all('faster_whisper')
 ct_datas, ct_binaries, ct_hidden = collect_all('ctranslate2')
 av_datas, av_binaries, av_hidden = collect_all('av')
-pip_datas, pip_binaries, pip_hidden = collect_all('pip')
 cudart_datas, cudart_binaries, cudart_hidden = collect_all('nvidia.cuda_runtime')
 cublas_datas, cublas_binaries, cublas_hidden = collect_all('nvidia.cublas')
 cudnn_datas, cudnn_binaries, cudnn_hidden = collect_all('nvidia.cudnn')
@@ -17,12 +16,13 @@ block_cipher = None
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=(fw_binaries + ct_binaries + av_binaries + pip_binaries + cudart_binaries
+    binaries=(fw_binaries + ct_binaries + av_binaries + cudart_binaries
               + cublas_binaries + cudnn_binaries),
-    datas=([('assets/icon.ico', 'assets')] + fw_datas + ct_datas + av_datas + pip_datas
+    datas=([('assets/icon.ico', 'assets'), ('THIRD_PARTY_NOTICES.md', '.')]
+           + fw_datas + ct_datas + av_datas
            + cudart_datas + cublas_datas + cudnn_datas),
-    hiddenimports=(['qfluentwidgets', 'qframelesswindow', 'PySide6.QtSvg'] + fw_hidden + ct_hidden + av_hidden
-                   + pip_hidden + cudart_hidden + cublas_hidden + cudnn_hidden),
+    hiddenimports=(['qframelesswindow', 'PySide6.QtSvg'] + fw_hidden + ct_hidden + av_hidden
+                   + cudart_hidden + cublas_hidden + cudnn_hidden),
     hookspath=[],
     runtime_hooks=['pyinstaller_runtime.py'],
     excludes=[

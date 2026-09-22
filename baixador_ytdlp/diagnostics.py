@@ -16,6 +16,7 @@ import threading
 import traceback
 from pathlib import Path
 from .config import APP_NAME, APP_VERSION, LOG_DIR
+from .security import redact_sensitive
 
 LOG_NAME = "baixador_ytdlp"
 APP_LOG_NAME = "app.log"
@@ -24,6 +25,15 @@ FAULT_LOG_NAME = "native-fault.log"
 
 _configured = False
 _fault_file = None
+
+
+class RedactingFilter(logging.Filter):
+    """Garante que proxy, cookies e tokens nunca cheguem aos arquivos de log."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = redact_sensitive(record.getMessage())
+        record.args = ()
+        return True
 
 
 def log_path(name: str) -> Path:
@@ -49,15 +59,16 @@ def _add_rotating_handler(logger: logging.Logger, path: Path, level: int) -> Non
     )
     handler.setLevel(level)
     handler.setFormatter(_formatter())
+    handler.addFilter(RedactingFilter())
     logger.addHandler(handler)
 
 
-def _enable_fault_handler() -> None:
+def _enable_fault_handler(filename: str = FAULT_LOG_NAME) -> None:
     """Registra falhas nativas (por exemplo, access violation em DLL CUDA)."""
     global _fault_file
     try:
         # O arquivo precisa continuar aberto até o encerramento do processo.
-        _fault_file = open(log_path(FAULT_LOG_NAME), "a", encoding="utf-8")
+        _fault_file = open(log_path(filename), "a", encoding="utf-8")
         faulthandler.enable(file=_fault_file, all_threads=True)
     except (OSError, RuntimeError):
         # Diagnóstico nunca pode impedir a abertura do aplicativo.
@@ -79,10 +90,19 @@ def install_diagnostics(process_name: str = "app") -> logging.Logger:
     if not _configured:
         logger.setLevel(logging.DEBUG)
         logger.propagate = False
-        _add_rotating_handler(logger, log_path(APP_LOG_NAME), logging.DEBUG)
-        _add_rotating_handler(logger, log_path(CRASH_LOG_NAME), logging.ERROR)
+        worker = process_name != "app"
+        _add_rotating_handler(
+            logger,
+            log_path(f"{process_name}.log" if worker else APP_LOG_NAME),
+            logging.DEBUG,
+        )
+        _add_rotating_handler(
+            logger,
+            log_path(f"{process_name}-crash.log" if worker else CRASH_LOG_NAME),
+            logging.ERROR,
+        )
         logging.captureWarnings(True)
-        _enable_fault_handler()
+        _enable_fault_handler(f"{process_name}-native-fault.log" if worker else FAULT_LOG_NAME)
         _configured = True
 
     def exception_hook(exc_type, exc, tb) -> None:

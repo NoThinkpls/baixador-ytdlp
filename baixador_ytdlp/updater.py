@@ -19,6 +19,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .config import APP_ID, APP_VERSION, IS_WINDOWS, UPDATE_DIR
+from .tools import _verified_ssl_context
 
 RELEASE_API = "https://api.github.com/repos/NoThinkpls/baixador-ytdlp/releases/latest"
 USER_AGENT = f"{APP_ID}/{APP_VERSION} update-check"
@@ -142,7 +143,8 @@ class AppUpdater:
 
         try:
             request = Request(release.installer_url, headers={"User-Agent": USER_AGENT})
-            with urlopen(request, timeout=45) as response, partial.open("wb") as output:
+            with urlopen(request, timeout=45, context=_verified_ssl_context()) as response, \
+                    partial.open("wb") as output:
                 header = response.headers.get("Content-Length", "0")
                 total = int(header) if header.isdigit() else 0
                 received = 0
@@ -221,7 +223,7 @@ class AppUpdater:
     def _request_text(url: str) -> str:
         try:
             request = Request(url, headers={"User-Agent": USER_AGENT})
-            with urlopen(request, timeout=20) as response:
+            with urlopen(request, timeout=20, context=_verified_ssl_context()) as response:
                 return response.read().decode("utf-8")
         except (HTTPError, URLError, UnicodeDecodeError, TimeoutError) as exc:
             raise UpdateError("Não foi possível consultar novas versões agora.") from exc

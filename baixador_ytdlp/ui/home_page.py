@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import urllib.parse
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -12,7 +13,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileDialog, QHB
 
 from ..config import Settings
 from ..downloader import DownloadOptions
-from ..probe import MediaInfo, kill_running
+from ..probe import MediaInfo, kill_running, playlist_selector
+from ..security import validate_media_url
 from ..workers import ProbeWorker
 from . import theme
 from .components import (BusyBar, Button, Card, Divider, Headline, InsetGroup, Muted,
@@ -28,6 +30,14 @@ URL_LIST_RE = re.compile(r'https?://[^\s<>"\']+')
 MAX_BATCH_URLS = 500
 
 
+def _is_playlist_url(url: str) -> bool:
+    """Só expande endereços que representam explicitamente uma coleção."""
+    parts = urllib.parse.urlsplit(url)
+    path = parts.path.casefold()
+    return ("/playlist" in path or "/channel/" in path or "/@" in path
+            or "/c/" in path or "/user/" in path)
+
+
 class HomePage(QWidget):
     enqueue = Signal(object)  # DownloadOptions
     enqueue_many = Signal(list)  # list[DownloadOptions]
@@ -40,6 +50,7 @@ class HomePage(QWidget):
         self.info: MediaInfo | None = None
         self.worker: ProbeWorker | None = None
         self._build_ui()
+        self.setAcceptDrops(True)
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
@@ -189,7 +200,8 @@ class HomePage(QWidget):
             DownloadOptions(
                 url=url, output_dir=output_dir, selector="bv*+ba/b",
                 container=self.container_combo.currentData(), audio_only=audio_only,
-                audio_format=self.audio_combo.currentData(), playlist=True, title=url,
+                audio_format=self.audio_combo.currentData(),
+                playlist=_is_playlist_url(url), title=url,
             )
             for url in urls
         ]
@@ -417,6 +429,33 @@ class HomePage(QWidget):
     def set_url(self, url: str) -> None:
         self.url_edit.setText(url)
 
+    def dragEnterEvent(self, event):  # noqa: N802 - assinatura do Qt
+        mime = event.mimeData()
+        if mime.hasUrls() or mime.hasText():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):  # noqa: N802 - assinatura do Qt
+        mime = event.mimeData()
+        local = next((Path(item.toLocalFile()) for item in mime.urls()
+                      if item.isLocalFile() and Path(item.toLocalFile()).is_file()), None)
+        if local and local.suffix.casefold() in {".txt", ".csv", ".url"}:
+            try:
+                text = local.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                self._warn(f"Não foi possível ler a lista arrastada: {exc}")
+                return
+            self.batch_edit.setPlainText(text)
+            self.batch_card.show()
+            self.batch_btn.setText("Ocultar lote")
+            event.acceptProposedAction()
+            return
+        text = (mime.text() or "").strip()
+        match = URL_LIST_RE.search(text)
+        if match:
+            self.set_url(match.group(0).rstrip(".,;:)]}>"))
+            self.analyze()
+            event.acceptProposedAction()
+
     def refresh_default_folder(self) -> None:
         """Chamado quando a pasta padrão muda em Configurações."""
         if not self.folder_check.isChecked():
@@ -466,8 +505,7 @@ class HomePage(QWidget):
                 container=self.container_combo.currentData(),
                 audio_only=audio_only,
                 audio_format=self.audio_combo.currentData(),
-                # Para não descartar itens quando a lista contém playlists.
-                playlist=True,
+                playlist=_is_playlist_url(url),
                 title=url,
             )
             for url in urls
@@ -644,6 +682,11 @@ class HomePage(QWidget):
         if not url:
             self._warn("Cole um link primeiro.")
             return
+        try:
+            url = validate_media_url(url)
+        except ValueError as exc:
+            self._warn(str(exc))
+            return
         if not self.toolchain:
             self._warn("As dependências ainda não terminaram de carregar.")
             return
@@ -731,8 +774,8 @@ class HomePage(QWidget):
             for col, text in enumerate(cells):
                 item = QTableWidgetItem(text)
                 if col == 4:
-                    item.setTextAlignment(int(Qt.AlignmentFlag.AlignRight
-                                              | Qt.AlignmentFlag.AlignVCenter))
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight
+                                          | Qt.AlignmentFlag.AlignVCenter)
                 self.table.setItem(r, col, item)
 
         self.table.selectRow(0)
@@ -772,7 +815,7 @@ class HomePage(QWidget):
             if row.audio_only:
                 audio_only = True
             else:
-                selector = row.selector
+                selector = playlist_selector(row) if self.info.is_playlist else row.selector
 
         if not self._has_space_for_download(
                 output_dir, audio_only=audio_only, selected_row=row_index):

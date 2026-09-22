@@ -12,6 +12,7 @@ from .cookies import is_cookie_source_failure
 from .processes import isolated_process_kwargs, terminate_process_tree
 from .tools import decode_external_output
 from .diagnostics import log_event
+from .security import validate_media_url
 
 VCODEC_NAMES = {
     "avc1": "H.264", "h264": "H.264", "vp9": "VP9", "vp09": "VP9",
@@ -174,7 +175,7 @@ def _run_json(args: list[str], timeout: int, env: dict | None = None) -> dict:
                   (proc.stderr or "sem saída de erro")[-8000:])
         msg = (proc.stderr or "").strip().splitlines()
         detail = msg[-1] if msg else "erro desconhecido"
-        raise ProbeError(_friendly(detail))
+        raise ProbeError(friendly_error(detail))
 
     try:
         return json.loads(proc.stdout)
@@ -203,7 +204,7 @@ def _resolve_cookies(common: list[str], cookies: list[str], url: str,
     if not cookies:
         return common, ""
     probe_args = common + cookies + ["--simulate", "--skip-download",
-                                     "--playlist-items", "1", "--quiet", url]
+                                     "--playlist-items", "1", "--quiet", "--", url]
     proc = _popen(probe_args, env)
     with _RUNNING_LOCK:
         _RUNNING.add(proc)
@@ -234,7 +235,7 @@ def _playlist_count(ytdlp: Path, base: list[str], url: str, timeout: int,
                     env: dict | None = None) -> int:
     """Conta os itens com --flat-playlist: uma requisição, sem extrair formato de cada vídeo."""
     try:
-        data = _run_json(base + ["-J", "--flat-playlist", url], timeout, env)
+        data = _run_json(base + ["-J", "--flat-playlist", "--", url], timeout, env)
     except ProbeError:
         return 0
     for key in ("playlist_count", "n_entries"):
@@ -246,6 +247,10 @@ def _playlist_count(ytdlp: Path, base: list[str], url: str, timeout: int,
 def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = "",
           proxy: str = "", timeout: int = 120, extractor_args: str = "",
           env: dict | None = None) -> MediaInfo:
+    try:
+        url = validate_media_url(url)
+    except ValueError as exc:
+        raise ProbeError(str(exc)) from exc
     common = [str(ytdlp), "--no-warnings", "--ignore-config", "--encoding", "utf-8",
               "--socket-timeout", "20"]
     if proxy:
@@ -260,7 +265,7 @@ def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = 
     # playlist. Sem isso, uma playlist de 200 itens levava minutos e centenas de
     # requisições só para montar a tabela de qualidades do primeiro vídeo.
     try:
-        data = _run_json(base + ["-J", "--playlist-items", "1", url], timeout, env)
+        data = _run_json(base + ["-J", "--playlist-items", "1", "--", url], timeout, env)
     except ProbeError as exc:
         raise ProbeError(f"{exc}{note}") from exc
 
@@ -293,7 +298,7 @@ def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = 
     )
 
 
-def _friendly(detail: str) -> str:
+def friendly_error(detail: str) -> str:
     """Traduz o erro do yt-dlp para uma instrução que resolve o problema.
 
     A versão anterior mandava "ative os cookies do navegador" para qualquer erro
@@ -336,6 +341,17 @@ def _friendly(detail: str) -> str:
         return ("O YouTube limitou as requisições deste IP. Espere alguns minutos antes de "
                 "tentar de novo, ou configure um proxy.")
 
+    if "http error 403" in low:
+        return ("O site recusou o acesso (HTTP 403). Verifique os componentes em "
+                "Configurações e tente novamente; cookies só são necessários se o site "
+                "pedir login ou confirmar que você não é um robô.")
+
+    if "requested format is not available" in low:
+        return "O formato escolhido não existe para este vídeo. Selecione Automático e tente novamente."
+
+    if "live event will begin" in low:
+        return "A transmissão ainda não começou. Tente novamente quando o evento estiver ao vivo."
+
     if "geo" in low and "restrict" in low:
         return "Vídeo bloqueado na sua região. Um proxy em outro país resolveria."
 
@@ -343,6 +359,14 @@ def _friendly(detail: str) -> str:
         return "Sem conexão com a internet, ou a rede bloqueou o acesso."
 
     return detail.replace("ERROR: ", "")
+
+
+def playlist_selector(row: FormatRow) -> str:
+    """Traduz uma escolha do primeiro item em atributos válidos para toda a playlist."""
+    if row.audio_only:
+        return "bestaudio/best"
+    height = max(1, int(row.height or 1080))
+    return f"bv*[height<={height}]+ba/b[height<={height}]/bv*+ba/b"
 
 
 def build_rows(info: dict) -> list[FormatRow]:

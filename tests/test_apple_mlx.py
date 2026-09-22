@@ -39,6 +39,7 @@ class AppleMlxTests(unittest.TestCase):
         transcriber = Transcriber(SimpleNamespace(), lambda _message: None, lambda _progress: None,
                                   force_cpu=True)
         transcriber.backend = "mlx"
+        transcriber._model_path = Path("/modelos/whisper-medium-mlx-fixado")
         options = TranscriptionOptions(Path("entrada.wav"), Path("saida.srt"), model_size="medium")
         with patch.dict(sys.modules, {"mlx_whisper": SimpleNamespace(transcribe=transcribe)}):
             raw, info = transcriber._decode(Path("entrada.wav"), options, duration=10)
@@ -46,8 +47,25 @@ class AppleMlxTests(unittest.TestCase):
         self.assertEqual(info.language, "pt")
         self.assertEqual(raw[0]["text"], "Olá, ação!")
         self.assertEqual(raw[0]["words"][1]["text"], ",")
-        self.assertEqual(calls[0][1]["path_or_hf_repo"], "mlx-community/whisper-medium-mlx")
+        self.assertEqual(calls[0][1]["path_or_hf_repo"],
+                         "/modelos/whisper-medium-mlx-fixado")
         self.assertTrue(calls[0][1]["word_timestamps"])
+
+    def test_model_download_uses_an_immutable_revision(self) -> None:
+        downloads = []
+
+        def snapshot_download(**kwargs):
+            downloads.append(kwargs)
+            return "/cache/model"
+
+        with patch.dict(sys.modules, {
+            "huggingface_hub": SimpleNamespace(snapshot_download=snapshot_download),
+        }), patch("baixador_ytdlp.transcription.MODEL_DIR", Path("/cache")):
+            path = Transcriber._pinned_model_path("medium", mlx=False)
+
+        self.assertEqual(path, Path("/cache/model"))
+        self.assertEqual(downloads[0]["repo_id"], "Systran/faster-whisper-medium")
+        self.assertRegex(downloads[0]["revision"], r"^[0-9a-f]{40}$")
 
 
 if __name__ == "__main__":

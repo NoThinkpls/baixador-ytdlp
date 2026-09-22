@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import threading
+import time
 
 from .config import IS_WINDOWS
 
@@ -32,19 +34,36 @@ def terminate_process_tree(process: subprocess.Popen, *, force: bool = True) -> 
         if IS_WINDOWS:
             if already_exited:
                 return
-            # taskkill retorna imediatamente em outro processo; esperar aqui
-            # congelaria a interface exatamente quando a pessoa clica em cancelar.
-            subprocess.Popen(
-                ["taskkill", "/T", "/F", "/PID", str(process.pid)],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=CREATE_NO_WINDOW,
-            )
+            try:
+                process.send_signal(getattr(signal, "CTRL_BREAK_EVENT", signal.SIGTERM))
+            except (OSError, ValueError):
+                process.terminate()
+
+            def force_later() -> None:
+                time.sleep(2)
+                if process.poll() is None:
+                    subprocess.Popen(
+                        ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL, creationflags=CREATE_NO_WINDOW,
+                    )
+
+            if force:
+                threading.Thread(target=force_later, name="process-tree-stop", daemon=True).start()
         else:
             # O líder pode já ter saído enquanto um FFmpeg descendente ainda
             # mantém o grupo vivo; o PGID continua sendo o PID original.
-            os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
+            os.killpg(process.pid, signal.SIGTERM)
+            if force:
+                def force_group_later() -> None:
+                    time.sleep(2)
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                threading.Thread(
+                    target=force_group_later, name="process-group-stop", daemon=True
+                ).start()
     except (OSError, subprocess.SubprocessError, ValueError):
         try:
             process.kill() if force else process.terminate()

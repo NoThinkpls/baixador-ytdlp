@@ -16,9 +16,14 @@ Chromium. Na prática sobram dois caminhos que funcionam no Windows:
 """
 from __future__ import annotations
 
+import os
+import shutil
+import stat
+import subprocess
+import time
 from pathlib import Path
 
-from .config import IS_WINDOWS, Settings
+from .config import COOKIES_DIR, IS_WINDOWS, Settings
 
 # Navegadores Chromium: no Windows, o App-Bound Encryption impede a leitura.
 CHROMIUM_BROWSERS = frozenset({"chrome", "chromium", "edge", "brave", "opera", "vivaldi"})
@@ -64,6 +69,38 @@ def describe_source(cfg: Settings) -> str:
     if cfg.cookies_browser:
         return f"navegador {cfg.cookies_browser}"
     return "nenhuma fonte de cookies"
+
+
+def import_cookie_file(source: Path) -> Path:
+    """Copia cookies para a área privada do app e restringe o acesso ao usuário."""
+    if not source.is_file():
+        raise FileNotFoundError("Arquivo cookies.txt não encontrado.")
+    COOKIES_DIR.mkdir(parents=True, exist_ok=True)
+    destination = COOKIES_DIR / "cookies.txt"
+    staged = COOKIES_DIR / "cookies.txt.new"
+    try:
+        shutil.copyfile(source, staged)
+        os.chmod(staged, stat.S_IRUSR | stat.S_IWUSR)
+        if IS_WINDOWS:
+            identity = subprocess.run(
+                ["whoami"], capture_output=True, text=True, timeout=5, check=True,
+            ).stdout.strip()
+            if not identity:
+                raise RuntimeError("Não foi possível identificar o usuário atual.")
+            subprocess.run(
+                ["icacls", str(staged), "/inheritance:r", "/grant:r", f"{identity}:(R,W)"],
+                capture_output=True, text=True, timeout=10, check=True,
+            )
+        staged.replace(destination)
+        return destination
+    except Exception:
+        staged.unlink(missing_ok=True)
+        raise
+
+
+def cookie_age_days(path: Path) -> int:
+    """Idade aproximada do arquivo; zero também cobre relógios desalinhados."""
+    return max(0, int((time.time() - path.stat().st_mtime) // 86_400))
 
 
 EXPORT_INSTRUCTIONS = (
