@@ -3,6 +3,7 @@ name: build
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -20,10 +21,10 @@ jobs:
 
     steps:
       - name: Baixar o código
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Preparar o Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
           cache: pip
@@ -31,7 +32,7 @@ jobs:
       - name: Instalar dependências
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install -r requirements.txt -r requirements-build.txt
           # Sem PyTorch: o motor de transcrição é o CTranslate2, com runtime
           # CUDA (cuBLAS/cuDNN 8) incluído no instalador.
 
@@ -40,10 +41,13 @@ jobs:
           $env:QT_QPA_PLATFORM = 'offscreen'
           python -m unittest discover -s tests -v
 
+      - name: Verificar a qualidade do código
+        run: python -m ruff check .
+
       - name: Definir a versão
         id: ver
         run: |
-          if ($env:GITHUB_REF -eq 'refs/heads/main') {
+          if ($env:GITHUB_REF -eq 'refs/heads/main' -or $env:GITHUB_REF.StartsWith('refs/tags/v')) {
             $v = python -c "import ast,pathlib; t=ast.parse(pathlib.Path('baixador_ytdlp/config.py').read_text(encoding='utf-8')); print(next(n.value.value for n in t.body if isinstance(n,ast.Assign) and any(isinstance(x,ast.Name) and x.id=='APP_VERSION' for x in n.targets)))"
             if ($LASTEXITCODE -ne 0 -or -not $v) { throw "Não foi possível ler APP_VERSION" }
           } else {
@@ -87,12 +91,13 @@ jobs:
 
       - name: Empacotar a versão portátil
         run: |
+          Set-Content -Path 'dist\baixador-ytdlp\portable.txt' -Value 'Dados mantidos nesta pasta.' -Encoding utf8
           $archive = "dist\installer\BaixadorYtdlp-${{ steps.ver.outputs.version }}-portable-windows.zip"
           Compress-Archive -Path 'dist\baixador-ytdlp\*' -DestinationPath $archive -CompressionLevel Optimal -Force
           if (-not (Test-Path $archive -PathType Leaf)) { throw "Arquivo portátil não gerado: $archive" }
 
       - name: Criar cópias de download estável
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         run: |
           # Estes nomes são usados pelos botões do README:
           # /releases/latest/download/baixador-ytdlp-setup.exe
@@ -104,7 +109,7 @@ jobs:
           Copy-Item $portable.FullName dist\installer\baixador-ytdlp-portable-windows.zip -Force
 
       - name: Validar referências públicas do README
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         run: |
           $readme = Get-Content README.md -Raw
           $required = @(
@@ -131,14 +136,14 @@ jobs:
           }
 
       - name: Publicar a versão portátil
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: baixador-ytdlp-portatil-${{ steps.ver.outputs.version }}
           path: dist/baixador-ytdlp
           retention-days: 30
 
       - name: Publicar o instalador
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: baixador-ytdlp-setup-${{ steps.ver.outputs.version }}
           path: |
@@ -156,10 +161,10 @@ jobs:
 
     steps:
       - name: Baixar o código
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Preparar o Python arm64
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
           architecture: 'arm64'
@@ -169,7 +174,7 @@ jobs:
       - name: Instalar dependências
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements-macos.txt pyinstaller
+          python -m pip install -r requirements-macos.txt -r requirements-build.txt
           python -m compileall -q baixador_ytdlp main.py
 
       - name: Executar testes de diagnóstico
@@ -178,7 +183,7 @@ jobs:
       - name: Definir a versão
         id: ver
         run: |
-          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+          if [[ "$GITHUB_REF" == refs/heads/main || "$GITHUB_REF" == refs/tags/v* ]]; then
             version="$(python -c "import ast,pathlib; t=ast.parse(pathlib.Path('baixador_ytdlp/config.py').read_text(encoding='utf-8')); print(next(n.value.value for n in t.body if isinstance(n,ast.Assign) and any(isinstance(x,ast.Name) and x.id=='APP_VERSION' for x in n.targets)))")"
             test -n "$version"
           else
@@ -213,7 +218,6 @@ jobs:
             --collect-all faster_whisper \
             --collect-all ctranslate2 \
             --collect-all av \
-            --collect-all pip \
             --collect-all certifi \
             --collect-all mlx \
             --hidden-import mlx_whisper \
@@ -221,7 +225,8 @@ jobs:
             --exclude-module torchvision \
             --exclude-module torchaudio \
             --exclude-module triton \
-            --add-data "assets/icon.png:assets"
+            --add-data "assets/icon.png:assets" \
+            --add-data "THIRD_PARTY_NOTICES.md:."
 
       - name: Conferir o bundle Apple Silicon
         run: |
@@ -242,7 +247,14 @@ jobs:
           app="dist/baixador-ytdlp.app"
           archive="dist/installer/BaixadorYtdlp-${{ steps.ver.outputs.version }}-macos-arm64.zip"
           dmg="dist/installer/BaixadorYtdlp-${{ steps.ver.outputs.version }}-macos-arm64.dmg"
-          ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
+          portable_root="build/portable"
+          rm -rf "$portable_root"
+          mkdir -p "$portable_root"
+          cp -R "$app" "$portable_root/baixador-ytdlp.app"
+          printf 'Dados mantidos neste aplicativo.\n' \
+            > "$portable_root/baixador-ytdlp.app/Contents/MacOS/portable.txt"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$portable_root/baixador-ytdlp.app" "$archive"
 
           # O DMG entrega o padrão esperado no macOS: abrir e arrastar o app para Aplicativos.
           staging="build/dmg-root"
@@ -265,14 +277,14 @@ jobs:
             sleep 3
           done
 
-          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+          if [[ "$GITHUB_REF" == refs/heads/main || "$GITHUB_REF" == refs/tags/v* ]]; then
             cp "$archive" dist/installer/baixador-ytdlp-macos-arm64.zip
             cp "$dmg" dist/installer/baixador-ytdlp-macos-arm64.dmg
           fi
           shasum -a 256 dist/installer/*.dmg dist/installer/*.zip > dist/installer/SHA256SUMS-macos.txt
 
       - name: Publicar o aplicativo macOS
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: baixador-ytdlp-macos-arm64-${{ steps.ver.outputs.version }}
           path: |
@@ -290,7 +302,7 @@ jobs:
 
     steps:
       - name: Baixar o código
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Instalar bibliotecas gráficas do Linux
         run: |
@@ -299,7 +311,7 @@ jobs:
             libdbus-1-3 libegl1 libgl1 libxcb-cursor0 libxkbcommon-x11-0
 
       - name: Preparar o Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
           cache: pip
@@ -308,7 +320,7 @@ jobs:
       - name: Instalar dependências
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements-linux.txt pyinstaller
+          python -m pip install -r requirements-linux.txt -r requirements-build.txt
           python -m compileall -q baixador_ytdlp main.py
 
       - name: Executar testes de diagnóstico
@@ -317,7 +329,7 @@ jobs:
       - name: Definir a versão
         id: ver
         run: |
-          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+          if [[ "$GITHUB_REF" == refs/heads/main || "$GITHUB_REF" == refs/tags/v* ]]; then
             version="$(python -c "import ast,pathlib; t=ast.parse(pathlib.Path('baixador_ytdlp/config.py').read_text(encoding='utf-8')); print(next(n.value.value for n in t.body if isinstance(n,ast.Assign) and any(isinstance(x,ast.Name) and x.id=='APP_VERSION' for x in n.targets)))")"
             test -n "$version"
           else
@@ -333,12 +345,12 @@ jobs:
             --collect-all faster_whisper \
             --collect-all ctranslate2 \
             --collect-all av \
-            --collect-all pip \
             --exclude-module torch \
             --exclude-module torchvision \
             --exclude-module torchaudio \
             --exclude-module triton \
-            --add-data "assets/icon.png:assets"
+            --add-data "assets/icon.png:assets" \
+            --add-data "THIRD_PARTY_NOTICES.md:."
 
       - name: Conferir o aplicativo Linux
         run: |
@@ -367,18 +379,19 @@ jobs:
           dpkg-deb --build --root-owner-group "$root" "$deb"
           test -f "$deb"
 
+          printf 'Dados mantidos nesta pasta.\n' > dist/baixador-ytdlp/portable.txt
           portable="$out/BaixadorYtdlp-${version}-portable-linux-x86_64.tar.gz"
           tar --create --gzip --file "$portable" --directory dist baixador-ytdlp
           test -f "$portable"
 
-          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+          if [[ "$GITHUB_REF" == refs/heads/main || "$GITHUB_REF" == refs/tags/v* ]]; then
             cp "$deb" "$out/baixador-ytdlp-linux-amd64.deb"
             cp "$portable" "$out/baixador-ytdlp-portable-linux-x86_64.tar.gz"
           fi
           sha256sum "$out"/*.deb "$out"/*.tar.gz > "$out/SHA256SUMS-linux.txt"
 
       - name: Publicar os pacotes Linux
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: baixador-ytdlp-linux-${{ steps.ver.outputs.version }}
           path: |
@@ -390,16 +403,18 @@ jobs:
   release:
     name: Publicar release
     needs: [windows, macos, linux]
-    # A tag só é criada depois que os três pacotes foram validados. Assim, uma
-    # falha de plataforma nunca deixa uma release publicada sem downloads.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # A tag dispara as três builds; a Release só nasce depois que todos os
+    # pacotes foram validados, evitando publicação sem downloads.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
 
     steps:
       - name: Baixar o código
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
@@ -412,6 +427,10 @@ jobs:
           version="$(python -c "import ast,pathlib; t=ast.parse(pathlib.Path('baixador_ytdlp/config.py').read_text(encoding='utf-8')); print(next(n.value.value for n in t.body if isinstance(n,ast.Assign) and any(isinstance(x,ast.Name) and x.id=='APP_VERSION' for x in n.targets)))")"
           test -n "$version"
           tag="v${version}"
+          if [[ "$GITHUB_REF_NAME" != "$tag" ]]; then
+            echo "::error::A tag $GITHUB_REF_NAME não corresponde à versão $version."
+            exit 1
+          fi
           response="$(mktemp)"
           status="$(curl --silent --show-error --output "$response" --write-out '%{http_code}' \
             --header "Authorization: Bearer $GH_TOKEN" \
@@ -435,23 +454,31 @@ jobs:
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           echo "Release $tag: HTTP $status, $assets ativo(s), publicar=$publish"
 
-      - name: Criar ou atualizar a tag da versão
-        if: steps.release.outputs.publish == 'true'
-        shell: bash
-        run: |
-          tag="${{ steps.release.outputs.tag }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag --annotate --force "$tag" "$GITHUB_SHA" --message "Release $tag"
-          git push --force origin "refs/tags/$tag"
-
       - name: Baixar os instaladores compilados
         if: steps.release.outputs.publish == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: baixador-ytdlp-*
           path: release-assets
           merge-multiple: true
+
+      - name: Preparar a geração do SBOM
+        if: steps.release.outputs.publish == 'true'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Gerar inventário CycloneDX das dependências
+        if: steps.release.outputs.publish == 'true'
+        shell: bash
+        run: |
+          python -m pip install -r requirements-security.txt
+          python -m cyclonedx_py requirements requirements.txt \
+            --output-format JSON --output-file release-assets/sbom-windows.cdx.json
+          python -m cyclonedx_py requirements requirements-macos.txt \
+            --output-format JSON --output-file release-assets/sbom-macos.cdx.json
+          python -m cyclonedx_py requirements requirements-linux.txt \
+            --output-format JSON --output-file release-assets/sbom-linux.cdx.json
 
       - name: Validar os ativos da Release
         if: steps.release.outputs.publish == 'true'
@@ -474,6 +501,9 @@ jobs:
             "SHA256SUMS.txt"
             "SHA256SUMS-macos.txt"
             "SHA256SUMS-linux.txt"
+            "sbom-windows.cdx.json"
+            "sbom-macos.cdx.json"
+            "sbom-linux.cdx.json"
           )
           for asset in "${required[@]}"; do
             test -f "release-assets/$asset" || {
@@ -482,9 +512,15 @@ jobs:
             }
           done
 
+      - name: Atestar a proveniência dos instaladores
+        if: steps.release.outputs.publish == 'true'
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: release-assets/*
+
       - name: Criar a release
         if: steps.release.outputs.publish == 'true'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           target_commitish: ${{ github.sha }}
@@ -496,5 +532,6 @@ jobs:
             release-assets/*.deb
             release-assets/*.tar.gz
             release-assets/SHA256SUMS*.txt
+            release-assets/*.cdx.json
           generate_release_notes: true
           make_latest: true

@@ -11,11 +11,11 @@ Baixe vídeos e áudios, transcreva localmente e faça ajustes de mídia em uma 
 | Seu caso | Escolha | Download |
 | --- | --- | --- |
 | Windows 10/11 | Instalação normal, com atalho e atualização pelo app | [Baixar instalador](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-setup.exe) |
-| Windows 10/11 | Usar sem instalar: descompacte o ZIP e abra o executável | [Baixar versão portable](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-portable-windows.zip) |
+| Windows 10/11 | Usar sem instalar: dados e binários permanecem dentro da pasta extraída | [Baixar versão portable](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-portable-windows.zip) |
 | Mac com M1, M2, M3 ou M4 | Instalação normal: abra o DMG e arraste para Aplicativos | [Baixar instalador para macOS](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-macos-arm64.dmg) |
 | Mac com M1, M2, M3 ou M4 | Usar sem instalar: descompacte e abra o app | [Baixar versão portable para macOS](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-macos-arm64.zip) |
 | Ubuntu 22.04+/Debian 12+ (x86_64) | Instalação integrada ao sistema | [Baixar pacote `.deb`](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-linux-amd64.deb) |
-| Linux x86_64 | Usar sem instalar: descompacte e execute o binário | [Baixar versão portable](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-portable-linux-x86_64.tar.gz) |
+| Linux x86_64 | Usar sem instalar: dados e binários permanecem dentro da pasta extraída | [Baixar versão portable](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-portable-linux-x86_64.tar.gz) |
 
 > Os seis links acima usam os aliases estáveis da Release mais recente. A automação só cria ou atualiza a Release após validar todos os pacotes obrigatórios.
 
@@ -33,6 +33,8 @@ Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no 
 - Conversão por GPU com NVIDIA NVENC, AMD AMF ou VideoToolbox no Apple Silicon.
 - Ferramentas locais para recortar, extrair áudio, compactar, criar Shorts e adicionar legendas ao vídeo.
 - Atualização opcional no Windows, conferida por SHA-256 antes de abrir o instalador.
+- Componentes de runtime só são instalados quando o fornecedor publica um SHA-256 válido; a conexão TLS nunca desliga a validação de certificado.
+- Uma segunda abertura traz a janela existente para frente e encaminha o link recebido, em vez de descartá-lo.
 
 ## Interface
 
@@ -68,7 +70,7 @@ desativada quando o FFmpeg não oferecer um encoder compatível. No Mac, o prime
 uso de cada modelo do Whisper ainda precisa baixá-lo para o perfil local do usuário;
 os usos seguintes reaproveitam esse cache. A build do macOS inclui sua própria
 cadeia atualizada de certificados para que a preparação do ambiente consiga baixar
-o yt-dlp e o FFmpeg mesmo quando o Python empacotado não encontra o Keychain.
+o yt-dlp e o FFmpeg com validação TLS completa, sem aceitar certificados inválidos.
 
 Os nomes de arquivos e os textos da interface usam UTF-8 de ponta a ponta,
 preservando acentos e caracteres especiais compatíveis com o sistema de arquivos.
@@ -89,7 +91,10 @@ fonte de verdade visual do aplicativo.
 - [Guia de uso](docs/GUIA-DE-USO.md)
 - [Plataformas, desempenho e segurança](docs/PLATAFORMAS-E-SEGURANCA.md)
 - [Compilação e publicação de Releases](docs/COMPILACAO-E-RELEASE.md)
+- [Changelog](CHANGELOG.md)
+- [Política de segurança](SECURITY.md)
+- [Como contribuir](CONTRIBUTING.md)
 
 ## Licença e uso
 
-O projeto usa [yt-dlp](https://github.com/yt-dlp/yt-dlp) e [FFmpeg](https://ffmpeg.org/). Baixe apenas conteúdo que você tenha direito de acessar e utilizar. O código deste repositório está sob a [licença MIT](LICENSE).
+O projeto usa [yt-dlp](https://github.com/yt-dlp/yt-dlp) e [FFmpeg](https://ffmpeg.org/). Baixe apenas conteúdo que você tenha direito de acessar e utilizar. O código deste repositório está sob a [licença MIT](LICENSE); as bibliotecas distribuídas mantêm suas próprias licenças, listadas em [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

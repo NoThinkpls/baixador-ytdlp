@@ -24,7 +24,6 @@ import tarfile
 import tempfile
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -56,19 +55,19 @@ DENO_RELEASE_API = "https://api.github.com/repos/denoland/deno/releases/latest"
 
 YTDLP_RELEASE_API = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
 FFMPEG_RELEASE_API = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest"
-FFMPEG_ASSET = "ffmpeg-master-latest-win64-gpl.zip"
+FFMPEG_ASSET = "ffmpeg-n8.1-latest-win64-gpl-8.1.zip"
 LINUX_FFMPEG_ASSETS = {
-    "x86_64": "ffmpeg-master-latest-linux64-gpl.tar.xz",
-    "amd64": "ffmpeg-master-latest-linux64-gpl.tar.xz",
+    "x86_64": "ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz",
+    "amd64": "ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz",
     # BtbN publica esta variante quando há build Linux ARM64 disponível.
-    "aarch64": "ffmpeg-master-latest-linuxarm64-gpl.tar.xz",
-    "arm64": "ffmpeg-master-latest-linuxarm64-gpl.tar.xz",
+    "aarch64": "ffmpeg-n8.1-latest-linuxarm64-gpl-8.1.tar.xz",
+    "arm64": "ffmpeg-n8.1-latest-linuxarm64-gpl-8.1.tar.xz",
 }
-# Builds estáticas para macOS; os IDs dos assets são gravados como no fluxo Windows
-# quando o fornecedor não publica um arquivo de checksums separado.
-MAC_FFMPEG_RELEASE_API = "https://api.github.com/repos/descriptinc/ffmpeg-ffprobe-static/releases/latest"
+# Build estática macOS publicada em um único ZIP com FFmpeg e ffprobe. A API de
+# Releases expõe o SHA-256 do próprio artefato, então uma publicação sem digest
+# é recusada em vez de ser instalada no escuro.
+MAC_FFMPEG_RELEASE_API = "https://api.github.com/repos/Tyrrrz/FFmpegBin/releases/latest"
 USER_AGENT = f"{APP_NAME}/{APP_VERSION} (+https://github.com/yt-dlp/yt-dlp)"
-TLS_FALLBACK_HOSTS = frozenset({"api.github.com", "github.com"})
 
 # Esconde a janela preta do console em cada subprocesso no Windows.
 CREATE_NO_WINDOW = 0x08000000 if IS_WINDOWS else 0
@@ -87,17 +86,8 @@ def _verified_ssl_context() -> ssl.SSLContext:
     return ssl.create_default_context()
 
 
-def _is_certificate_error(exc: BaseException) -> bool:
-    reason = getattr(exc, "reason", exc)
-    return (isinstance(reason, ssl.SSLCertVerificationError)
-            or "CERTIFICATE_VERIFY_FAILED" in str(reason))
-
-
-def _allow_macos_tls_fallback(url: str) -> bool:
-    """Limita o bypass ao .app macOS e aos endpoints oficiais conhecidos."""
-    host = (urllib.parse.urlsplit(url).hostname or "").lower()
-    return (sys.platform == "darwin" and bool(getattr(sys, "frozen", False))
-            and host in TLS_FALLBACK_HOSTS)
+class IntegrityError(RuntimeError):
+    """O fornecedor não publicou uma prova de integridade utilizável."""
 
 
 def _quiet_unlink(path: Path) -> None:
@@ -190,8 +180,10 @@ class Toolchain:
 class ToolManager:
     """Verifica, instala e atualiza yt-dlp e FFmpeg."""
 
-    def __init__(self, bin_dir: Path = BIN_DIR, runtime_check_hours: int = 24):
+    def __init__(self, bin_dir: Path = BIN_DIR, runtime_check_hours: int = 24,
+                 allow_system_tools: bool = False):
         self.bin_dir = bin_dir
+        self.allow_system_tools = bool(allow_system_tools)
         self.state = self._load_state()
         self.runtime = RuntimeManager(check_hours=runtime_check_hours)
         self.runtime_info = RuntimeInfo({}, False)
@@ -212,7 +204,9 @@ class ToolManager:
 
     def _save_state(self) -> None:
         STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        STATE_PATH.write_text(json.dumps(self.state, indent=2), encoding="utf-8")
+        temporary = STATE_PATH.with_suffix(".tmp")
+        temporary.write_text(json.dumps(self.state, indent=2), encoding="utf-8")
+        temporary.replace(STATE_PATH)
         self._state_dirty = False
 
     # ------------------------------------------------------- cache de versão
@@ -262,6 +256,10 @@ class ToolManager:
     def _resolve(self, name: str) -> Path:
         local = self.bin_dir / name
         if local.exists():
+            expected = str((self.state.get("tool_sha256") or {}).get(name) or "")
+            if expected and self._sha256(local) != expected:
+                get_logger().error("Integridade local divergente para %s; reinstalação exigida", name)
+                return self.bin_dir / f"{name}.integrity-failed"
             return local
         # Um binário que já vem na aplicação congelada tem precedência sobre o
         # PATH do sistema, mas nunca é alterado em lugar: atualizações vão para
@@ -271,7 +269,7 @@ class ToolManager:
             bundled = Path(frozen_root) / "bin" / name
             if bundled.is_file():
                 return bundled
-        found = shutil.which(name)
+        found = shutil.which(name) if self.allow_system_tools else None
         return Path(found) if found else local
 
     def toolchain(self) -> Toolchain:
@@ -292,21 +290,7 @@ class ToolManager:
     @staticmethod
     def _request(url: str, accept: str = "application/vnd.github+json"):
         req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
-        try:
-            return urllib.request.urlopen(req, timeout=30, context=_verified_ssl_context())
-        except (urllib.error.URLError, ssl.SSLCertVerificationError) as exc:
-            if not (_is_certificate_error(exc) and _allow_macos_tls_fallback(url)):
-                raise
-            # Compatibilidade final para bundles macOS antigos/quebrados. O
-            # escopo é propositalmente mínimo: somente o app congelado e os
-            # hosts oficiais usados para obter metadados e ativos assinados.
-            get_logger().warning(
-                "A cadeia de certificados do macOS não pôde ser validada; "
-                "repetindo a requisição oficial com o fallback TLS restrito."
-            )
-            return urllib.request.urlopen(
-                req, timeout=30, context=ssl._create_unverified_context()
-            )
+        return urllib.request.urlopen(req, timeout=30, context=_verified_ssl_context())
 
     def _download(self, url: str, dest: Path, progress: ProgressCB, label: str) -> Path:
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -344,6 +328,25 @@ class ToolManager:
         if digest.startswith("sha256:"):
             digest = digest.split(":", 1)[1]
         return digest if re.fullmatch(r"[0-9a-f]{64}", digest) else ""
+
+    @staticmethod
+    def require_sha256(path: Path, expected: str, label: str) -> str:
+        if not re.fullmatch(r"[0-9a-f]{64}", (expected or "").casefold()):
+            _quiet_unlink(path)
+            raise IntegrityError(
+                f"{label}: o fornecedor não publicou um SHA-256 verificável; "
+                "o arquivo atual foi preservado."
+            )
+        actual = ToolManager._sha256(path)
+        if actual.casefold() != expected.casefold():
+            _quiet_unlink(path)
+            raise IntegrityError(f"{label}: SHA-256 não confere. Download descartado.")
+        return actual.casefold()
+
+    def _record_integrity(self, name: str, path: Path) -> None:
+        hashes = self.state.setdefault("tool_sha256", {})
+        if isinstance(hashes, dict):
+            hashes[name] = self._sha256(path)
 
     @staticmethod
     def _extract_zip_member(zf: zipfile.ZipFile, member: str, destination: Path) -> None:
@@ -387,14 +390,17 @@ class ToolManager:
                         parts = line.split()
                         if len(parts) == 2:
                             sums[parts[1].lstrip("*")] = parts[0].lower()
-            except Exception:
-                pass
+            except Exception as exc:
+                raise IntegrityError(
+                    "yt-dlp: não foi possível obter o arquivo SHA2-256SUMS."
+                ) from exc
         return tag, assets.get(YTDLP_ASSET, ""), sums
 
     def ensure_ytdlp(self, progress: ProgressCB, check_now: bool = False) -> None:
         target = self.bin_dir / YTDLP_EXE
         current = self.local_ytdlp_version(target)
-        system_ytdlp = shutil.which("yt-dlp") if not target.exists() else None
+        system_ytdlp = (shutil.which("yt-dlp")
+                         if self.allow_system_tools and not target.exists() else None)
 
         if current and not check_now and not self._should_check("ytdlp", 12):
             progress(f"yt-dlp {current} (verificado recentemente)", 100)
@@ -425,15 +431,11 @@ class ToolManager:
         staged = self.bin_dir / f"{YTDLP_EXE}.new"
         self._download(url, staged, progress, f"Baixando yt-dlp {tag}")
 
-        expected = sums.get(YTDLP_ASSET)
-        if expected:
-            progress("Conferindo a integridade do yt-dlp…", -1)
-            got = self._sha256(staged)
-            if got != expected:
-                staged.unlink(missing_ok=True)
-                raise RuntimeError("Hash SHA-256 do yt-dlp não confere. Download descartado.")
+        progress("Conferindo a integridade do yt-dlp…", -1)
+        self.require_sha256(staged, sums.get(YTDLP_ASSET, ""), "yt-dlp")
 
         self._replace(staged, target)
+        self._record_integrity(YTDLP_EXE, target)
         self.state["ytdlp_version"] = tag
         self._save_state()
         progress(f"yt-dlp atualizado para {tag}", 100)
@@ -452,17 +454,17 @@ class ToolManager:
         except Exception:
             return ""
 
-    def _mac_ffmpeg_assets(self) -> tuple[str, dict[str, dict]]:
-        """Obtém os binários estáticos de FFmpeg/ffprobe para a arquitetura atual."""
+    def _mac_ffmpeg_asset(self) -> tuple[str, dict]:
+        """Obtém o pacote estático de FFmpeg/ffprobe para a arquitetura atual."""
         machine = platform.machine().lower()
         arch = "arm64" if machine in ("arm64", "aarch64") else "x64"
         with self._request(MAC_FFMPEG_RELEASE_API) as resp:
             data = json.load(resp)
         assets = {str(asset.get("name")): asset for asset in data.get("assets", [])}
-        names = (f"ffmpeg-darwin-{arch}", f"ffprobe-darwin-{arch}")
-        if not all(name in assets for name in names):
+        name = f"ffmpeg-osx-{arch}.zip"
+        if name not in assets:
             raise RuntimeError(f"A release não trouxe FFmpeg/ffprobe para macOS {arch}.")
-        return str(data.get("tag_name") or ""), {name: assets[name] for name in names}
+        return str(data.get("tag_name") or ""), assets[name]
 
     def _ensure_macos_ffmpeg(self, progress: ProgressCB, check_now: bool = False) -> None:
         target = self.bin_dir / FFMPEG_EXE
@@ -473,45 +475,46 @@ class ToolManager:
 
         progress("Consultando o FFmpeg para macOS…", -1)
         try:
-            tag, assets = self._mac_ffmpeg_assets()
+            tag, asset = self._mac_ffmpeg_asset()
         except (urllib.error.URLError, TimeoutError, OSError, ValueError, RuntimeError) as exc:
             if current:
                 progress(f"Sem rede para checar atualização — usando FFmpeg {current}", 100)
                 return
             raise RuntimeError(f"Não foi possível baixar o FFmpeg para macOS: {exc}") from exc
 
-        stamp = ":".join(
-            [tag, *(f"{asset.get('id')}:{asset.get('updated_at', '')}" for asset in assets.values())]
-        )
+        stamp = f"{tag}:{asset.get('id')}:{asset.get('updated_at', '')}"
         self._mark_checked("ffmpeg")
         if current and self.state.get("ffmpeg_stamp") == stamp:
             progress(f"FFmpeg {current} já está atualizado", 100)
             self._save_state()
             return
 
-        arch = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "x64"
-        targets = {
-            f"ffmpeg-darwin-{arch}": FFMPEG_EXE,
-            f"ffprobe-darwin-{arch}": FFPROBE_EXE,
-        }
-        for asset_name, target_name in targets.items():
-            staged = self.bin_dir / f"{target_name}.new"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            archive_path = Path(tmpdir) / str(asset["name"])
             self._download(
-                str(assets[asset_name]["browser_download_url"]),
-                staged,
-                progress,
-                f"Baixando {target_name} para macOS",
+                str(asset["browser_download_url"]), archive_path, progress,
+                "Baixando FFmpeg para macOS",
             )
-            expected = self._asset_sha256(assets[asset_name])
-            if expected and self._sha256(staged) != expected:
-                _quiet_unlink(staged)
-                raise RuntimeError(
-                    f"Hash SHA-256 do {target_name} para macOS não confere."
-                )
-            self._replace(staged, self.bin_dir / target_name)
+            progress("Conferindo a integridade do FFmpeg…", -1)
+            self.require_sha256(
+                archive_path, self._asset_sha256(asset), "FFmpeg para macOS")
+            progress("Extraindo FFmpeg…", -1)
+            wanted = {FFMPEG_EXE, FFPROBE_EXE}
+            with zipfile.ZipFile(archive_path) as archive:
+                members = {
+                    Path(member).name: member for member in archive.namelist()
+                    if Path(member).name in wanted
+                }
+                missing = wanted - members.keys()
+                if missing:
+                    raise RuntimeError(
+                        "O pacote FFmpeg não trouxe: " + ", ".join(sorted(missing)))
+                for name, member in members.items():
+                    staged = self.bin_dir / f"{name}.new"
+                    self._extract_zip_member(archive, member, staged)
+                    self._replace(staged, self.bin_dir / name)
+                    self._record_integrity(name, self.bin_dir / name)
 
-        # O digest exposto pela API é validado quando disponível. O
-        # id/versionamento continua no estado para detectar a próxima build.
         self.state["ffmpeg_stamp"] = stamp
         self._save_state()
         progress("FFmpeg para macOS instalado", 100)
@@ -533,7 +536,7 @@ class ToolManager:
         machine = platform.machine().lower()
         asset_name = LINUX_FFMPEG_ASSETS.get(machine)
         if not asset_name:
-            system_ffmpeg = shutil.which("ffmpeg")
+            system_ffmpeg = shutil.which("ffmpeg") if self.allow_system_tools else None
             if system_ffmpeg:
                 progress("FFmpeg do sistema será usado nesta arquitetura", 100)
                 return
@@ -551,7 +554,7 @@ class ToolManager:
             if current:
                 progress(f"Sem rede para checar atualização — usando FFmpeg {current}", 100)
                 return
-            if shutil.which("ffmpeg"):
+            if self.allow_system_tools and shutil.which("ffmpeg"):
                 progress("Sem rede — usando o FFmpeg disponível no sistema", 100)
                 return
             raise RuntimeError(f"Não foi possível baixar o FFmpeg para Linux: {exc}") from exc
@@ -567,11 +570,8 @@ class ToolManager:
             archive_path = Path(tmpdir) / asset_name
             self._download(asset["browser_download_url"], archive_path, progress,
                            "Baixando FFmpeg para Linux")
-            expected = self._asset_sha256(asset)
-            if expected:
-                progress("Conferindo a integridade do FFmpeg…", -1)
-                if self._sha256(archive_path) != expected:
-                    raise RuntimeError("Hash SHA-256 do FFmpeg não confere. Download descartado.")
+            progress("Conferindo a integridade do FFmpeg…", -1)
+            self.require_sha256(archive_path, self._asset_sha256(asset), "FFmpeg")
             progress("Extraindo FFmpeg…", -1)
             wanted = {FFMPEG_EXE, FFPROBE_EXE}
             with tarfile.open(archive_path, mode="r:xz") as archive:
@@ -591,6 +591,7 @@ class ToolManager:
                     with stream, open(staged, "wb") as destination:
                         shutil.copyfileobj(stream, destination, length=1 << 20)
                     self._replace(staged, self.bin_dir / name)
+                    self._record_integrity(name, self.bin_dir / name)
 
         # O id/timestamp complementa a conferência de hash e indica ao cache
         # local quando uma nova build foi publicada.
@@ -635,11 +636,8 @@ class ToolManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             zip_path = Path(tmpdir) / FFMPEG_ASSET
             self._download(asset["browser_download_url"], zip_path, progress, "Baixando FFmpeg")
-            expected = self._asset_sha256(asset)
-            if expected:
-                progress("Conferindo a integridade do FFmpeg…", -1)
-                if self._sha256(zip_path) != expected:
-                    raise RuntimeError("Hash SHA-256 do FFmpeg não confere. Download descartado.")
+            progress("Conferindo a integridade do FFmpeg…", -1)
+            self.require_sha256(zip_path, self._asset_sha256(asset), "FFmpeg")
             progress("Extraindo FFmpeg…", -1)
             wanted = {"ffmpeg.exe", "ffprobe.exe", "ffplay.exe"}
             with zipfile.ZipFile(zip_path) as zf:
@@ -649,6 +647,7 @@ class ToolManager:
                         staged = self.bin_dir / f"{name}.new"
                         self._extract_zip_member(zf, member, staged)
                         self._replace(staged, self.bin_dir / name)
+                        self._record_integrity(name, self.bin_dir / name)
 
         self.state["ffmpeg_stamp"] = stamp
         self._save_state()
@@ -722,6 +721,9 @@ class ToolManager:
 
         self._mark_checked("deno")
         tag = (data.get("tag_name") or "").lstrip("v")
+        if tag and not tag.startswith("2."):
+            progress(f"Deno {tag} ainda não foi homologado; mantendo a versão 2.x atual.", 100)
+            return
         if current and tag and current == tag:
             progress(f"Deno {current} já está atualizado", 100)
             self._save_state()
@@ -738,10 +740,8 @@ class ToolManager:
                 # ("Hash : ..."), não o formato tradicional "hash arquivo".
                 expected = (self._asset_sha256(asset)
                             or self._remote_sha256(assets.get(asset_name + ".sha256sum")))
-                if expected:
-                    progress("Conferindo a integridade do Deno…", -1)
-                    if self._sha256(zip_path) != expected:
-                        raise RuntimeError("hash SHA-256 do Deno não confere")
+                progress("Conferindo a integridade do Deno…", -1)
+                self.require_sha256(zip_path, expected, "Deno")
 
                 progress("Extraindo o Deno…", -1)
                 with zipfile.ZipFile(zip_path) as zf:
@@ -752,6 +752,7 @@ class ToolManager:
                     staged = self.bin_dir / f"{DENO_EXE}.new"
                     self._extract_zip_member(zf, member, staged)
                 self._replace(staged, target)
+                self._record_integrity(DENO_EXE, target)
         except Exception as exc:  # noqa: BLE001 - runtime JS é opcional
             get_logger().warning("Deno: falha ao instalar %s (%s: %s)",
                                  asset_name, type(exc).__name__, exc, exc_info=True)

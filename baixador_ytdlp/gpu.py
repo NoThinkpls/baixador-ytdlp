@@ -60,8 +60,9 @@ def _encoder_probe(ffmpeg: Path, codec: str) -> tuple[bool, str]:
     try:
         result = run_hidden([
             str(ffmpeg), "-hide_banner", "-loglevel", "error",
-            "-f", "lavfi", "-i", "color=size=128x128:rate=1",
-            "-frames:v", "1", "-an", "-c:v", codec, "-f", "null", "-",
+            "-f", "lavfi", "-i", "color=size=256x256:rate=1",
+            "-frames:v", "1", "-an", "-pix_fmt", "yuv420p",
+            "-c:v", codec, "-f", "null", "-",
         ], timeout=20)
         if getattr(result, "returncode", 0) == 0:
             return True, ""

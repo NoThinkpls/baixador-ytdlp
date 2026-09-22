@@ -14,8 +14,8 @@ from PySide6.QtCore import (Property, QEasingCurve, QEvent, QPropertyAnimation, 
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (QAbstractButton, QComboBox, QFrame, QGraphicsOpacityEffect,
                                QHBoxLayout, QLabel, QLineEdit, QListView, QPlainTextEdit,
-                               QProgressBar, QSizePolicy, QSpinBox, QVBoxLayout, QWidget)
-from qfluentwidgets import SmoothScrollArea
+                               QProgressBar, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout,
+                               QWidget)
 
 from . import icons, theme
 
@@ -95,6 +95,7 @@ class Button(QAbstractButton):
         self._tone = tone
         self.setObjectName(object_name)
         self.setText(text)
+        self.setAccessibleName(text)
         self.setFont(theme.callout())
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -145,6 +146,11 @@ class Button(QAbstractButton):
         painter.drawText(QRectF(left, 0, text_width + 2, self.height()),
                          int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
                          self.text())
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(theme.qcolor("accent"), 2))
+            painter.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1),
+                                    theme.RADIUS_CONTROL, theme.RADIUS_CONTROL)
 
     def _colors(self):
         name = self.objectName()
@@ -217,6 +223,7 @@ class IconButton(QAbstractButton):
         self.released.connect(self.update)
         if tooltip:
             self.setToolTip(tooltip)
+            self.setAccessibleName(tooltip)
 
     def set_icon_name(self, name: str) -> None:
         self._icon_name = name
@@ -244,6 +251,12 @@ class IconButton(QAbstractButton):
         opacity = 1.0 if self.isEnabled() else 0.45
         painter.setOpacity(opacity)
         painter.drawPixmap(int(offset), int(offset), pixmap)
+        if self.hasFocus():
+            painter.setOpacity(1.0)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(theme.qcolor("accent"), 2))
+            painter.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1),
+                                    theme.RADIUS_SMALL, theme.RADIUS_SMALL)
 
     def enterEvent(self, event):  # noqa: N802 - assinatura do Qt
         self.update()
@@ -315,6 +328,12 @@ class Switch(QAbstractButton):
         painter.setBrush(QColor("#FFFFFF"))
         painter.drawEllipse(QRectF(margin + travel * self._offset, margin,
                                    self.KNOB, self.KNOB))
+        if self.hasFocus():
+            painter.setOpacity(1.0)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(theme.qcolor("accent"), 2))
+            painter.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1),
+                                    self.TRACK_H / 2, self.TRACK_H / 2)
 
     # Aceitos por compatibilidade com o resto da UI; um interruptor Apple não
     # carrega rótulo interno, então os textos são deliberadamente ignorados.
@@ -334,6 +353,7 @@ class CheckBox(QAbstractButton):
         super().__init__(parent)
         self.setCheckable(True)
         self.setText(text)
+        self.setAccessibleName(text)
         self.setFont(theme.body())
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMinimumHeight(26)
@@ -582,6 +602,10 @@ class SettingRow(QWidget):
             texts.addWidget(self.subtitle)
         layout.addLayout(texts, 1)
         if control is not None:
+            if not control.accessibleName():
+                control.setAccessibleName(title)
+            if subtitle and not control.accessibleDescription():
+                control.setAccessibleDescription(subtitle)
             layout.addWidget(control, 0, Qt.AlignmentFlag.AlignVCenter)
 
 
@@ -668,6 +692,34 @@ class EmptyState(QWidget):
             caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
             caption.setMaximumWidth(420)
             layout.addWidget(caption, 0, Qt.AlignmentFlag.AlignHCenter)
+
+
+class SmoothScrollArea(QScrollArea):
+    """Rolagem suave pequena, sem depender do pacote Fluent GPL."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._scroll_animation = QPropertyAnimation(self.verticalScrollBar(), b"value", self)
+        self._scroll_animation.setDuration(170)
+        self._scroll_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._scroll_target = 0
+
+    def wheelEvent(self, event):  # noqa: N802 - assinatura do Qt
+        bar = self.verticalScrollBar()
+        delta = event.angleDelta().y()
+        if not delta:
+            return super().wheelEvent(event)
+        start = self._scroll_target if self._scroll_animation.state() \
+            == QPropertyAnimation.State.Running else bar.value()
+        step = max(72, bar.singleStep() * 6)
+        self._scroll_target = int(max(
+            bar.minimum(), min(bar.maximum(), start - step * delta / 120)
+        ))
+        self._scroll_animation.stop()
+        self._scroll_animation.setStartValue(bar.value())
+        self._scroll_animation.setEndValue(self._scroll_target)
+        self._scroll_animation.start()
+        event.accept()
 
 
 class ScrollColumn(SmoothScrollArea):

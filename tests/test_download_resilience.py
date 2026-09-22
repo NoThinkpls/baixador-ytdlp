@@ -34,7 +34,7 @@ class QueueStateTests(unittest.TestCase):
 
         self.assertTrue(settings.archive_enabled)
         self.assertTrue(settings.resume_queue)
-        self.assertEqual(settings.settings_schema_version, 2)
+        self.assertEqual(settings.settings_schema_version, 3)
 
     def test_restores_only_valid_interrupted_jobs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

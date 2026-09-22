@@ -63,10 +63,10 @@ def total_ram_gb() -> float:
 def default_fragments() -> int:
     """Fragmentos simultâneos por vídeo.
 
-    Cada fragmento é uma conexão HTTP mais uma escrita em disco; passar de ~4 por
-    núcleo só troca vazão por disputa de CPU e de I/O.
+    Fragmentos são conexões HTTP concorrentes; acima de 8 aumenta o risco de
+    limitação 429 sem ganho consistente em redes domésticas.
     """
-    return max(2, min(16, usable_cores() * 2))
+    return max(2, min(8, usable_cores()))
 
 
 @lru_cache(maxsize=1)

@@ -6,6 +6,7 @@ cartão flutuante por opção, que empilhava dezenas de retângulos na tela.
 """
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import QTimer, QUrl, Signal
@@ -13,7 +14,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QVBoxLayout, QWidget
 
 from ..config import Settings
-from ..cookies import EXPORT_INSTRUCTIONS
+from ..cookies import EXPORT_INSTRUCTIONS, cookie_age_days, import_cookie_file
 from ..gpu import GPU_ENCODER_LABELS, GpuInfo
 from ..hardware import default_fragments, default_parallel_downloads, usable_cores
 from . import theme
@@ -90,13 +91,18 @@ class SettingsPage(QWidget):
                        f"Acelera o download de cada vídeo. Para os {usable_cores()} núcleos "
                        f"desta máquina, {default_fragments()} é o equilíbrio calculado; acima "
                        "disso costuma trocar velocidade por disputa de CPU e disco.",
-                       "concurrent_fragments", 1, 32)
+                       "concurrent_fragments", 1, 16)
         self._spin_row("Downloads simultâneos",
                        f"Quantos itens da fila rodam ao mesmo tempo (sugestão para esta "
                        f"máquina: {default_parallel_downloads()}).",
                        "max_parallel_downloads", 1, 6)
         self._line_row("Limite de banda", "Ex.: 5M para 5 MB/s. Vazio = sem limite.",
                        "limit_rate", "sem limite")
+        self._line_row(
+            "Proxy",
+            "Opcional. Ex.: http://127.0.0.1:8080. Credenciais são ocultadas nos logs.",
+            "proxy", "sem proxy",
+        )
         self._switch_row("Evitar baixar a mesma mídia novamente",
                          "Guarda os IDs concluídos por pasta. Um item repetido é ignorado "
                          "sem gastar banda; desligue temporariamente para refazer outro formato.",
@@ -163,7 +169,8 @@ class SettingsPage(QWidget):
         self._spin_row("Qualidade (CQ)", "Menor = melhor qualidade e arquivo maior. 20 é bom.",
                        "transcode_cq", 10, 40)
         self._switch_row("Substituir o arquivo original",
-                         "Apaga o arquivo baixado depois de converter.", "transcode_replace")
+                         "Depois de validar a conversão, move o original para a Lixeira.",
+                         "transcode_replace")
 
         self._section("Aparência")
         self._combo_row("Tema", "Claro, escuro ou o que o sistema estiver usando.",
@@ -180,6 +187,15 @@ class SettingsPage(QWidget):
                          "O ícone do app na barra de tarefas do Windows enche conforme o "
                          "download ou a transcrição avança e pisca ao concluir.",
                          "taskbar_progress")
+
+        self._section("Atalhos de teclado")
+        shortcuts, _shortcut_layout = self._custom_row(
+            "Navegação e ações",
+            "Ctrl+1…5 muda de página; Ctrl+, abre Configurações; Ctrl+L foca o link; "
+            "Ctrl+O importa uma lista; Ctrl+Enter inicia; Esc cancela a tarefa atual; "
+            "F1 abre o guia.",
+        )
+        self._add_row(shortcuts)
 
         self._section("Histórico")
         self._switch_row("Guardar o que foi baixado",
@@ -200,6 +216,12 @@ class SettingsPage(QWidget):
                        "Dentro desse prazo, e estando tudo na versão certa, a abertura pula a "
                        "consulta ao pip — é o que mais pesa na inicialização.",
                        "runtime_check_hours", 0, 720)
+        self._switch_row(
+            "Usar ferramentas instaladas no sistema",
+            "Permite procurar yt-dlp e FFmpeg no PATH quando a cópia verificada do app não existe. "
+            "Mantenha desligado para maior segurança.",
+            "allow_system_tools",
+        )
         self.page.add_stretch()
 
     # ---------------------------------------------------------- construtores
@@ -343,6 +365,9 @@ class SettingsPage(QWidget):
 
         pick = Button("Escolher", "folder", "secondary", row)
         pick.clicked.connect(self._pick_cookies_file)
+        import_button = Button("Importar para o app", "download", "secondary", row)
+        import_button.setToolTip("Cria uma cópia privada e protegida nos dados do aplicativo")
+        import_button.clicked.connect(self._import_cookies_file)
 
         # Ajuda embutida, não modal: um diálogo modal com texto longo já travou o
         # aplicativo no passado, porque a máscara deixava a tela inacessível.
@@ -352,6 +377,7 @@ class SettingsPage(QWidget):
 
         line.addWidget(self.cookies_edit, 1)
         line.addWidget(pick)
+        line.addWidget(import_button)
         line.addWidget(self.howto_btn)
         column.addLayout(line)
 
@@ -394,6 +420,20 @@ class SettingsPage(QWidget):
             self.cookies_edit.setText(path)
             self._set_cookies_file(path)
 
+    def _import_cookies_file(self) -> None:
+        source = Path(self.cookies_edit.text().strip())
+        try:
+            destination = import_cookie_file(source)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            self._set_status(f"Não foi possível proteger a cópia: {exc}", ok=False)
+            return
+        self.cookies_edit.setText(str(destination))
+        self._set_cookies_file(str(destination))
+        self._set_status(
+            "Cópia privada criada. Você já pode apagar o original da pasta Downloads.",
+            ok=True,
+        )
+
     def _refresh_cookies_status(self) -> None:
         """Valida o arquivo na hora de escolher, não na hora de baixar."""
         path = (self.cfg.cookies_file or "").strip()
@@ -415,10 +455,18 @@ class SettingsPage(QWidget):
                 "extensão que gere esse formato.", ok=False)
             return
         domains = "youtube.com" in head or "google.com" in head
-        self._set_status(
-            "Arquivo válido, com cookies do YouTube." if domains
-            else "Formato válido, mas sem cookies de youtube.com — confira a exportação.",
-            ok=True)
+        age = cookie_age_days(target)
+        if age > 14:
+            self._set_status(
+                f"O arquivo tem {age} dias e pode ter expirado; faça uma nova exportação.",
+                ok=False,
+            )
+        else:
+            self._set_status(
+                (f"Arquivo válido, com cookies do YouTube (há {age} dia(s))." if domains
+                 else "Formato válido, mas sem cookies de youtube.com — confira a exportação."),
+                ok=True,
+            )
 
     def _set_status(self, message: str, ok: bool) -> None:
         self.cookies_status.setText(("✓ " if ok else "⚠ ") + message)

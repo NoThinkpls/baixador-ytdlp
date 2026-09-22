@@ -2,19 +2,14 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from qframelesswindow import FramelessDialog as _Base
 
 from ..config import APP_NAME, APP_VERSION
 from ..tools import ToolManager
 from ..workers import SetupWorker
 from . import theme
-from .components import Body, BusyBar, Button, Headline, Muted, ProgressBar, Title
-
-try:  # o qfluentwidgets já traz o qframelesswindow
-    from qframelesswindow import FramelessDialog as _Base
-except Exception:  # pragma: no cover - fallback defensivo
-    _Base = QDialog
-
+from .components import Body, BusyBar, Button, Muted, ProgressBar, Title
 
 class SetupDialog(_Base):
     """Mostra o progresso da checagem de dependências. Fecha sozinho quando termina."""

@@ -21,24 +21,22 @@ class MacOSTLSTests(unittest.TestCase):
         self.assertIs(result, response)
         self.assertIs(opening.call_args.kwargs["context"], verified)
 
-    def test_frozen_macos_retries_certificate_error_with_restricted_fallback(self) -> None:
-        response = Mock()
+    def test_frozen_macos_never_disables_certificate_verification(self) -> None:
         certificate_error = ssl.SSLCertVerificationError(
             1, "certificate verify failed: unable to get local issuer certificate"
         )
 
         with patch("baixador_ytdlp.tools.sys.platform", "darwin"), \
                 patch("baixador_ytdlp.tools.sys.frozen", True, create=True), \
-                patch("baixador_ytdlp.tools.get_logger"), \
                 patch("baixador_ytdlp.tools.urllib.request.urlopen",
-                      side_effect=[urllib.error.URLError(certificate_error), response]) as opening:
-            result = ToolManager._request("https://api.github.com/repos/yt-dlp/yt-dlp")
+                      side_effect=urllib.error.URLError(certificate_error)) as opening, \
+                patch("baixador_ytdlp.tools.ssl._create_unverified_context",
+                      side_effect=AssertionError("TLS inseguro")) as insecure:
+            with self.assertRaises(urllib.error.URLError):
+                ToolManager._request("https://api.github.com/repos/yt-dlp/yt-dlp")
 
-        self.assertIs(result, response)
-        self.assertEqual(opening.call_count, 2)
-        fallback = opening.call_args.kwargs["context"]
-        self.assertEqual(fallback.verify_mode, ssl.CERT_NONE)
-        self.assertFalse(fallback.check_hostname)
+        self.assertEqual(opening.call_count, 1)
+        insecure.assert_not_called()
 
     def test_fallback_is_not_used_for_untrusted_host(self) -> None:
         certificate_error = ssl.SSLCertVerificationError(1, "CERTIFICATE_VERIFY_FAILED")

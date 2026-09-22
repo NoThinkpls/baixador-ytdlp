@@ -32,7 +32,7 @@ PYPI_INDEX = "https://pypi.org/simple"
 # partir do que estiver instalado na máquina de build. Fixar aqui uma versão de
 # cuDNN diferente da que foi embutida faz o carregador procurar nomes que não
 # existem no pacote e cair para CPU em silêncio.
-PACKAGES = ("faster-whisper", "ctranslate2")
+PACKAGES = ("faster-whisper==1.1.1", "ctranslate2==4.4.0")
 CUDA_PACKAGES = (
     "nvidia-cuda-runtime-cu12==12.4.127",
     "nvidia-cublas-cu12==12.4.5.8",
@@ -354,6 +354,11 @@ class RuntimeManager:
 
         # Caminho de desenvolvimento/recuperação para instalações sem o pacote.
         # Uma build oficial nunca deve chegar aqui.
+        if os.environ.get("BAIXADOR_DEV_RUNTIME") != "1":
+            raise RuntimeError(
+                "O runtime de transcrição não foi incluído nesta build. "
+                "Reinstale uma versão oficial; downloads automáticos de pacotes estão desativados."
+            )
         before = _versions(self.runtime_dir)
         mode = "CUDA" if use_cuda else "CPU"
         progress(f"Verificando runtime do legendador ({mode})…", -1)

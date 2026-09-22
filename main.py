@@ -16,18 +16,6 @@ def asset(name: str) -> Path:
     return base / "assets" / name
 
 
-_MUTEX = None
-
-
-def single_instance() -> bool:
-    """Impede duas cópias do app. Devolve False se já existe uma rodando."""
-    if not IS_WINDOWS:
-        return True
-    global _MUTEX  # o handle precisa sobreviver a esta função, senão o mutex some
-    _MUTEX = ctypes.windll.kernel32.CreateMutexW(None, False, f"Global\\{APP_ID}")
-    return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
-
-
 def main() -> int:
     # Os imports Qt ficam aqui: o processo auxiliar do multiprocessing entra
     # por freeze_support antes de carregar qualquer componente de interface.
@@ -36,6 +24,7 @@ def main() -> int:
     from PySide6.QtWidgets import QApplication
 
     from baixador_ytdlp.tools import ToolManager
+    from baixador_ytdlp.instance import InstanceServer, forward_to_running
     from baixador_ytdlp.ui.main_window import MainWindow
 
     ensure_dirs()
@@ -48,6 +37,13 @@ def main() -> int:
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
+    if forward_to_running(sys.argv[1:]):
+        log_event("Argumentos encaminhados para a instância já aberta")
+        return 0
+    instance_server = InstanceServer(app)
+    if not instance_server.listen():
+        log_event("Encerrando: não foi possível reservar o canal da instância única")
+        return 1
     # A folha de estilo entra antes de qualquer janela: assim a tela de
     # preparação já abre com a identidade visual do aplicativo.
     from baixador_ytdlp.ui import theme
@@ -60,26 +56,22 @@ def main() -> int:
     icon = QIcon(str(icon_path)) if icon_path.exists() else QIcon()
     app.setWindowIcon(icon)
 
-    if not single_instance():
-        log_event("Encerrando: outra instância já está aberta")
-        return 0
-
     cfg = Settings.load()
     window = MainWindow(
         cfg,
-        ToolManager(runtime_check_hours=cfg.runtime_check_hours),
+        ToolManager(runtime_check_hours=cfg.runtime_check_hours,
+                    allow_system_tools=cfg.allow_system_tools),
         icon,
         icon_path,
     )
     window.show()
+    instance_server.arguments_received.connect(window.handle_external_arguments)
 
     if not window.run_setup() and window.toolchain is None:
         log_event("Encerrando: preparação inicial não foi concluída")
         return 1
 
-    if len(sys.argv) > 1 and sys.argv[1].startswith("http"):
-        window.home.set_url(sys.argv[1])
-        window.home.analyze()
+    window.handle_external_arguments(sys.argv[1:])
 
     result = app.exec()
     log_event("Sessão encerrada normalmente: código=%s", result)

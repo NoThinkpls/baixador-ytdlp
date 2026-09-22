@@ -40,18 +40,28 @@ FORMATS = {
     "json": ("JSON — segmentos e timestamps", ".json"),
 }
 
-# Pesos já convertidos e mantidos pela comunidade oficial do MLX. Não usamos o
-# modelo CTranslate2 no Mac quando o runtime MLX está presente: além de tirar
-# proveito da GPU integrada, evita copiar o áudio pela memória mais vezes que o
-# necessário na arquitetura de memória unificada da Apple.
-MLX_MODEL_REPOS = {
-    "tiny": "mlx-community/whisper-tiny-mlx",
-    "base": "mlx-community/whisper-base-mlx",
-    "small": "mlx-community/whisper-small-mlx",
-    "medium": "mlx-community/whisper-medium-mlx",
-    "large": "mlx-community/whisper-large-v3-mlx",
-    "large-v2": "mlx-community/whisper-large-v3-mlx",
-    "large-v3": "mlx-community/whisper-large-v3-mlx",
+# Repositórios e revisões imutáveis dos pesos. Usar ``main`` permitiria trocar
+# vários gigabytes de código/dados sem uma nova versão do aplicativo.
+FASTER_MODEL_SPECS = {
+    "tiny": ("Systran/faster-whisper-tiny", "d90ca5fe260221311c53c58e660288d3deb8d356"),
+    "base": ("Systran/faster-whisper-base", "ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66"),
+    "small": ("Systran/faster-whisper-small", "536b0662742c02347bc0e980a01041f333bce120"),
+    "medium": ("Systran/faster-whisper-medium", "08e178d48790749d25932bbc082711ddcfdfbc4f"),
+    "large": ("Systran/faster-whisper-large-v3", "edaa852ec7e145841d8ffdb056a99866b5f0a478"),
+    "large-v2": ("Systran/faster-whisper-large-v3", "edaa852ec7e145841d8ffdb056a99866b5f0a478"),
+    "large-v3": ("Systran/faster-whisper-large-v3", "edaa852ec7e145841d8ffdb056a99866b5f0a478"),
+}
+
+# Pesos convertidos para MLX. Não usamos CTranslate2 no Mac quando o runtime MLX
+# está presente: a GPU integrada é mais rápida e compartilha memória com a CPU.
+MLX_MODEL_SPECS = {
+    "tiny": ("mlx-community/whisper-tiny-mlx", "b8e1517aa75d652c34086b8f5a47cee5b7edee3e"),
+    "base": ("mlx-community/whisper-base-mlx", "dbd18c08dc2a2e299c3f16b25902a785af158c9e"),
+    "small": ("mlx-community/whisper-small-mlx", "eb52dbc58f50f19eb8c87b54b7c621633c67b7e0"),
+    "medium": ("mlx-community/whisper-medium-mlx", "23bf35993c90e62837672b12d4d2e481d73db2da"),
+    "large": ("mlx-community/whisper-large-v3-mlx", "ac13a70a47c7176ba7b69b4f1ebe6877ccd460d0"),
+    "large-v2": ("mlx-community/whisper-large-v3-mlx", "ac13a70a47c7176ba7b69b4f1ebe6877ccd460d0"),
+    "large-v3": ("mlx-community/whisper-large-v3-mlx", "ac13a70a47c7176ba7b69b4f1ebe6877ccd460d0"),
 }
 
 
@@ -121,6 +131,7 @@ class Transcriber:
         else:
             self.backend, self.device, self.compute_type, self.hardware_label = self._detect_hardware()
         self.model = None
+        self._model_path: Path | None = None
 
     def cancel(self) -> None:
         self.cancel_event.set()
@@ -173,12 +184,12 @@ class Transcriber:
 
         self.status(f"Carregando Whisper {model_size} em {self.hardware_label}…")
         self.progress(5)
-        kwargs = {"device": self.device, "compute_type": self.compute_type,
-                  "download_root": str(MODEL_DIR)}
+        model_path = self._pinned_model_path(model_size, mlx=False)
+        kwargs = {"device": self.device, "compute_type": self.compute_type}
         if self.device == "cpu":
             kwargs.update(cpu_threads=whisper_threads(), num_workers=1)
         try:
-            self.model = WhisperModel(model_size, **kwargs)
+            self.model = WhisperModel(str(model_path), **kwargs)
         except Exception as exc:
             if self.device != "cuda":
                 raise
@@ -187,7 +198,7 @@ class Transcriber:
             self.device, self.compute_type = "cpu", "int8"
             self.hardware_label = "CPU — fallback automático (int8)"
             self.model = WhisperModel(
-                model_size, device="cpu", compute_type="int8", download_root=str(MODEL_DIR),
+                str(model_path), device="cpu", compute_type="int8",
                 cpu_threads=whisper_threads(), num_workers=1,
             )
         self.progress(15)
@@ -202,10 +213,25 @@ class Transcriber:
         os.environ.setdefault("HF_HOME", str(cache))
         self.status(f"Carregando Whisper {model_size} em {self.hardware_label}…")
         self.progress(5)
+        self._model_path = self._pinned_model_path(model_size, mlx=True)
 
     @staticmethod
-    def _mlx_model_repo(model_size: str) -> str:
-        return MLX_MODEL_REPOS.get(model_size, MLX_MODEL_REPOS["medium"])
+    def _model_spec(model_size: str, *, mlx: bool) -> tuple[str, str]:
+        specs = MLX_MODEL_SPECS if mlx else FASTER_MODEL_SPECS
+        return specs.get(model_size, specs["medium"])
+
+    @classmethod
+    def _pinned_model_path(cls, model_size: str, *, mlx: bool) -> Path:
+        from huggingface_hub import snapshot_download
+
+        repo, revision = cls._model_spec(model_size, mlx=mlx)
+        cache = MODEL_DIR / ("mlx" if mlx else "ctranslate2")
+        cache.mkdir(parents=True, exist_ok=True)
+        return Path(snapshot_download(
+            repo_id=repo,
+            revision=revision,
+            cache_dir=str(cache),
+        ))
 
     def _switch_to_cpu(self, model_size: str, reason: Exception) -> None:
         """Troca de CUDA para CPU quando uma DLL/driver falha durante o uso."""
@@ -216,8 +242,9 @@ class Transcriber:
         gc.collect()
         self.device, self.compute_type = "cpu", "int8"
         self.hardware_label = "CPU — fallback automático (int8)"
+        model_path = self._pinned_model_path(model_size, mlx=False)
         self.model = WhisperModel(
-            model_size, device="cpu", compute_type="int8", download_root=str(MODEL_DIR),
+            str(model_path), device="cpu", compute_type="int8",
             cpu_threads=whisper_threads(), num_workers=1,
         )
         self.status(f"Modelo pronto: {self.hardware_label}")
@@ -273,7 +300,7 @@ class Transcriber:
         log_probability = options.pop("log_prob_threshold", -1.0)
         no_speech = options.pop("no_speech_threshold", 0.6)
         result = mlx_whisper.transcribe(
-            str(audio), path_or_hf_repo=self._mlx_model_repo(opts.model_size), verbose=None,
+            str(audio), path_or_hf_repo=str(self._model_path), verbose=None,
             language=None if opts.language == "auto" else opts.language,
             word_timestamps=True, temperature=temperature,
             condition_on_previous_text=condition,
