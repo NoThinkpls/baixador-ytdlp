@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -56,14 +57,14 @@ class AppleMlxTests(unittest.TestCase):
 
         def snapshot_download(**kwargs):
             downloads.append(kwargs)
-            return "/cache/model"
+            return str(Path(kwargs["cache_dir"]) / "model")
 
-        with patch.dict(sys.modules, {
+        with tempfile.TemporaryDirectory() as temporary_dir, patch.dict(sys.modules, {
             "huggingface_hub": SimpleNamespace(snapshot_download=snapshot_download),
-        }), patch("baixador_ytdlp.transcription.MODEL_DIR", Path("/cache")):
+        }), patch("baixador_ytdlp.transcription.MODEL_DIR", Path(temporary_dir)):
             path = Transcriber._pinned_model_path("medium", mlx=False)
 
-        self.assertEqual(path, Path("/cache/model"))
+        self.assertEqual(path, Path(temporary_dir) / "ctranslate2" / "model")
         self.assertEqual(downloads[0]["repo_id"], "Systran/faster-whisper-medium")
         self.assertRegex(downloads[0]["revision"], r"^[0-9a-f]{40}$")
 
