@@ -403,9 +403,9 @@ jobs:
   release:
     name: Publicar release
     needs: [windows, macos, linux]
-    # A tag dispara as três builds; a Release só nasce depois que todos os
-    # pacotes foram validados, evitando publicação sem downloads.
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    # Um push em main ou uma tag válida só publica depois que todos os
+    # pacotes foram validados, evitando uma Release sem downloads.
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -427,10 +427,19 @@ jobs:
           version="$(python -c "import ast,pathlib; t=ast.parse(pathlib.Path('baixador_ytdlp/config.py').read_text(encoding='utf-8')); print(next(n.value.value for n in t.body if isinstance(n,ast.Assign) and any(isinstance(x,ast.Name) and x.id=='APP_VERSION' for x in n.targets)))")"
           test -n "$version"
           tag="v${version}"
-          if [[ "$GITHUB_REF_NAME" != "$tag" ]]; then
-            echo "::error::A tag $GITHUB_REF_NAME não corresponde à versão $version."
-            exit 1
-          fi
+          case "$GITHUB_REF" in
+            refs/heads/main) ;;
+            refs/tags/*)
+              if [[ "$GITHUB_REF_NAME" != "$tag" ]]; then
+                echo "::error::A tag $GITHUB_REF_NAME não corresponde à versão $version."
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::Referência não publicável: $GITHUB_REF."
+              exit 1
+              ;;
+          esac
           response="$(mktemp)"
           status="$(curl --silent --show-error --output "$response" --write-out '%{http_code}' \
             --header "Authorization: Bearer $GH_TOKEN" \
