@@ -1,8 +1,9 @@
 # Compilação e publicação de Releases
 
 As builds oficiais são geradas pelo GitHub Actions. Um push em `main` valida e
-compila Windows, macOS e Linux sem publicar. Uma tag `vX.Y.Z` compatível com
-`APP_VERSION` repete as três builds e, somente se todas passarem, publica a Release.
+compila Windows, macOS e Linux e, somente se todas passarem, cria a tag `vX.Y.Z`
+compatível com `APP_VERSION` e publica a Release. Uma tag enviada manualmente
+continua compatível com o mesmo fluxo de validação.
 
 ## Arquivos de cada Release
 
@@ -25,14 +26,13 @@ O workflow confere se os seis aliases aparecem no README e se todos os pacotes e
 ## Como publicar
 
 1. Atualize a versão do aplicativo quando houver mudança distribuída.
-2. Execute os testes, envie o commit para `main` e aguarde a build de validação.
-3. Crie e envie a tag anotada correspondente, por exemplo `git tag -a v1.7.0 -m "Release v1.7.0"` e `git push origin v1.7.0`.
-4. Acompanhe a execução da tag no [GitHub Actions](../../actions).
-5. Só divulgue a Release depois que os jobs **Compilar no Windows**, **Compilar no macOS Apple Silicon**, **Compilar no Linux (Ubuntu/Debian)** e **Publicar release** concluírem com sucesso.
+2. Execute os testes e envie o commit para `main`.
+3. Acompanhe a execução no [GitHub Actions](../../actions): a automação valida os três sistemas, cria a tag correspondente e publica a Release.
+4. Só divulgue a Release depois que os jobs **Compilar no Windows**, **Compilar no macOS Apple Silicon**, **Compilar no Linux (Ubuntu/Debian)** e **Publicar release** concluírem com sucesso.
 
-Não crie a Release manualmente: a automação usa a tag já enviada e cria ou
-atualiza a Release quando os três pacotes terminam. Enquanto a etapa final está
-em andamento, os links de download ainda podem retornar arquivo não encontrado.
+Não crie a tag nem a Release manualmente no fluxo normal: a automação cria ou
+atualiza ambas quando os três pacotes terminam. Enquanto a etapa final está em
+andamento, os links de download ainda podem retornar arquivo não encontrado.
 
 ## Desenvolvimento local
 
