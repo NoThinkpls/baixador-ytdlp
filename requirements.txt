@@ -10,4 +10,4 @@ send2trash==1.8.3
 # que uma atualização automática do pip traga cuDNN 9 incompatível.
 nvidia-cuda-runtime-cu12==12.4.127
 nvidia-cublas-cu12==12.4.5.8
-nvidia-cudnn-cu12==8.9.7.29
+nvidia-cudnn-cu12==9.26.0.51
