@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 import stat
@@ -46,7 +47,9 @@ class SecurityRegressionTests(unittest.TestCase):
             with patch("baixador_ytdlp.cookies.COOKIES_DIR", root / "privado"):
                 destination = import_cookie_file(source)
             self.assertEqual(destination.name, "cookies.txt")
-            self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o600)
+            self.assertEqual(destination.read_text(encoding="utf-8"), source.read_text(encoding="utf-8"))
+            if os.name != "nt":
+                self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o600)
 
     def test_url_is_validated_and_placed_after_end_of_options(self) -> None:
         tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))

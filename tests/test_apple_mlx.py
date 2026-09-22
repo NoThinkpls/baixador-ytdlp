@@ -49,7 +49,7 @@ class AppleMlxTests(unittest.TestCase):
         self.assertEqual(raw[0]["text"], "Olá, ação!")
         self.assertEqual(raw[0]["words"][1]["text"], ",")
         self.assertEqual(calls[0][1]["path_or_hf_repo"],
-                         "/modelos/whisper-medium-mlx-fixado")
+                         str(Path("/modelos/whisper-medium-mlx-fixado")))
         self.assertTrue(calls[0][1]["word_timestamps"])
 
     def test_model_download_uses_an_immutable_revision(self) -> None:
