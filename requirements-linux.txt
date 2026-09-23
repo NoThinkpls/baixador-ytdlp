@@ -3,7 +3,7 @@ PySideSix-Frameless-Window==0.8.2
 faster-whisper==1.1.1
 ctranslate2==4.8.2
 huggingface-hub==0.29.3
-certifi==2025.8.3
+certifi==2026.7.22
 send2trash==1.8.3
 # A primeira distribuição Linux usa CTranslate2 em CPU. CUDA continua opcional
 # e não é empacotado para evitar uma imagem muito maior e dependente do driver.

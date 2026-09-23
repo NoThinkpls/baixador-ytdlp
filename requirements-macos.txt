@@ -5,7 +5,7 @@ ctranslate2==4.8.2
 huggingface-hub==0.29.3
 send2trash==1.8.3
 # Cadeia de CAs incluída no .app para downloads HTTPS via urllib.
-certifi==2025.8.3
+certifi==2026.7.22
 # MLX Whisper executa o modelo na GPU integrada do Apple Silicon. O
 # faster-whisper/CTranslate2 continua incluído como fallback CPU/NEON seguro.
 mlx-whisper==0.4.3
