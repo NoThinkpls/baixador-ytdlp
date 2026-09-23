@@ -51,7 +51,7 @@ jobs:
 
       - name: Guardar a captura do teste de fumaça
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: window-smoke-${{ github.run_number }}
           path: window-smoke.png
@@ -164,14 +164,14 @@ jobs:
           }
 
       - name: Publicar a versão portátil
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: baixador-ytdlp-portatil-${{ steps.ver.outputs.version }}
           path: dist/baixador-ytdlp
           retention-days: 30
 
       - name: Publicar o instalador
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: baixador-ytdlp-setup-${{ steps.ver.outputs.version }}
           path: |
@@ -332,7 +332,7 @@ jobs:
           shasum -a 256 dist/installer/*.dmg dist/installer/*.zip > dist/installer/SHA256SUMS-macos.txt
 
       - name: Publicar o aplicativo macOS
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: baixador-ytdlp-macos-arm64-${{ steps.ver.outputs.version }}
           path: |
@@ -449,7 +449,7 @@ jobs:
           sha256sum "$out"/*.deb "$out"/*.tar.gz > "$out/SHA256SUMS-linux.txt"
 
       - name: Publicar os pacotes Linux
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: baixador-ytdlp-linux-${{ steps.ver.outputs.version }}
           path: |
