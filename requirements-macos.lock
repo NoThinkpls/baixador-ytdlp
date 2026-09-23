@@ -614,6 +614,7 @@ pyobjc-core==12.2.2 \
     #   pyobjc-framework-latentsemanticmapping
     #   pyobjc-framework-launchservices
     #   pyobjc-framework-libdispatch
+    #   pyobjc-framework-libxpc
     #   pyobjc-framework-osakit
     #   pyobjc-framework-preferencepanes
     #   pyobjc-framework-quartz
@@ -716,6 +717,7 @@ pyobjc-framework-cocoa==12.2.2 \
     #   pyobjc-framework-iobluetooth
     #   pyobjc-framework-latentsemanticmapping
     #   pyobjc-framework-libdispatch
+    #   pyobjc-framework-libxpc
     #   pyobjc-framework-osakit
     #   pyobjc-framework-preferencepanes
     #   pyobjc-framework-quartz
@@ -890,6 +892,18 @@ pyobjc-framework-libdispatch==12.2.2 \
     --hash=sha256:b64b150207552b67caf1061e013ae6a1989aef34a18f36d9a3a455c51cd210c2 \
     --hash=sha256:b67f7433d2fbc0d5ff2ce4cb81ef08e0d0717fe88c2a95e335512c2cdb52d722 \
     --hash=sha256:e8e5411ed58ed1643f39a486880193cb1b1103df45d64ebd1072a193dce09a22
+    # via -r requirements-macos.txt
+pyobjc-framework-libxpc==12.2.2 \
+    --hash=sha256:17534f44158ff29b205e9addbec2993c080499f268c8afd337fb2fcd1ffb2e50 \
+    --hash=sha256:2a123cd2a47d341798e8f5d8891b784580e5575e2d89c26c068fae52429d8d06 \
+    --hash=sha256:592b90d34cf689907535348893ef1f0525d030c8129036d95e52f8387e91d90e \
+    --hash=sha256:77c32806eb48e0612fe300ffac9b04fd0193cd987c5f951d29d348afd5a485e4 \
+    --hash=sha256:8051543eb59406f6d5069214a0a5a66bbe0e7109f0f2636e62ac851fca5fcb1d \
+    --hash=sha256:83d0367bf06cae0691fc4aedb17b9cc02e8f59758c525cca771f430423c98f99 \
+    --hash=sha256:8e4029edc9b079fc17550d0fce3ad547dacb24ddc2d1762da29174bb2f2b8eda \
+    --hash=sha256:9a8651e2c4811f55f187e383fa13ef8cb72c8892f5ec41a6963acddbb5c6accf \
+    --hash=sha256:a0aebcd7ad832b8364d49e21fda4867660c5743873df99460319a916e74d4268 \
+    --hash=sha256:dba6ab0eb4f1c1f497529e47fb08da00de21246ef59fd0c4113389dc7553a556
     # via -r requirements-macos.txt
 pyobjc-framework-osakit==12.2.2 \
     --hash=sha256:0b0b9010e25fca1e69310b083a6f3d490ec7fd8a04b85b2ffd8cc316af765439 \

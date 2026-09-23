@@ -14,3 +14,4 @@ mlx-whisper==0.4.3
 # O meta-pacote pyobjc exige esta extensão no macOS; listá-la garante que o
 # lock contenha o hash mesmo quando o resolvedor a trata como condicional.
 pyobjc-framework-libdispatch==12.2.2
+pyobjc-framework-libxpc==12.2.2
