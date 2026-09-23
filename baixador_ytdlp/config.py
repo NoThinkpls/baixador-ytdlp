@@ -12,15 +12,11 @@ from .hardware import default_fragments, default_parallel_downloads
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.8.1"
 IS_WINDOWS = sys.platform.startswith("win")
 
 
-def _data_root() -> Path:
-    executable_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) \
-        else Path(__file__).resolve().parents[1]
-    if (executable_dir / "portable.txt").is_file():
-        return executable_dir / "data"
+def _system_data_root() -> Path:
     if IS_WINDOWS:
         base = os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local"
     elif sys.platform == "darwin":
@@ -28,6 +24,63 @@ def _data_root() -> Path:
     else:
         base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
     return Path(base) / APP_ID
+
+
+def _app_bundle(executable_dir: Path) -> Path | None:
+    """Devolve o ``.app`` que contém o executável no macOS."""
+    for parent in (executable_dir, *executable_dir.parents):
+        if parent.suffix == ".app":
+            return parent
+    return None
+
+
+def _writable(directory: Path) -> bool:
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        probe = directory / f".write-test-{os.getpid()}"
+        probe.write_bytes(b"")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def _portable_root() -> Path | None:
+    """Pasta de dados do modo portable, ou ``None`` quando ele não se aplica.
+
+    No macOS os dados ficam AO LADO do ``.app``: escrever dentro do pacote
+    quebra a assinatura, some ao atualizar e falha quando o Gatekeeper executa
+    o app de um volume somente leitura (App Translocation).
+    """
+    executable_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) \
+        else Path(__file__).resolve().parents[1]
+    bundle = _app_bundle(executable_dir) if sys.platform == "darwin" else None
+    markers = [executable_dir / "portable.txt"]
+    if bundle is not None:
+        markers.append(bundle.parent / "portable.txt")
+    if not any(marker.is_file() for marker in markers):
+        return None
+    if bundle is not None:
+        return bundle.parent / f"{APP_ID}-data"
+    return executable_dir / "data"
+
+
+PORTABLE_FALLBACK_REASON = ""
+
+
+def _data_root() -> Path:
+    global PORTABLE_FALLBACK_REASON
+    portable = _portable_root()
+    if portable is not None:
+        if _writable(portable):
+            return portable
+        # Pasta somente leitura (Program Files, pendrive protegido, App
+        # Translocation). Abrir com os dados no perfil é melhor que cair.
+        PORTABLE_FALLBACK_REASON = (
+            f"A pasta do modo portable não permite gravação ({portable}); "
+            "os dados foram mantidos no perfil do usuário."
+        )
+    return _system_data_root()
 
 
 DATA_DIR = _data_root()
@@ -64,7 +117,7 @@ def default_download_dir() -> str:
 class Settings:
     """Preferências do usuário — gravadas em settings.json."""
 
-    settings_schema_version: int = 4
+    settings_schema_version: int = 5
     download_dir: str = field(default_factory=default_download_dir)
     ask_output_dir: bool = False     # liberar a escolha de pasta na página Baixar
     last_output_dir: str = ""        # última pasta escolhida por download
@@ -95,7 +148,9 @@ class Settings:
     auto_retry_delay: int = 5        # espera base entre tentativas, em segundos
     organize_audio_by_uploader: bool = False
     theme: str = "auto"              # auto | light | dark
-    mica: bool = True
+    # Todas as superfícies do app são opacas: o Mica só aparecia em falhas de
+    # repintura (bordas claras). Desligado por padrão desde a 1.8.1.
+    mica: bool = False
     sidebar_collapsed: bool = False
     # Atualizações do aplicativo: a checagem é automática, mas instalação é sempre confirmada.
     auto_update: bool = True
@@ -129,8 +184,12 @@ class Settings:
     transcription_max_chars: int = 50
     transcription_min_duration: float = 0.8
     transcription_max_duration: float = 4.5
-    window_geometry: str = ""
+    window_geometry: str = ""        # legado (blob do Qt); ignorado desde a 1.8.1
+    window_rect: list[int] = field(default_factory=list)  # x, y, largura, altura
     window_maximized: bool = False
+    ytdlp_channel: str = "stable"    # stable | nightly
+    transcription_batched: bool = False   # BatchedInferencePipeline na GPU
+    transcription_low_vram: bool = False  # int8_float16 em placas com pouca VRAM
 
     @staticmethod
     def _coerce(value, default):
@@ -198,6 +257,12 @@ class Settings:
             values["settings_schema_version"] = 3
         if schema < 4:
             values["settings_schema_version"] = 4
+        if schema < 5:
+            # 1.8.1: o Mica só servia para expor artefatos de repintura, e o blob
+            # do saveGeometry() não é confiável numa janela sem moldura nativa.
+            values["mica"] = False
+            values["window_geometry"] = ""
+            values["settings_schema_version"] = 5
         return cls(**values)
 
     def save(self) -> None:

@@ -64,8 +64,9 @@ class Palette:
     accent_soft: str     # fundo tênue do item ativo / seleção
     on_accent: str
     success: str
-    danger: str
+    danger: str          # preenchimento (texto branco por cima)
     danger_hover: str
+    danger_text: str     # cor de texto/ícone sobre as superfícies
     warning: str
     scrim: str           # sombra e véus
 
@@ -91,8 +92,11 @@ DARK = Palette(
     accent_soft="rgba(88, 101, 242, 0.18)",
     on_accent="#FFFFFF",
     success="#2BB673",
-    danger="#FF6B6E",
-    danger_hover="#F76C6F",
+    # Branco sobre #D93B3F = 4,52:1. O #FF6B6E da 1.8.0 dava 2,77:1 como fundo
+    # de botão; ele continua existindo, mas só como cor de texto.
+    danger="#D93B3F",
+    danger_hover="#B92D31",
+    danger_text="#FF6B6E",
     warning="#F0B232",
     scrim="rgba(0, 0, 0, 0.45)",
 )
@@ -119,7 +123,8 @@ LIGHT = Palette(
     on_accent="#FFFFFF",
     success="#137A45",
     danger="#D93B3F",
-    danger_hover="#C1282C",
+    danger_hover="#B92D31",
+    danger_text="#C4302F",
     warning="#8A6308",
     scrim="rgba(15, 18, 25, 0.14)",
 )
@@ -271,7 +276,7 @@ def stylesheet() -> str:
     QLabel#hint {{ color: {p.text_tertiary}; }}
     QLabel#sectionLabel {{ color: {p.text_tertiary}; }}
     QLabel#pageSubtitle {{ color: {p.text_secondary}; }}
-    QLabel#danger {{ color: {p.danger}; }}
+    QLabel#danger {{ color: {p.danger_text}; }}
     QLabel#success {{ color: {p.success}; }}
     QLabel#warning {{ color: {p.warning}; }}
 

@@ -35,7 +35,7 @@ try:
 except ImportError:  # pragma: no cover - só ocorre fora das builds oficiais
     certifi = None
 
-from .config import APP_NAME, APP_VERSION, BIN_DIR, IS_WINDOWS, STATE_PATH, ensure_dirs
+from .config import APP_NAME, APP_VERSION, BIN_DIR, DATA_DIR, IS_WINDOWS, STATE_PATH, ensure_dirs
 from .diagnostics import get_logger
 from .runtime import RuntimeInfo, RuntimeManager
 
@@ -51,23 +51,28 @@ YTDLP_ASSET = "yt-dlp.exe" if IS_WINDOWS else ("yt-dlp_macos" if sys.platform ==
 # node 22, quickjs 2023-12-09. O Deno é um executável único, então é o que baixamos.
 DENO_EXE = "deno.exe" if IS_WINDOWS else "deno"
 DENO_MIN_VERSION = (2, 3, 0)
-DENO_RELEASE_API = "https://api.github.com/repos/denoland/deno/releases/latest"
+DENO_RELEASES_API = "https://api.github.com/repos/denoland/deno/releases?per_page=30"
+DENO_SUPPORTED_MAJOR = 2
 
 YTDLP_RELEASE_API = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
 FFMPEG_RELEASE_API = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest"
-FFMPEG_ASSET = "ffmpeg-n8.1-latest-win64-gpl-8.1.zip"
-LINUX_FFMPEG_ASSETS = {
-    "x86_64": "ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz",
-    "amd64": "ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz",
-    # BtbN publica esta variante quando há build Linux ARM64 disponível.
-    "aarch64": "ffmpeg-n8.1-latest-linuxarm64-gpl-8.1.tar.xz",
-    "arm64": "ffmpeg-n8.1-latest-linuxarm64-gpl-8.1.tar.xz",
+# O BtbN publica somente os ramos de release mais recentes (ex.: n8.1 e n9.0) e
+# remove os antigos. Fixar um nome quebrava instalações novas quando o ramo
+# saía da release; agora escolhemos sempre o maior ramo estável publicado.
+FFMPEG_BTBN_PLATFORMS = {
+    "win64": ("win64", "zip"),
+    "x86_64": ("linux64", "tar.xz"),
+    "amd64": ("linux64", "tar.xz"),
+    "aarch64": ("linuxarm64", "tar.xz"),
+    "arm64": ("linuxarm64", "tar.xz"),
 }
 # Build estática macOS publicada em um único ZIP com FFmpeg e ffprobe. A API de
 # Releases expõe o SHA-256 do próprio artefato, então uma publicação sem digest
 # é recusada em vez de ser instalada no escuro.
 MAC_FFMPEG_RELEASE_API = "https://api.github.com/repos/Tyrrrz/FFmpegBin/releases/latest"
 USER_AGENT = f"{APP_NAME}/{APP_VERSION} (+https://github.com/yt-dlp/yt-dlp)"
+HTTP_CACHE_PATH = DATA_DIR / "http_cache.json"
+INTEGRITY_FULL_CHECK_HOURS = 24
 
 # Esconde a janela preta do console em cada subprocesso no Windows.
 CREATE_NO_WINDOW = 0x08000000 if IS_WINDOWS else 0
@@ -86,8 +91,49 @@ def _verified_ssl_context() -> ssl.SSLContext:
     return ssl.create_default_context()
 
 
+def require_https(url: str) -> str:
+    """URLs de download vêm de APIs remotas; ``file:``/``ftp:`` nunca são aceitos."""
+    if not str(url).lower().startswith("https://"):
+        raise ValueError(f"Somente HTTPS é aceito para downloads: {url[:60]}")
+    return url
+
+
 class IntegrityError(RuntimeError):
     """O fornecedor não publicou uma prova de integridade utilizável."""
+
+
+def pick_btbn_asset(assets: list[dict], platform_key: str) -> dict:
+    """Escolhe o maior ramo estável ``nX.Y`` do BtbN para a plataforma."""
+    target, extension = FFMPEG_BTBN_PLATFORMS[platform_key]
+    pattern = re.compile(
+        rf"^ffmpeg-n(\d+)\.(\d+)-latest-{re.escape(target)}-gpl-\1\.\2\.{re.escape(extension)}$"
+    )
+    candidates = []
+    for asset in assets:
+        match = pattern.match(str(asset.get("name") or ""))
+        if match:
+            candidates.append(((int(match.group(1)), int(match.group(2))), asset))
+    if not candidates:
+        raise RuntimeError(f"Nenhuma build estável do FFmpeg para {target} foi publicada.")
+    return max(candidates, key=lambda item: item[0])[1]
+
+
+def pick_deno_release(releases: list[dict], major: int = DENO_SUPPORTED_MAJOR) -> dict:
+    """Maior release estável do Deno dentro da versão maior homologada."""
+    best: tuple[tuple[int, ...], dict] | None = None
+    for release in releases:
+        if release.get("draft") or release.get("prerelease"):
+            continue
+        tag = str(release.get("tag_name") or "").lstrip("v")
+        try:
+            version = tuple(int(part) for part in tag.split(".")[:3])
+        except ValueError:
+            continue
+        if len(version) == 3 and version[0] == major and (best is None or version > best[0]):
+            best = (version, release)
+    if best is None:
+        raise RuntimeError(f"Nenhuma release estável do Deno {major}.x foi encontrada.")
+    return best[1]
 
 
 def _quiet_unlink(path: Path) -> None:
@@ -194,6 +240,7 @@ class ToolManager:
         # motivo para iniciar três processos só para descobrir versões de
         # executáveis que não mudaram desde a última sessão.
         self._state_dirty = False
+        self._http_cache_data: dict | None = None
 
     # ---------------------------------------------------------------- estado
     def _load_state(self) -> dict:
@@ -256,8 +303,7 @@ class ToolManager:
     def _resolve(self, name: str) -> Path:
         local = self.bin_dir / name
         if local.exists():
-            expected = str((self.state.get("tool_sha256") or {}).get(name) or "")
-            if expected and self._sha256(local) != expected:
+            if not self._integrity_ok(name, local):
                 get_logger().error("Integridade local divergente para %s; reinstalação exigida", name)
                 return self.bin_dir / f"{name}.integrity-failed"
             return local
@@ -289,8 +335,9 @@ class ToolManager:
     # ------------------------------------------------------------- utilidades
     @staticmethod
     def _request(url: str, accept: str = "application/vnd.github+json"):
-        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
-        return urllib.request.urlopen(req, timeout=30, context=_verified_ssl_context())
+        req = urllib.request.Request(require_https(url),
+                                     headers={"User-Agent": USER_AGENT, "Accept": accept})
+        return urllib.request.urlopen(req, timeout=30, context=_verified_ssl_context())  # noqa: S310
 
     def _download(self, url: str, dest: Path, progress: ProgressCB, label: str) -> Path:
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -347,6 +394,127 @@ class ToolManager:
         hashes = self.state.setdefault("tool_sha256", {})
         if isinstance(hashes, dict):
             hashes[name] = self._sha256(path)
+            self._remember_verified_stat(name, path)
+
+    def _remember_verified_stat(self, name: str, path: Path) -> None:
+        try:
+            stat = path.stat()
+        except OSError:
+            return
+        verified = self.state.setdefault("tool_sha256_verified", {})
+        if isinstance(verified, dict):
+            verified[name] = {"mtime_ns": stat.st_mtime_ns, "size": stat.st_size,
+                              "at": time.time()}
+            self._state_dirty = True
+
+    def _integrity_ok(self, name: str, path: Path, *, full: bool = False) -> bool:
+        """Confere o binário contra a linha de base gravada na instalação.
+
+        O SHA-256 completo de FFmpeg/ffprobe/Deno soma centenas de MB. Ele só é
+        recalculado quando mtime/tamanho mudam ou a última verificação completa
+        tem mais de ``INTEGRITY_FULL_CHECK_HOURS``; no resto, basta o ``stat``.
+        """
+        expected = str((self.state.get("tool_sha256") or {}).get(name) or "")
+        if not expected:
+            return True  # instalação anterior à 1.7: sem linha de base ainda
+        try:
+            stat = path.stat()
+        except OSError:
+            return False
+        verified = (self.state.get("tool_sha256_verified") or {}).get(name) or {}
+        same_stat = (verified.get("mtime_ns") == stat.st_mtime_ns
+                     and verified.get("size") == stat.st_size)
+        fresh = (time.time() - float(verified.get("at") or 0)) < INTEGRITY_FULL_CHECK_HOURS * 3600
+        if same_stat and fresh and not full:
+            return True
+        if not same_stat or full or not fresh:
+            if self._sha256(path) != expected:
+                return False
+            self._remember_verified_stat(name, path)
+        return True
+
+    def repair_tampered_tools(self, progress: ProgressCB) -> list[str]:
+        """Remove binários adulterados e zera o estado para forçar novo download.
+
+        Antes, a divergência devolvia um caminho inexistente e a preparação
+        terminava em erro genérico — em laço, porque a versão lida do próprio
+        arquivo adulterado coincidia com a tag e nada era baixado de novo.
+        """
+        repaired: list[str] = []
+        groups = {
+            YTDLP_EXE: ("ytdlp", (YTDLP_EXE,)),
+            FFMPEG_EXE: ("ffmpeg", (FFMPEG_EXE, FFPROBE_EXE)),
+            FFPROBE_EXE: ("ffmpeg", (FFMPEG_EXE, FFPROBE_EXE)),
+            DENO_EXE: ("deno", (DENO_EXE,)),
+        }
+        for name, (key, members) in groups.items():
+            path = self.bin_dir / name
+            if not path.exists() or self._integrity_ok(name, path):
+                continue
+            get_logger().error("Binário %s foi alterado fora do aplicativo; reinstalando", name)
+            progress(f"O arquivo {name} foi alterado fora do aplicativo e será baixado novamente…", -1)
+            for member in members:
+                _quiet_unlink(self.bin_dir / member)
+                for bucket in ("tool_sha256", "tool_sha256_verified"):
+                    (self.state.get(bucket) or {}).pop(member, None)
+            self.state.pop(f"{key}_checked_at", None)
+            if key == "ffmpeg":
+                self.state.pop("ffmpeg_stamp", None)
+            cache = self.state.get("tool_version_cache")
+            if isinstance(cache, dict):
+                for member in members:
+                    cache.pop(str((self.bin_dir / member).resolve()), None)
+            self._version_cache.clear()
+            self._state_dirty = True
+            repaired.append(name)
+        return repaired
+
+    # ------------------------------------------------------------ HTTP/ETag
+    def _get_json(self, url: str):
+        """GET na API do GitHub com ``If-None-Match``.
+
+        Respostas 304 não contam no limite anônimo de 60 requisições/hora, que
+        esgota rápido em redes com NAT compartilhado.
+        """
+        cache = self._http_cache()
+        entry = cache.get(url) if isinstance(cache.get(url), dict) else None
+        headers = {"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"}
+        if entry and entry.get("etag"):
+            headers["If-None-Match"] = str(entry["etag"])
+        request = urllib.request.Request(require_https(url), headers=headers)
+        try:
+            with urllib.request.urlopen(  # noqa: S310 - HTTPS garantido acima
+                    request, timeout=30, context=_verified_ssl_context()) as resp:
+                raw = resp.read()
+                etag = resp.headers.get("ETag") or ""
+        except urllib.error.HTTPError as exc:
+            if exc.code == 304 and entry and "body" in entry:
+                return json.loads(entry["body"])
+            raise
+        data = json.loads(raw.decode("utf-8"))
+        if etag:
+            cache[url] = {"etag": etag, "body": raw.decode("utf-8")}
+            self._save_http_cache(cache)
+        return data
+
+    def _http_cache(self) -> dict:
+        if self._http_cache_data is None:
+            try:
+                loaded = json.loads(HTTP_CACHE_PATH.read_text(encoding="utf-8"))
+                self._http_cache_data = loaded if isinstance(loaded, dict) else {}
+            except (OSError, ValueError):
+                self._http_cache_data = {}
+        return self._http_cache_data
+
+    @staticmethod
+    def _save_http_cache(cache: dict) -> None:
+        try:
+            HTTP_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            temporary = HTTP_CACHE_PATH.with_suffix(".tmp")
+            temporary.write_text(json.dumps(cache), encoding="utf-8")
+            temporary.replace(HTTP_CACHE_PATH)
+        except OSError:
+            pass
 
     @staticmethod
     def _extract_zip_member(zf: zipfile.ZipFile, member: str, destination: Path) -> None:
@@ -378,8 +546,7 @@ class ToolManager:
 
     def _latest_ytdlp(self) -> tuple[str, str, dict[str, str]]:
         """Devolve (tag, url_do_exe, {arquivo: sha256})."""
-        with self._request(YTDLP_RELEASE_API) as resp:
-            data = json.load(resp)
+        data = self._get_json(YTDLP_RELEASE_API)
         tag = data.get("tag_name", "")
         assets = {a["name"]: a["browser_download_url"] for a in data.get("assets", [])}
         sums: dict[str, str] = {}
@@ -458,8 +625,7 @@ class ToolManager:
         """Obtém o pacote estático de FFmpeg/ffprobe para a arquitetura atual."""
         machine = platform.machine().lower()
         arch = "arm64" if machine in ("arm64", "aarch64") else "x64"
-        with self._request(MAC_FFMPEG_RELEASE_API) as resp:
-            data = json.load(resp)
+        data = self._get_json(MAC_FFMPEG_RELEASE_API)
         assets = {str(asset.get("name")): asset for asset in data.get("assets", [])}
         name = f"ffmpeg-osx-{arch}.zip"
         if name not in assets:
@@ -534,8 +700,7 @@ class ToolManager:
             return
 
         machine = platform.machine().lower()
-        asset_name = LINUX_FFMPEG_ASSETS.get(machine)
-        if not asset_name:
+        if machine not in FFMPEG_BTBN_PLATFORMS or machine == "win64":
             system_ffmpeg = shutil.which("ffmpeg") if self.allow_system_tools else None
             if system_ffmpeg:
                 progress("FFmpeg do sistema será usado nesta arquitetura", 100)
@@ -547,10 +712,10 @@ class ToolManager:
 
         progress("Consultando a build mais recente do FFmpeg para Linux…", -1)
         try:
-            with self._request(FFMPEG_RELEASE_API) as resp:
-                data = json.load(resp)
-            asset = next(a for a in data["assets"] if a["name"] == asset_name)
-        except (StopIteration, urllib.error.URLError, TimeoutError, OSError, KeyError) as exc:
+            data = self._get_json(FFMPEG_RELEASE_API)
+            asset = pick_btbn_asset(data.get("assets", []), machine)
+            asset_name = str(asset["name"])
+        except (RuntimeError, ValueError, urllib.error.URLError, TimeoutError, OSError, KeyError) as exc:
             if current:
                 progress(f"Sem rede para checar atualização — usando FFmpeg {current}", 100)
                 return
@@ -617,10 +782,9 @@ class ToolManager:
 
         progress("Consultando a build mais recente do FFmpeg…", -1)
         try:
-            with self._request(FFMPEG_RELEASE_API) as resp:
-                data = json.load(resp)
-            asset = next(a for a in data["assets"] if a["name"] == FFMPEG_ASSET)
-        except (StopIteration, urllib.error.URLError, TimeoutError, OSError, KeyError) as exc:
+            data = self._get_json(FFMPEG_RELEASE_API)
+            asset = pick_btbn_asset(data.get("assets", []), "win64")
+        except (RuntimeError, ValueError, urllib.error.URLError, TimeoutError, OSError, KeyError) as exc:
             if current:
                 progress(f"Sem rede para checar atualização — usando FFmpeg {current}", 100)
                 return
@@ -634,7 +798,7 @@ class ToolManager:
             return
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            zip_path = Path(tmpdir) / FFMPEG_ASSET
+            zip_path = Path(tmpdir) / str(asset["name"])
             self._download(asset["browser_download_url"], zip_path, progress, "Baixando FFmpeg")
             progress("Conferindo a integridade do FFmpeg…", -1)
             self.require_sha256(zip_path, self._asset_sha256(asset), "FFmpeg")
@@ -703,16 +867,16 @@ class ToolManager:
         progress("Consultando o runtime JavaScript (Deno)…", -1)
         asset_name = self._deno_asset_name()
         try:
-            with self._request(DENO_RELEASE_API) as resp:
-                data = json.load(resp)
+            releases = self._get_json(DENO_RELEASES_API)
+            data = pick_deno_release(releases if isinstance(releases, list) else [])
             assets = {a["name"]: a for a in data.get("assets", [])}
             asset = assets[asset_name]
-        except (KeyError, ValueError, urllib.error.URLError, TimeoutError, OSError) as exc:
+        except (RuntimeError, KeyError, ValueError, urllib.error.URLError, TimeoutError, OSError) as exc:
             # Isto falhava em silêncio: sem rede, com a API do GitHub limitando
             # requisições ou sem o pacote da plataforma, o Deno simplesmente não
             # era instalado e o YouTube quebrava sem deixar rastro no log.
             get_logger().warning("Deno: não deu para consultar %s (%s: %s); pacote %s",
-                                 DENO_RELEASE_API, type(exc).__name__, exc, asset_name)
+                                 DENO_RELEASES_API, type(exc).__name__, exc, asset_name)
             if current:
                 progress(f"Sem rede para checar o Deno — usando {current}", 100)
                 return
@@ -721,9 +885,6 @@ class ToolManager:
 
         self._mark_checked("deno")
         tag = (data.get("tag_name") or "").lstrip("v")
-        if tag and not tag.startswith("2."):
-            progress(f"Deno {tag} ainda não foi homologado; mantendo a versão 2.x atual.", 100)
-            return
         if current and tag and current == tag:
             progress(f"Deno {current} já está atualizado", 100)
             self._save_state()
@@ -808,6 +969,8 @@ class ToolManager:
         ensure_dirs()
         self.cleanup()
         progress("Preparando o ambiente…", -1)
+        if self.repair_tampered_tools(progress):
+            check_now = True
         self.ensure_ytdlp(progress, check_now)
         self.ensure_ffmpeg(progress, check_now)
         self.ensure_deno(progress, check_now)

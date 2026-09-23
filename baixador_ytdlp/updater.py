@@ -19,7 +19,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .config import APP_ID, APP_VERSION, IS_WINDOWS, UPDATE_DIR
-from .tools import _verified_ssl_context
+from .tools import _verified_ssl_context, require_https
 
 RELEASE_API = "https://api.github.com/repos/NoThinkpls/baixador-ytdlp/releases/latest"
 USER_AGENT = f"{APP_ID}/{APP_VERSION} update-check"
@@ -142,7 +142,8 @@ class AppUpdater:
         partial = UPDATE_DIR / f".{release.installer_name}.part"
 
         try:
-            request = Request(release.installer_url, headers={"User-Agent": USER_AGENT})
+            request = Request(require_https(release.installer_url),
+                              headers={"User-Agent": USER_AGENT})
             with urlopen(request, timeout=45, context=_verified_ssl_context()) as response, \
                     partial.open("wb") as output:
                 header = response.headers.get("Content-Length", "0")
@@ -156,7 +157,7 @@ class AppUpdater:
                     received += len(block)
                     if progress:
                         progress(received, total)
-        except (HTTPError, URLError, OSError, TimeoutError) as exc:
+        except (HTTPError, URLError, OSError, TimeoutError, ValueError) as exc:
             partial.unlink(missing_ok=True)
             raise UpdateError("Não foi possível baixar a atualização. Tente novamente.") from exc
 
@@ -222,8 +223,8 @@ class AppUpdater:
     @staticmethod
     def _request_text(url: str) -> str:
         try:
-            request = Request(url, headers={"User-Agent": USER_AGENT})
+            request = Request(require_https(url), headers={"User-Agent": USER_AGENT})
             with urlopen(request, timeout=20, context=_verified_ssl_context()) as response:
                 return response.read().decode("utf-8")
-        except (HTTPError, URLError, UnicodeDecodeError, TimeoutError) as exc:
+        except (HTTPError, URLError, UnicodeDecodeError, TimeoutError, ValueError) as exc:
             raise UpdateError("Não foi possível consultar novas versões agora.") from exc

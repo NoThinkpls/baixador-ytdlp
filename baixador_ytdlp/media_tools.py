@@ -6,6 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from .processes import CREATE_NO_WINDOW
 from .tools import Toolchain
 
 TIME_RE = re.compile(r"^(?:\d{1,2}:)?(?:[0-5]?\d:)?[0-5]?\d(?:\.\d+)?$")
@@ -23,11 +24,20 @@ class MediaToolOptions:
     start: str = ""
     end: str = ""
     subtitles: Path | None = None
+    subtitle_language: str = ""   # ISO 639-1 do Whisper (pt, en…); vazio = indefinido
 
 
-def default_destination(source: Path, operation: str) -> Path:
+ISO_639_2 = {"pt": "por", "en": "eng", "es": "spa", "fr": "fra", "de": "deu",
+             "it": "ita", "ja": "jpn", "ko": "kor", "zh": "zho", "ru": "rus",
+             "nl": "nld", "pl": "pol", "tr": "tur", "ar": "ara", "hi": "hin"}
+
+
+def default_destination(source: Path, operation: str, subtitles: Path | None = None) -> Path:
     if operation == "soft_sub":
-        extension = ".mp4" if source.suffix.casefold() in {".mp4", ".m4v", ".mov"} else ".mkv"
+        ass = bool(subtitles and subtitles.suffix.casefold() in {".ass", ".ssa"})
+        # Legenda ASS (inclusive karaokê) vai para MKV, que preserva o estilo.
+        extension = ".mp4" if (source.suffix.casefold() in {".mp4", ".m4v", ".mov"}
+                               and not ass) else ".mkv"
         return available_destination(source.with_name(f"{source.stem}_legendado{extension}"))
     suffixes = {
         "trim": ("_trecho", ".mkv"),
@@ -72,6 +82,7 @@ def media_duration(source: Path, toolchain: Toolchain) -> float:
             text=True,
             timeout=30,
             check=False,
+            creationflags=CREATE_NO_WINDOW,  # sem janela de console piscando no Windows
         )
         return max(0.0, float(result.stdout.strip())) if result.returncode == 0 else 0.0
     except (OSError, subprocess.SubprocessError, ValueError):
@@ -144,11 +155,26 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain) -> list[str]:
             "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
         ]
     elif options.operation == "soft_sub":
-        command += ["-i", str(options.subtitles), "-map", "0", "-map", "1:0", "-c", "copy"]
-        if options.destination.suffix.casefold() == ".mp4":
+        # A legenda nova entra como PRIMEIRA faixa de legenda (s:0), para que o
+        # idioma e a marcação "padrão" apontem para ela e não para uma antiga.
+        mp4 = options.destination.suffix.casefold() in {".mp4", ".m4v", ".mov"}
+        command += ["-i", str(options.subtitles),
+                    "-map", "0:v?", "-map", "0:a?", "-map", "1:0", "-map", "0:s?"]
+        if not mp4:
+            command += ["-map", "0:t?"]  # fontes/capas anexadas só existem em MKV
+        command += ["-c", "copy"]
+        subtitle_suffix = options.subtitles.suffix.casefold() if options.subtitles else ""
+        if mp4:
+            # MP4 só aceita texto simples (mov_text): estilo ASS/karaokê se perde.
             command += ["-c:s", "mov_text", "-movflags", "+faststart"]
+        elif subtitle_suffix in {".ass", ".ssa", ".srt"}:
+            command += ["-c:s:0", "copy"]   # MKV guarda ASS nativo: karaokê preservado
         else:
-            command += ["-c:s", "srt"]
+            command += ["-c:s:0", "srt"]    # VTT/JSON/TXT viram SRT dentro do MKV
+        language = ISO_639_2.get((options.subtitle_language or "").casefold(), "und")
+        command += ["-metadata:s:s:0", f"language={language}",
+                    "-metadata:s:s:0", "title=Whisper",
+                    "-disposition:s:0", "default"]
     else:
         raise MediaToolError("Ferramenta de mídia desconhecida.")
 

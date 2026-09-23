@@ -46,7 +46,12 @@ class TranscriptionPage(QWidget):
         self.toolchain = None
         self.worker: TranscriptionWorker | None = None
         self.mux_worker: MediaToolWorker | None = None
-        self._pending: deque[tuple[str, bool]] = deque()
+        # Cada item guarda as próprias opções no momento em que entra na fila.
+        # Antes a fila relia o formulário ao começar e, na conclusão, pegava a
+        # origem do campo da tela — mexer na aba durante a fila podia embutir a
+        # legenda no vídeo errado.
+        self._pending: deque[tuple[TranscriptionOptions, bool]] = deque()
+        self._current_opts: TranscriptionOptions | None = None
         self._current_embed = False
         self._paused = False
         self._build_ui()
@@ -207,7 +212,41 @@ class TranscriptionPage(QWidget):
             "Filtro anti-alucinação agressivo",
             "Descarta trechos repetidos que o modelo inventa no silêncio.",
             self.aggressive, group))
+
+        self.batched = Switch(group)
+        self.batched.setChecked(self.cfg.transcription_batched)
+        self.batched.checkedChanged.connect(
+            lambda enabled: self._save("transcription_batched", bool(enabled)))
+        group.add_row(SettingRow(
+            "Modo rápido na GPU NVIDIA",
+            "Processa vários trechos ao mesmo tempo. Acelera arquivos longos; "
+            "ignorado na CPU e no Mac.",
+            self.batched, group))
+
+        self.low_vram = Switch(group)
+        self.low_vram.setChecked(self.cfg.transcription_low_vram)
+        self.low_vram.checkedChanged.connect(
+            lambda enabled: self._save("transcription_low_vram", bool(enabled)))
+        group.add_row(SettingRow(
+            "Economizar memória de vídeo",
+            "Usa int8_float16 na GPU: cabe o Large v3 em placas de 4–6 GB com perda pequena.",
+            self.low_vram, group))
+
+        self.model.currentIndexChanged.connect(self._sync_task_availability)
+        self._sync_task_availability()
         return group
+
+    def _sync_task_availability(self, *_args) -> None:
+        """O Turbo não foi treinado para tradução: a opção fica indisponível com ele."""
+        turbo = self.model.currentData() == "large-v3-turbo"
+        model = self.task.model()
+        for index in range(self.task.count()):
+            if self.task.itemData(index) == "translate" and hasattr(model, "item"):
+                item = model.item(index)
+                if item is not None:
+                    item.setEnabled(not turbo)
+        if turbo and self.task.currentData() == "translate":
+            self.task.setCurrentIndex(max(0, self.task.findData("transcribe")))
 
     def _status_card(self) -> Card:
         card = Card(self, padding=(16, 14, 16, 16), spacing=10)
@@ -229,7 +268,23 @@ class TranscriptionPage(QWidget):
 
         self.progress_label = Muted("Pronto para transcrever", card)
         card.body.addWidget(self.progress_label)
+        self.queue_label = Muted("", card)
+        self.queue_label.setAccessibleName("Itens aguardando na fila de legendas")
+        self.queue_label.hide()
+        card.body.addWidget(self.queue_label)
         return card
+
+    def _refresh_queue_label(self) -> None:
+        if not hasattr(self, "queue_label"):
+            return
+        count = len(self._pending)
+        if not count:
+            self.queue_label.hide()
+            return
+        names = ", ".join(opts.media_path.name for opts, _embed in list(self._pending)[:3])
+        more = f" e mais {count - 3}" if count > 3 else ""
+        self.queue_label.setText(f"Na fila ({count}): {names}{more}")
+        self.queue_label.show()
 
     def _log_view(self) -> LogView:
         self.log = LogView("O andamento da transcrição aparecerá aqui.", self)
@@ -360,57 +415,83 @@ class TranscriptionPage(QWidget):
 
     def enqueue_media(self, path: str, embed: bool = False) -> None:
         """Enfileira uma mídia vinda de um download sem interromper a atual."""
-        request = (path, bool(embed))
-        if ((self.worker and self.worker.isRunning())
-                or (self.mux_worker and self.mux_worker.isRunning())):
-            self._pending.append(request)
-            self._status(f"Adicionado à fila de transcrição: {Path(path).name}")
+        opts = self._build_options(Path(path), automatic=True)
+        if opts is None:
             return
-        self._start_request(*request)
+        self._enqueue(opts, bool(embed))
 
-    def _start_request(self, path: str, embed: bool) -> None:
-        self._current_embed = bool(embed)
-        self.set_media(path)
-        self.start(automatic=True)
+    def _enqueue(self, opts: TranscriptionOptions, embed: bool) -> None:
+        if self._busy():
+            self._pending.append((opts, embed))
+            self._status(f"Adicionado à fila de transcrição: {opts.media_path.name}")
+            self._refresh_queue_label()
+            return
+        self._run(opts, embed)
 
-    def start(self, automatic: bool = False) -> None:
-        if self.worker and self.worker.isRunning():
-            return
-        if not automatic:
-            self._current_embed = False
-        if not self.toolchain:
-            self._warn("As dependências ainda estão sendo verificadas.")
-            return
-        media = Path(self.media_edit.text().strip())
+    def _busy(self) -> bool:
+        return bool((self.worker and self.worker.isRunning())
+                    or (self.mux_worker and self.mux_worker.isRunning()))
+
+    def _build_options(self, media: Path, *, automatic: bool = False) -> TranscriptionOptions | None:
+        """Captura as escolhas do formulário AGORA; mudanças posteriores não afetam o item."""
         if not media.is_file():
             self._warn("Selecione um arquivo de áudio ou vídeo existente.")
-            return
-        if self.task.currentData() == "translate" and self.model.currentData() == "large-v3-turbo":
+            return None
+        task = self.task.currentData()
+        if task == "translate" and self.model.currentData() == "large-v3-turbo":
             self._warn("O Large v3 Turbo não foi treinado para tradução. Escolha o Large v3.")
-            return
+            return None
         fmt = self.output_format.currentData()
-        output = available_destination(Path(
-            self.output_edit.text().strip() or str(media.with_suffix(FORMATS[fmt][1]))
-        ).with_suffix(FORMATS[fmt][1]))
-        self.output_edit.setText(str(output))
-        opts = TranscriptionOptions(
+        extension = FORMATS[fmt][1]
+        typed = "" if automatic else self.output_edit.text().strip()
+        output = available_destination(Path(typed or str(media.with_suffix(extension)))
+                                       .with_suffix(extension))
+        return TranscriptionOptions(
             media_path=media,
             output_path=output,
             language=self.language.currentData(),
             model_size=self.model.currentData(),
             output_format=fmt,
             aggressive_filter=self.aggressive.isChecked(),
-            task=self.task.currentData(),
+            task=task,
             initial_prompt=self.initial_prompt.text().strip(),
             max_chars_per_line=self.max_chars.value(),
             min_duration=self.cfg.transcription_min_duration,
             max_duration=self.cfg.transcription_max_duration,
+            batched=bool(self.cfg.transcription_batched),
+            low_vram=bool(self.cfg.transcription_low_vram),
         )
+
+    def start(self, automatic: bool = False) -> None:
+        if not self.toolchain:
+            self._warn("As dependências ainda estão sendo verificadas.")
+            return
+        opts = self._build_options(Path(self.media_edit.text().strip()), automatic=automatic)
+        if opts is None:
+            return
+        if self._busy():
+            self._pending.append((opts, False))
+            self._refresh_queue_label()
+            Toast.info("Fila de legendas", f"{opts.media_path.name} vai começar em seguida.",
+                       parent=self.window(), duration=4000)
+            return
+        self._run(opts, False)
+
+    def _run(self, opts: TranscriptionOptions, embed: bool) -> None:
+        if not self.toolchain:
+            self._pending.appendleft((opts, embed))
+            return
+        self._current_opts = opts
+        self._current_embed = bool(embed)
+        # Só exibe o item atual; a execução nunca mais relê estes campos.
+        self.media_edit.setText(str(opts.media_path))
+        self.output_edit.setText(str(opts.output_path))
+        self._refresh_queue_label()
         self.log.clear()
         self.progress.setValue(0)
         self.taskbar_progress.emit(0.0)
         self.progress_label.setText("Iniciando…")
-        self.start_btn.setEnabled(False)
+        self.start_btn.setEnabled(True)
         self.pause_btn.setEnabled(True)
         self.cancel_btn.setEnabled(True)
         worker = TranscriptionWorker(opts, self.toolchain, self)
@@ -422,7 +503,7 @@ class TranscriptionPage(QWidget):
         worker.failed.connect(self._failed)
         worker.finished.connect(self._clear_finished_worker)
         worker.finished.connect(worker.deleteLater)
-        log_event("Transcrição solicitada pela interface: %s", media)
+        log_event("Transcrição iniciada: %s", opts.media_path)
         worker.start()
 
     def _status(self, message: str) -> None:
@@ -453,7 +534,7 @@ class TranscriptionPage(QWidget):
 
     def _done(self, path: str) -> None:
         self._finish_controls()
-        source = self.media_edit.text().strip()
+        source = str(self._current_opts.media_path) if self._current_opts else ""
         self.transcription_finished.emit(path, source)
         Toast.success("Transcrição concluída", f"Legenda salva em {Path(path).name}",
                       parent=self.window(), duration=6000)
@@ -486,13 +567,17 @@ class TranscriptionPage(QWidget):
             self._status("Legenda criada, mas não foi possível iniciar a incorporação automática.")
             self._current_embed = False
             return
-        destination = default_destination(media, "soft_sub")
+        destination = default_destination(media, "soft_sub", caption)
+        opts = self._current_opts
+        language = ("en" if opts and opts.task == "translate"
+                    else (opts.language if opts and opts.language != "auto" else ""))
         worker = MediaToolWorker(
             MediaToolOptions(
                 source=media,
                 destination=destination,
                 operation="soft_sub",
                 subtitles=caption,
+                subtitle_language=language,
             ),
             self.toolchain,
             self,
@@ -538,8 +623,8 @@ class TranscriptionPage(QWidget):
                 or (self.mux_worker and self.mux_worker.isRunning())
                 or not self._pending):
             return
-        path, embed = self._pending.popleft()
-        self._start_request(path, embed)
+        opts, embed = self._pending.popleft()
+        self._run(opts, embed)
 
     def _finish_controls(self) -> None:
         self.start_btn.setEnabled(True)

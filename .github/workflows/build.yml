@@ -44,6 +44,27 @@ jobs:
       - name: Verificar a qualidade do código
         run: python -m ruff check .
 
+      - name: Teste de fumaça da janela real (bordas e repintura)
+        # O offscreen não tem DWM nem moldura; aqui a janela é composta de verdade.
+        run: python scripts/window_smoke.py --screenshot window-smoke.png
+
+      - name: Guardar a captura do teste de fumaça
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: window-smoke-${{ github.run_number }}
+          path: window-smoke.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Inventário real do ambiente de build (SBOM e licenças)
+        run: |
+          python -m pip install -r requirements-security.txt
+          New-Item -ItemType Directory -Force dist\installer | Out-Null
+          python -m cyclonedx_py environment --output-format JSON --output-file dist\installer\sbom-windows.cdx.json
+          python -m piplicenses --format=markdown --with-urls --with-license-file --no-license-path `
+            --output-file THIRD_PARTY_LICENSES.md
+
       - name: Definir a versão
         id: ver
         run: |
@@ -150,6 +171,7 @@ jobs:
             dist/installer/*.exe
             dist/installer/*.zip
             dist/installer/SHA256SUMS.txt
+            dist/installer/sbom-windows.cdx.json
           retention-days: 30
 
   macos:
@@ -247,14 +269,15 @@ jobs:
           app="dist/baixador-ytdlp.app"
           archive="dist/installer/BaixadorYtdlp-${{ steps.ver.outputs.version }}-macos-arm64.zip"
           dmg="dist/installer/BaixadorYtdlp-${{ steps.ver.outputs.version }}-macos-arm64.dmg"
-          portable_root="build/portable"
-          rm -rf "$portable_root"
+          # O marcador fica AO LADO do .app: gravar dentro do pacote quebra a
+          # assinatura e falha sob App Translocation (volume somente leitura).
+          portable_root="build/portable/baixador-ytdlp-portable"
+          rm -rf "build/portable"
           mkdir -p "$portable_root"
           cp -R "$app" "$portable_root/baixador-ytdlp.app"
-          printf 'Dados mantidos neste aplicativo.\n' \
-            > "$portable_root/baixador-ytdlp.app/Contents/MacOS/portable.txt"
-          ditto -c -k --sequesterRsrc --keepParent \
-            "$portable_root/baixador-ytdlp.app" "$archive"
+          printf 'Mova esta pasta inteira para um local gravável antes de abrir.\n' \
+            > "$portable_root/portable.txt"
+          ditto -c -k --sequesterRsrc --keepParent "$portable_root" "$archive"
 
           # O DMG entrega o padrão esperado no macOS: abrir e arrastar o app para Aplicativos.
           staging="build/dmg-root"
@@ -482,8 +505,10 @@ jobs:
         shell: bash
         run: |
           python -m pip install -r requirements-security.txt
-          python -m cyclonedx_py requirements requirements.txt \
-            --output-format JSON --output-file release-assets/sbom-windows.cdx.json
+          # O Windows já traz o SBOM do ambiente real de build; os demais ainda
+          # descrevem os requisitos declarados.
+          test -f release-assets/sbom-windows.cdx.json || python -m cyclonedx_py requirements \
+            requirements.txt --output-format JSON --output-file release-assets/sbom-windows.cdx.json
           python -m cyclonedx_py requirements requirements-macos.txt \
             --output-format JSON --output-file release-assets/sbom-macos.cdx.json
           python -m cyclonedx_py requirements requirements-linux.txt \

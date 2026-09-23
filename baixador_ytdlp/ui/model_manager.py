@@ -76,6 +76,15 @@ class ModelManagerDialog(QDialog):
             self._remove_buttons[model] = remove
         root.addWidget(group, 1)
 
+        # Sobras do formato de cache anterior à 1.8 (ver migrate_legacy_model_cache).
+        legacy_line = QHBoxLayout()
+        self.legacy_label = Muted("", self)
+        self.legacy_button = Button("Remover", "trash", "ghost", self)
+        self.legacy_button.clicked.connect(self._remove_legacy)
+        legacy_line.addWidget(self.legacy_label, 1)
+        legacy_line.addWidget(self.legacy_button)
+        root.addLayout(legacy_line)
+
         self.progress = ProgressBar(self)
         self.progress.hide()
         self.status = Muted("", self)
@@ -89,7 +98,20 @@ class ModelManagerDialog(QDialog):
         actions.addWidget(self.close_button)
         root.addLayout(actions)
 
+    def _remove_legacy(self) -> None:
+        from ..transcription import remove_legacy_model_cache
+
+        freed = remove_legacy_model_cache()
+        self.status.setText(f"{_size_label(freed)} liberados de modelos antigos.")
+        self._refresh()
+
     def _refresh(self) -> None:
+        from ..transcription import legacy_model_cache_size
+
+        legacy = legacy_model_cache_size()
+        self.legacy_label.setText(f"Modelos de versões anteriores: {_size_label(legacy)}")
+        self.legacy_label.setVisible(legacy > 0)
+        self.legacy_button.setVisible(legacy > 0)
         for model in MODEL_ORDER:
             cached = cached_model_path(model, mlx=self.mlx) is not None
             size = model_cache_size(model, mlx=self.mlx) if cached else 0

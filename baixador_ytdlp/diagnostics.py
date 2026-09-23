@@ -33,6 +33,12 @@ class RedactingFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.msg = redact_sensitive(record.getMessage())
         record.args = ()
+        if record.exc_info:
+            # Tracebacks de URLError/HTTPError trazem a URL completa; formata
+            # aqui para que também passem pela redação.
+            record.exc_text = redact_sensitive(
+                "".join(traceback.format_exception(*record.exc_info)).rstrip())
+            record.exc_info = None
         return True
 
 

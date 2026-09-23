@@ -6,6 +6,8 @@ cartão flutuante por opção, que empilhava dezenas de retângulos na tela.
 """
 from __future__ import annotations
 
+import re
+
 import subprocess
 from pathlib import Path
 
@@ -13,7 +15,7 @@ from PySide6.QtCore import QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QVBoxLayout, QWidget
 
-from ..config import Settings
+from ..config import APP_VERSION, Settings
 from ..cookies import EXPORT_INSTRUCTIONS, cookie_age_days, import_cookie_file
 from ..filename_preview import render_filename_preview
 from ..gpu import GPU_ENCODER_LABELS, GpuInfo
@@ -175,7 +177,9 @@ class SettingsPage(QWidget):
         self._combo_row("Tema", "Claro, escuro ou o que o sistema estiver usando.",
                         THEMES, "theme", on_change=self._apply_theme)
         self._switch_row("Efeito Mica na janela",
-                         "Fundo translúcido do Windows 11. Requer reiniciar o app.", "mica")
+                         "Experimental. As superfícies do app são opacas, então o material quase "
+                         "não aparece; mantenha desligado se notar bordas claras. Requer reiniciar.",
+                         "mica")
         self._switch_row("Detectar link na área de transferência",
                          "Preenche o campo sozinho quando você volta para a janela.",
                          "clipboard_watch")
@@ -218,10 +222,6 @@ class SettingsPage(QWidget):
                          "quando você confirmar no aviso inferior.", "auto_update")
         self._spin_row("Intervalo entre checagens de atualização (horas)",
                        "Use 0 para consultar em toda abertura.", "update_check_hours", 0, 720)
-        self._spin_row("Intervalo entre checagens do legendador (horas)",
-                       "Dentro desse prazo, e estando tudo na versão certa, a abertura pula a "
-                       "consulta ao pip — é o que mais pesa na inicialização.",
-                       "runtime_check_hours", 0, 720)
         self._switch_row(
             "Usar ferramentas instaladas no sistema",
             "Permite procurar yt-dlp e FFmpeg no PATH quando a cópia verificada do app não existe. "
@@ -374,7 +374,9 @@ class SettingsPage(QWidget):
 
     def _dependencies_row(self) -> None:
         row, column = self._custom_row(
-            "yt-dlp e FFmpeg", "Baixados em runtime a partir das fontes oficiais.")
+            "Componentes",
+            "yt-dlp, FFmpeg e Deno vêm das fontes oficiais com SHA-256 conferido; "
+            "o motor do Whisper acompanha o instalador.")
         self.versions = Muted("—", row)
         line = QHBoxLayout()
         line.setSpacing(12)
@@ -389,8 +391,11 @@ class SettingsPage(QWidget):
         row, column = self._custom_row(
             "Nova versão do aplicativo",
             "Consulta as Releases do GitHub e avisa na faixa inferior da janela.")
+        # Mesmo arranjo da linha "Componentes": texto à esquerda, botão à direita
+        # na mesma altura — antes o botão descia sozinho e criava um vão.
         line = QHBoxLayout()
-        line.addStretch(1)
+        line.setSpacing(12)
+        line.addWidget(Muted(f"Versão instalada: {APP_VERSION}", row), 1)
         button = PrimaryButton("Verificar agora", "update", row)
         button.clicked.connect(self.app_update_requested.emit)
         line.addWidget(button)
@@ -472,15 +477,15 @@ class SettingsPage(QWidget):
     def _import_cookies_file(self) -> None:
         source = Path(self.cookies_edit.text().strip())
         try:
-            destination = import_cookie_file(source)
+            destination, warning = import_cookie_file(source)
         except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
             self._set_status(f"Não foi possível proteger a cópia: {exc}", ok=False)
             return
         self.cookies_edit.setText(str(destination))
         self._set_cookies_file(str(destination))
         self._set_status(
-            "Cópia privada criada. Você já pode apagar o original da pasta Downloads.",
-            ok=True,
+            warning or "Cópia privada criada. Você já pode apagar o original da pasta Downloads.",
+            ok=not warning,
         )
 
     def _refresh_cookies_status(self) -> None:
@@ -564,8 +569,18 @@ class SettingsPage(QWidget):
             self.cfg.save()
         super().hideEvent(event)
 
+    @staticmethod
+    def friendly_ffmpeg_version(version: str) -> str:
+        """``N-126716-g3faf…-20260920`` → ``build de desenvolvimento (20/09/2026)``."""
+        match = re.match(r"^N-\d+-g[0-9a-f]+-(\d{4})(\d{2})(\d{2})$", version or "")
+        if match:
+            year, month, day = match.groups()
+            return f"build de desenvolvimento ({day}/{month}/{year})"
+        match = re.match(r"^n?(\d+\.\d+(?:\.\d+)?)", version or "")
+        return match.group(1) if match else (version or "—")
+
     def set_versions(self, ytdlp: str, ffmpeg: str, transcription_runtime: str = "") -> None:
-        text = f"yt-dlp {ytdlp or '—'} · FFmpeg {ffmpeg or '—'}"
+        text = f"yt-dlp {ytdlp or '—'} · FFmpeg {self.friendly_ffmpeg_version(ffmpeg)}"
         if transcription_runtime:
             text += f"\n{transcription_runtime}"
         self.versions.setText(text)

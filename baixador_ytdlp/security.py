@@ -13,8 +13,10 @@ _SENSITIVE_QUERY_KEYS = (
 _QUERY_RE = re.compile(
     rf"(?i)([?&](?:{'|'.join(map(re.escape, _SENSITIVE_QUERY_KEYS))})=)[^&#\s]+"
 )
-_PROXY_RE = re.compile(r"(?i)(--proxy\s+\S*?://)[^:@/\s]+:[^@/\s]+@")
-_URL_CREDENTIAL_RE = re.compile(r"(?i)(https?://)[^:@/\s]+:[^@/\s]+@")
+# A senha pode conter "/" ou "@": o usuário/senha vai até o ÚLTIMO "@" antes
+# do host (``[^\s'"]*@`` é guloso até ele).
+_PROXY_RE = re.compile(r"(?i)(--proxy\s+['\"]?[a-z0-9+.-]+://)[^\s'\"]*@")
+_URL_CREDENTIAL_RE = re.compile(r"(?i)((?:https?|socks[45]h?)://)[^\s/'\"@]+(?::[^\s'\"]*)?@")
 _COOKIE_RE = re.compile(r"(?i)(--cookies(?:-from-browser)?\s+)\S+")
 _HEADER_RE = re.compile(r"(?i)(--(?:add-)?headers?\s+)\S+")
 _INLINE_SECRET_RE = re.compile(

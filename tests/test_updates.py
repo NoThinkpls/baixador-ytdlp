@@ -1,13 +1,14 @@
 """Regressões para as checagens manuais de componentes e do aplicativo."""
 from __future__ import annotations
 
+import sys
 import tempfile
 import unittest
-from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from baixador_ytdlp.tools import DENO_EXE, FFMPEG_ASSET, FFMPEG_EXE, ToolManager
+from baixador_ytdlp.tools import (DENO_EXE, FFMPEG_EXE, ToolManager, pick_btbn_asset,
+                                  pick_deno_release)
 from baixador_ytdlp.updater import AppUpdater
 
 
@@ -57,20 +58,19 @@ class ToolCheckTests(unittest.TestCase):
             manager = ToolManager(bin_dir=Path(tmp))
             (Path(tmp) / FFMPEG_EXE).touch()
             asset = {
-                "name": FFMPEG_ASSET,
+                "name": "ffmpeg-n8.1-latest-win64-gpl-8.1.zip",
                 "id": 99,
                 "updated_at": "2026-09-05T00:00:00Z",
                 "browser_download_url": "https://example.invalid/ffmpeg.zip",
             }
             manager.local_ffmpeg_version = Mock(return_value="git-current")
-            manager._request = Mock(return_value=nullcontext(None))
+            manager._get_json = Mock(return_value={"assets": [asset]})
             manager._download = Mock(side_effect=AssertionError("não deveria baixar"))
             manager._save_state = Mock()
             manager.state["ffmpeg_stamp"] = "99:2026-09-05T00:00:00Z"
 
             with patch("baixador_ytdlp.tools.IS_WINDOWS", True), \
-                    patch("baixador_ytdlp.tools.sys.platform", "win32"), \
-                    patch("baixador_ytdlp.tools.json.load", return_value={"assets": [asset]}):
+                    patch("baixador_ytdlp.tools.sys.platform", "win32"):
                 manager.ensure_ffmpeg(Mock(), check_now=True)
 
             manager._download.assert_not_called()
@@ -81,7 +81,6 @@ class ToolCheckTests(unittest.TestCase):
             (Path(tmp) / DENO_EXE).touch()
             asset_name = manager._deno_asset_name()
             manager.local_deno_version = Mock(return_value="2.3.0")
-            manager._request = Mock(return_value=nullcontext(None))
             manager._download = Mock(side_effect=AssertionError("não deveria baixar"))
             manager._save_state = Mock()
             payload = {
@@ -90,10 +89,65 @@ class ToolCheckTests(unittest.TestCase):
                             "browser_download_url": "https://example.invalid/deno.zip"}],
             }
 
-            with patch("baixador_ytdlp.tools.json.load", return_value=payload):
-                manager.ensure_deno(Mock(), check_now=True)
+            manager._get_json = Mock(return_value=[payload])
+            manager.ensure_deno(Mock(), check_now=True)
 
             manager._download.assert_not_called()
+
+
+class ReleaseSelectionTests(unittest.TestCase):
+    def test_ffmpeg_picks_highest_stable_branch(self) -> None:
+        names = [
+            "ffmpeg-master-latest-win64-gpl.zip",
+            "ffmpeg-n8.1-latest-win64-gpl-8.1.zip",
+            "ffmpeg-n9.0-latest-win64-gpl-9.0.zip",
+            "ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip",
+            "ffmpeg-n9.0-latest-linux64-gpl-9.0.tar.xz",
+        ]
+        assets = [{"name": name} for name in names]
+        self.assertEqual(pick_btbn_asset(assets, "win64")["name"],
+                         "ffmpeg-n9.0-latest-win64-gpl-9.0.zip")
+        self.assertEqual(pick_btbn_asset(assets, "x86_64")["name"],
+                         "ffmpeg-n9.0-latest-linux64-gpl-9.0.tar.xz")
+
+    def test_ffmpeg_without_stable_branch_is_an_error(self) -> None:
+        with self.assertRaises(RuntimeError):
+            pick_btbn_asset([{"name": "ffmpeg-master-latest-win64-gpl.zip"}], "win64")
+
+    def test_deno_keeps_latest_supported_major(self) -> None:
+        releases = [{"tag_name": "v3.0.0"}, {"tag_name": "v2.9.7"},
+                    {"tag_name": "v2.10.1"}, {"tag_name": "v2.11.0", "prerelease": True}]
+        self.assertEqual(pick_deno_release(releases)["tag_name"], "v2.10.1")
+
+
+class IntegrityRepairTests(unittest.TestCase):
+    def test_tampered_binary_is_removed_and_forces_download(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binary = root / ("yt-dlp.exe" if sys.platform.startswith("win") else "yt-dlp")
+            binary.write_bytes(b"original")
+            with patch("baixador_ytdlp.tools.STATE_PATH", root / "state.json"):
+                manager = ToolManager(bin_dir=root)
+                manager._record_integrity(binary.name, binary)
+                manager.state["ytdlp_checked_at"] = 1e12
+                binary.write_bytes(b"alterado")
+                messages = []
+                repaired = manager.repair_tampered_tools(lambda msg, _pct: messages.append(msg))
+            self.assertEqual(repaired, [binary.name])
+            self.assertFalse(binary.exists())
+            self.assertNotIn("ytdlp_checked_at", manager.state)
+            self.assertIn("alterado fora do aplicativo", messages[0])
+
+    def test_unchanged_binary_skips_full_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binary = root / "deno"
+            binary.write_bytes(b"x" * 1024)
+            with patch("baixador_ytdlp.tools.STATE_PATH", root / "state.json"):
+                manager = ToolManager(bin_dir=root)
+                manager._record_integrity("deno", binary)
+                with patch.object(ToolManager, "_sha256", side_effect=AssertionError("hash")):
+                    self.assertTrue(manager._integrity_ok("deno", binary))
 
 
 class AppUpdateTests(unittest.TestCase):

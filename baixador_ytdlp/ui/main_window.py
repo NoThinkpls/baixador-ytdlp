@@ -5,7 +5,7 @@ import re
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QEvent, Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, QRect, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QGuiApplication, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSizePolicy, QSystemTrayIcon
 
@@ -108,15 +108,11 @@ class MainWindow(AppShell):
         self.set_brand(APP_NAME, APP_VERSION, icon)
         if self.cfg.mica and sys.platform.startswith("win"):
             self.setMicaEffectEnabled(True)
-        self._enable_windows_resize_style()
-        if self.cfg.window_geometry:
-            try:
-                geometry = QByteArray.fromBase64(self.cfg.window_geometry.encode("ascii"))
-                self.restoreGeometry(geometry)
-            except Exception:
-                pass
-        if self.cfg.window_maximized:
-            self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
+        # A borda redimensionável e a geometria salva só são aplicadas depois
+        # que o qframelesswindow termina o HWND (ver _apply_native_window_integration).
+        # Mexer na janela nativa antes do show() mudava a área cliente depois da
+        # primeira pintura e deixava faixas claras nas bordas até algo repintar.
+        self._geometry_restored = False
 
         # No modo automático, seguir a troca de tema do sistema sem reabrir o app.
         hints = QGuiApplication.styleHints()
@@ -136,9 +132,62 @@ class MainWindow(AppShell):
             QTimer.singleShot(0, self._apply_native_window_integration)
 
     def _apply_native_window_integration(self) -> None:
-        """Restaura borda e ícone depois que o qframelesswindow cria o HWND."""
+        """Restaura borda, ícone e geometria depois que o qframelesswindow cria o HWND."""
         self._enable_windows_resize_style()
         self.taskbar.apply_window_icon(int(self.winId()), self._icon_path)
+        if not self._geometry_restored:
+            self._geometry_restored = True
+            self._restore_saved_geometry()
+            from .. import config as app_config
+            if app_config.PORTABLE_FALLBACK_REASON:
+                QTimer.singleShot(900, lambda: Toast.warning(
+                    "Modo portable indisponível", app_config.PORTABLE_FALLBACK_REASON,
+                    parent=self, duration=9000))
+            handle = self.windowHandle()
+            if handle is not None:
+                handle.screenChanged.connect(
+                    lambda _screen: QTimer.singleShot(0, self._force_full_redraw))
+        QTimer.singleShot(0, self._force_full_redraw)
+
+    def _restore_saved_geometry(self) -> None:
+        """Restaura posição/tamanho próprios, validados contra os monitores atuais."""
+        rect = list(self.cfg.window_rect or [])
+        if len(rect) == 4:
+            try:
+                x, y, width, height = (int(value) for value in rect)
+            except (TypeError, ValueError):
+                x = y = width = height = 0
+            target = QRect(x, y, max(width, self.minimumWidth()),
+                           max(height, self.minimumHeight()))
+            # O monitor onde a janela estava pode não existir mais.
+            visible = any(
+                screen.availableGeometry().intersects(target.adjusted(40, 40, -40, -40))
+                for screen in QGuiApplication.screens()
+            )
+            if width > 0 and height > 0 and visible:
+                self.setGeometry(target)
+        if self.cfg.window_maximized:
+            self.showMaximized()
+
+    def _force_full_redraw(self) -> None:
+        """Reenvia a janela inteira ao compositor após mudança de moldura/estado.
+
+        Sem isto, a faixa exposta quando o WM_NCCALCSIZE muda a área cliente
+        continuava mostrando o fundo do DWM até o mouse passar por cima.
+        """
+        if sys.platform.startswith("win"):
+            try:
+                import ctypes
+
+                rdw_invalidate, rdw_erase, rdw_allchildren = 0x0001, 0x0004, 0x0080
+                rdw_updatenow, rdw_frame = 0x0100, 0x0400
+                ctypes.windll.user32.RedrawWindow(
+                    int(self.winId()), None, None,
+                    rdw_invalidate | rdw_erase | rdw_frame | rdw_allchildren | rdw_updatenow,
+                )
+            except Exception:  # noqa: BLE001 - a repintura do Qt abaixo ainda ocorre
+                pass
+        self.update()
 
     def _enable_windows_resize_style(self) -> None:
         """Garante que a janela frameless mantenha bordas arrastáveis no Windows."""
@@ -200,6 +249,14 @@ class MainWindow(AppShell):
         self.addSubInterface(self.media_tools, "tools", "Ferramentas")
         self.addSubInterface(self.history_page, "history", "Histórico")
         self.addSubInterface(self.settings, "settings", "Configurações", bottom=True)
+        from .components import PageHeader, ScrollColumn
+
+        for page in (self.home, self.queue, self.transcription, self.media_tools,
+                     self.history_page, self.settings):
+            headers = page.findChildren(PageHeader)
+            scrolls = page.findChildren(ScrollColumn)
+            if headers and scrolls:
+                headers[0].follow(scrolls[0])
 
     def _init_tray(self, icon: QIcon | None) -> None:
         if not QSystemTrayIcon.isSystemTrayAvailable() or icon is None or icon.isNull():
@@ -339,6 +396,11 @@ class MainWindow(AppShell):
         if app is not None:
             theme.apply(app)
         self.refresh_title_bar_colors()
+        # O Mica tem variante clara/escura; sem reaplicar, trocar o tema com o
+        # app aberto deixava o material antigo por trás da janela.
+        if getattr(self, "cfg", None) is not None and self.cfg.mica \
+                and sys.platform.startswith("win") and self.isVisible():
+            self.setMicaEffectEnabled(True)
         self.update()
 
     # ------------------------------------------------------- atualização app
@@ -700,7 +762,10 @@ class MainWindow(AppShell):
     def event(self, event: QEvent):  # noqa: N802 - assinatura do Qt
         if event.type() == QEvent.Type.WindowActivate and self.cfg.clipboard_watch:
             self._check_clipboard()
-        return super().event(event)
+        result = super().event(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            QTimer.singleShot(0, self._force_full_redraw)
+        return result
 
     def _check_clipboard(self) -> None:
         text = (QApplication.clipboard().text() or "").strip()
@@ -748,7 +813,9 @@ class MainWindow(AppShell):
         self.media_tools.shutdown()
         self.queue.stop_all()
         self.history.flush()
-        self.cfg.window_geometry = bytes(self.saveGeometry().toBase64()).decode("ascii")
+        normal = self.normalGeometry() if self.isMaximized() else self.geometry()
+        if normal.isValid():
+            self.cfg.window_rect = [normal.x(), normal.y(), normal.width(), normal.height()]
         self.cfg.window_maximized = self.isMaximized()
         self.cfg.save()
         super().closeEvent(event)

@@ -6,6 +6,7 @@ import queue
 import subprocess
 import threading
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from .downloader import (DownloadOptions, DownloadRunner, Progress, Transcoder,
                          is_retryable_error)
 from .gpu import GpuInfo, detect
 from .media_tools import MediaToolError, MediaToolOptions, build_command, operation_duration, time_seconds
-from .processes import isolated_process_kwargs, terminate_process_tree
+from .processes import attach_pid_to_kill_job, popen_isolated, release_job, terminate_process_tree
 from .probe import probe
 from .security import validate_media_url
 from .tools import ToolManager, Toolchain, USER_AGENT, _verified_ssl_context
@@ -145,14 +146,13 @@ class MediaToolWorker(QThread):
             duration = operation_duration(self.options, self.tc)
             self.options.destination.parent.mkdir(parents=True, exist_ok=True)
             self.progress.emit("Processando com FFmpeg…")
-            self._process = subprocess.Popen(
+            self._process = popen_isolated(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                **isolated_process_kwargs(),
             )
             if self._cancelled.is_set():
                 terminate_process_tree(self._process)
@@ -189,6 +189,26 @@ class MediaToolWorker(QThread):
             self._process = None
 
 
+ALLOWED_THUMBNAIL_TYPES = frozenset({"image/jpeg", "image/jpg", "image/png", "image/webp"})
+
+
+def _is_private_host(host: str) -> bool:
+    import ipaddress
+    import socket
+
+    if not host or host.casefold() in {"localhost", "localhost.localdomain"}:
+        return True
+    try:
+        addresses = {info[4][0] for info in socket.getaddrinfo(host, 443)}
+    except OSError:
+        return False  # a própria conexão vai falhar; não bloqueia por DNS instável
+    for address in addresses:
+        ip = ipaddress.ip_address(address.split("%")[0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            return True
+    return False
+
+
 class ThumbnailWorker(QThread):
     """Obtém uma miniatura pequena sem bloquear a interface nem relaxar o TLS."""
 
@@ -203,6 +223,11 @@ class ThumbnailWorker(QThread):
     def run(self) -> None:
         try:
             url = validate_media_url(self.url)
+            parsed = urllib.parse.urlsplit(url)
+            # A URL vem dos metadados do extrator (conteúdo remoto): só HTTPS e
+            # nunca endereços da rede local/loopback.
+            if parsed.scheme != "https" or _is_private_host(parsed.hostname or ""):
+                raise ValueError("Miniatura ignorada: endereço não permitido.")
             handlers = [urllib.request.HTTPSHandler(context=_verified_ssl_context())]
             if self.proxy:
                 handlers.append(urllib.request.ProxyHandler({"http": self.proxy, "https": self.proxy}))
@@ -212,8 +237,8 @@ class ThumbnailWorker(QThread):
                 headers={"User-Agent": USER_AGENT, "Accept": "image/avif,image/webp,image/*"},
             )
             with opener.open(request, timeout=15) as response:
-                content_type = str(response.headers.get("Content-Type") or "")
-                if not content_type.casefold().startswith("image/"):
+                content_type = str(response.headers.get("Content-Type") or "").casefold()
+                if content_type.split(";")[0].strip() not in ALLOWED_THUMBNAIL_TYPES:
                     raise ValueError("A miniatura recebida não é uma imagem.")
                 chunks: list[bytes] = []
                 size = 0
@@ -487,6 +512,7 @@ class TranscriptionWorker(QThread):
         process = None
         events = None
         terminal: tuple[str, object] | None = None
+        kill_job = 0
         try:
             context = multiprocessing.get_context("spawn")
             self._cancel_event = context.Event()
@@ -504,6 +530,8 @@ class TranscriptionWorker(QThread):
             self._process = process
             log_event("Iniciando processo isolado do legendador")
             process.start()
+            # Se o app cair, o Windows encerra o legendador e o FFmpeg dele.
+            kill_job = attach_pid_to_kill_job(process.pid or 0)
 
             while process.is_alive():
                 try:
@@ -561,6 +589,7 @@ class TranscriptionWorker(QThread):
                     process.join(2)
                 self._process = None
                 process.close()
+            release_job(kill_job)
             if events is not None:
                 events.close()
                 events.join_thread()

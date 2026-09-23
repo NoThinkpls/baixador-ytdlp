@@ -26,11 +26,18 @@ from typing import Callable
 from .config import MODEL_DIR
 from .diagnostics import install_diagnostics, log_event, report_exception
 from .hardware import whisper_threads
-from .processes import isolated_process_kwargs, terminate_process_tree
+from .processes import popen_isolated, terminate_process_tree
 from .tools import CREATE_NO_WINDOW, Toolchain
 
 StatusCB = Callable[[str], None]
 ProgressCB = Callable[[int], None]
+
+# Sequência padrão do Whisper: com uma temperatura só, o fallback que tira o
+# decodificador de laços de repetição ficava desligado.
+TEMPERATURE_FALLBACK = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
+# O VAD cortava a fala em blocos de 6 s antes do modelo e tirava contexto; a
+# divisão curta das legendas já acontece depois, por palavra.
+VAD_MAX_SPEECH_SECONDS = 20.0
 
 MODEL_ORDER = ("tiny", "base", "small", "medium", "large-v3-turbo", "large-v3")
 
@@ -93,6 +100,8 @@ class TranscriptionOptions:
     max_chars_per_line: int = 50
     min_duration: float = 0.8
     max_duration: float = 4.5
+    batched: bool = False     # BatchedInferencePipeline (somente CUDA)
+    low_vram: bool = False    # int8_float16 em GPUs com pouca memória
 
 
 @dataclass(frozen=True)
@@ -228,6 +237,62 @@ def download_model_snapshot(
     if progress:
         progress(high)
     return Path(str(outcome["path"]))
+
+
+def migrate_legacy_model_cache(model_dir: Path = MODEL_DIR) -> list[str]:
+    """Move pesos baixados por versões ≤ 1.7 para o cache novo.
+
+    Até a 1.7 o faster-whisper gravava em ``models/models--*`` e o MLX em
+    ``models/mlx/hub/models--*``. Desde a 1.8 os caches são ``models/ctranslate2``
+    e ``models/mlx``; sem migrar, os gigabytes antigos ficavam invisíveis para
+    o gerenciador e os mesmos modelos eram baixados de novo. Mover dentro do
+    mesmo volume é instantâneo, e os blobs já existentes são reaproveitados
+    pela revisão fixada.
+    """
+    moved: list[str] = []
+    pairs = ((model_dir, model_dir / "ctranslate2"),
+             (model_dir / "mlx" / "hub", model_dir / "mlx"))
+    for legacy_root, new_root in pairs:
+        if not legacy_root.is_dir():
+            continue
+        for legacy in legacy_root.glob("models--*"):
+            target = new_root / legacy.name
+            if not legacy.is_dir() or target.exists():
+                continue
+            try:
+                new_root.mkdir(parents=True, exist_ok=True)
+                legacy.replace(target)
+                moved.append(legacy.name)
+            except OSError:
+                continue
+    return moved
+
+
+def legacy_model_cache_size(model_dir: Path = MODEL_DIR) -> int:
+    """Bytes que sobraram no formato antigo (duplicados já migrados etc.)."""
+    total = 0
+    for root in (model_dir, model_dir / "mlx" / "hub"):
+        if not root.is_dir():
+            continue
+        for legacy in root.glob("models--*"):
+            for path in legacy.rglob("*"):
+                try:
+                    if path.is_file() and not path.is_symlink():
+                        total += path.stat().st_size
+                except OSError:
+                    continue
+    return total
+
+
+def remove_legacy_model_cache(model_dir: Path = MODEL_DIR) -> int:
+    import shutil
+
+    freed = legacy_model_cache_size(model_dir)
+    for root in (model_dir, model_dir / "mlx" / "hub"):
+        if root.is_dir():
+            for legacy in root.glob("models--*"):
+                shutil.rmtree(legacy, ignore_errors=True)
+    return freed
 
 
 def _is_apple_silicon() -> bool:
@@ -433,9 +498,9 @@ class Transcriber:
             initial_prompt=opts.initial_prompt.strip() or None,
             word_timestamps=True, vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 250, "speech_pad_ms": 50,
-                            "max_speech_duration_s": 6.0},
+                            "max_speech_duration_s": VAD_MAX_SPEECH_SECONDS},
             **self._model_options(opts.model_size),
-        )
+        ) if not (opts.batched and self.device == "cuda") else self._batched_transcribe(audio, opts)
         raw: list[dict] = []
         for item in segments:
             self._check_interrupt()
@@ -526,10 +591,9 @@ class Transcriber:
         self.status("Preparando áudio em 16 kHz mono…")
         cmd = [str(self.toolchain.ffmpeg), "-y", "-i", str(media), "-vn", "-ac", "1", "-ar", "16000",
                "-c:a", "pcm_s16le", str(target)]
-        proc = subprocess.Popen(
+        proc = popen_isolated(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace",
-            **isolated_process_kwargs(),
         )
         try:
             while True:
@@ -556,6 +620,9 @@ class Transcriber:
             raise FileNotFoundError("Selecione um arquivo de áudio ou vídeo válido.")
         audio: Path | None = None
         try:
+            if self.device == "cuda" and opts.low_vram:
+                self.compute_type = "int8_float16"
+                self.hardware_label += " · int8_float16"
             self._check_interrupt()
             if self.backend == "mlx":
                 self._prepare_mlx(opts.model_size)
@@ -599,13 +666,37 @@ class Transcriber:
             # as referências restantes sem depender do torch.
             gc.collect()
 
+    def _batched_transcribe(self, audio: Path, opts: TranscriptionOptions):
+        """Processa vários trechos em paralelo na GPU (faster-whisper ≥ 1.1).
+
+        A assinatura do pipeline em lote aceita menos parâmetros que a do
+        modelo; filtrar pelo ``inspect`` evita TypeError entre versões.
+        """
+        import inspect
+
+        from faster_whisper import BatchedInferencePipeline
+
+        self.status("Modo rápido: processando trechos em lote na GPU…")
+        pipeline = BatchedInferencePipeline(model=self.model)
+        options = {
+            "language": None if opts.language == "auto" else opts.language,
+            "task": opts.task if opts.task in {"transcribe", "translate"} else "transcribe",
+            "initial_prompt": opts.initial_prompt.strip() or None,
+            "word_timestamps": True,
+            "batch_size": 8 if opts.low_vram else 16,
+            **self._model_options(opts.model_size),
+        }
+        accepted = inspect.signature(pipeline.transcribe).parameters
+        options = {key: value for key, value in options.items() if key in accepted}
+        return pipeline.transcribe(str(audio), **options)
+
     def _model_options(self, model: str) -> dict:
         # Equilibra qualidade e velocidade como no legendador original.
         if self.device == "cuda":
-            result = {"beam_size": 5, "best_of": 5, "temperature": 0.0,
+            result = {"beam_size": 5, "best_of": 5, "temperature": TEMPERATURE_FALLBACK,
                       "condition_on_previous_text": True}
         else:
-            result = {"beam_size": 3, "best_of": 3, "temperature": 0.1,
+            result = {"beam_size": 3, "best_of": 3, "temperature": TEMPERATURE_FALLBACK,
                       "condition_on_previous_text": True, "patience": 1}
         if model.startswith("large"):
             result.update(beam_size=3 if self.device == "cuda" else 2, best_of=2,
