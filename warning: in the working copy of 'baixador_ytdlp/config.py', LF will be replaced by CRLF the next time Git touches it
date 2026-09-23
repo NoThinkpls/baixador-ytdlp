@@ -1,5 +1,0 @@
-Get-Content: 
-Line |
-   2 |  Get-Content -Raw -Encoding utf8 -LiteralPath "warning: in the working …
-     |              ~~~~
-     | A parameter cannot be found that matches parameter name 'Raw'.
