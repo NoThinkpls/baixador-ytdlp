@@ -101,7 +101,9 @@ class WindowSettingsTests(unittest.TestCase):
         from baixador_ytdlp import config
 
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            # A implementação resolve o executável; faça o mesmo no teste
+            # para que caminhos 8.3 do Windows não gerem uma comparação falsa.
+            root = Path(temporary).resolve()
             executable = root / "baixador-ytdlp.app" / "Contents" / "MacOS" / "baixador-ytdlp"
             executable.parent.mkdir(parents=True)
             executable.write_bytes(b"")
