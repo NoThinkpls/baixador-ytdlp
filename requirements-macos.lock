@@ -405,11 +405,11 @@ mlx==0.29.4 \
     # via
     #   -r requirements-macos.txt
     #   mlx-whisper
-mlx-metal==0.29.3 \
-    --hash=sha256:106616f7f825851043c53d3dc186965c003985da9cbb6e5c034f35108fc1fc27 \
-    --hash=sha256:27b5a4d905202a71e84d9fd559ea0236813f6f960ef494e5cafe9c45df4c9d7c \
-    --hash=sha256:f426d4b67f96b4d6f0ed50d5992933595aadb370dc3e9ed2410bafbc16229882
-    # via mlx
+mlx-metal==0.29.4 \
+    --hash=sha256:6068e4149cafaa18b782949f6dcd734351bc61d5a3fd2d5f71b2a63c73772dfe
+    # via
+    #   -r requirements-macos.txt
+    #   mlx
 mlx-whisper==0.4.3 \
     --hash=sha256:6b82b6597a994643a3e5496c7bc229a672e5ca308458455bfe276e76ae024489
     # via -r requirements-macos.txt
