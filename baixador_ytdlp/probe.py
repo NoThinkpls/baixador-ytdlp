@@ -244,6 +244,61 @@ def _playlist_count(ytdlp: Path, base: list[str], url: str, timeout: int,
     return len([e for e in (data.get("entries") or []) if e])
 
 
+@dataclass
+class PlaylistEntry:
+    index: int          # posição 1-based, a mesma que o --playlist-items usa
+    title: str
+    duration: str
+    entry_id: str
+
+
+def compress_indices(indices: list[int]) -> str:
+    """[1,2,3,5,8,9] → ``1-3,5,8-9`` (formato do --playlist-items)."""
+    values = sorted(set(i for i in indices if i > 0))
+    parts: list[str] = []
+    start = previous = None
+    for value in values:
+        if start is None:
+            start = previous = value
+        elif value == previous + 1:
+            previous = value
+        else:
+            parts.append(f"{start}-{previous}" if start != previous else str(start))
+            start = previous = value
+    if start is not None:
+        parts.append(f"{start}-{previous}" if start != previous else str(start))
+    return ",".join(parts)
+
+
+def playlist_entries(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = "",
+                     proxy: str = "", extractor_args: str = "", timeout: int = 180,
+                     env: dict | None = None) -> list[PlaylistEntry]:
+    """Lista os itens com --flat-playlist (uma requisição, sem formatos de cada vídeo)."""
+    try:
+        url = validate_media_url(url)
+    except ValueError as exc:
+        raise ProbeError(str(exc)) from exc
+    args = [str(ytdlp), "--no-warnings", "--ignore-config", "--encoding", "utf-8",
+            "--socket-timeout", "20"]
+    if proxy:
+        args += ["--proxy", proxy]
+    if extractor_args:
+        args += ["--extractor-args", extractor_args]
+    args += _cookie_args(cookies_browser, cookies_file)
+    data = _run_json(args + ["-J", "--flat-playlist", "--", url], timeout, env)
+    result: list[PlaylistEntry] = []
+    for position, entry in enumerate(data.get("entries") or [], start=1):
+        if not isinstance(entry, dict):
+            continue
+        result.append(PlaylistEntry(
+            index=position,
+            title=str(entry.get("title") or entry.get("id") or f"Item {position}"),
+            duration=human_duration(entry.get("duration")),
+            entry_id=str(entry.get("id") or ""),
+        ))
+    return result
+
+
 def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = "",
           proxy: str = "", timeout: int = 120, extractor_args: str = "",
           env: dict | None = None) -> MediaInfo:

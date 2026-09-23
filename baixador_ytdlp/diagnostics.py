@@ -166,3 +166,56 @@ def install_qt_logging() -> None:
 
 def log_event(message: str, *args) -> None:
     get_logger().info(message, *args)
+
+
+# Campos que nunca vão para o pacote de diagnóstico, mesmo que vazios.
+_PRIVATE_SETTINGS = frozenset({
+    "cookies_file", "cookies_browser", "proxy", "extractor_args", "download_profiles",
+    "window_geometry", "window_rect", "last_output_dir", "download_dir",
+    "transcription_initial_prompt", "update_dismissed_version",
+})
+
+
+def _anonymize(text: str) -> str:
+    """Redação de segredos + troca da pasta do usuário por ``~``."""
+    text = redact_sensitive(text)
+    home = str(Path.home())
+    for variant in {home, home.replace("\\", "/"), home.replace("/", "\\")}:
+        if variant and len(variant) > 3:
+            text = text.replace(variant, "~")
+    return text
+
+
+def export_diagnostics(target: Path, settings=None) -> Path:
+    """Gera um ZIP com logs redigidos, resumo do sistema e configurações seguras.
+
+    Os logs são redigidos de novo na exportação: arquivos gravados por versões
+    anteriores à 1.7 ainda não passavam pelo filtro.
+    """
+    import json
+    import zipfile
+    from dataclasses import asdict
+
+    target = target.with_suffix(".zip")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(LOG_DIR.glob("*.log*")):
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            archive.writestr(f"logs/{path.name}", _anonymize(text))
+        summary = {
+            "app": APP_NAME,
+            "versao": APP_VERSION,
+            "python": sys.version.split()[0],
+            "plataforma": platform.platform(),
+            "maquina": platform.machine(),
+        }
+        archive.writestr("sistema.json", json.dumps(summary, ensure_ascii=False, indent=2))
+        if settings is not None:
+            safe = {key: value for key, value in asdict(settings).items()
+                    if key not in _PRIVATE_SETTINGS}
+            archive.writestr("configuracoes.json",
+                             _anonymize(json.dumps(safe, ensure_ascii=False, indent=2)))
+    return target

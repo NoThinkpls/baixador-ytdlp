@@ -3,6 +3,20 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.10.0] - 2026-09-23
+
+Primeira parte da fase 2.0 do roadmap.
+
+### Adicionado
+
+- Protocolo `baixador://` (Windows, Linux e macOS) e favorito "Enviar para o
+  baixador"; o link recebido só é analisado, nunca baixado sem confirmação.
+- Seletor de itens de playlist com busca, marcação em massa e `--playlist-items`.
+- Canal nightly do yt-dlp nas configurações, com a mesma verificação SHA-256.
+- Ferramenta "Caber em um limite" (8 a 100 MB) com bitrate e resolução calculados.
+- Versão vertical com fundo desfocado (padrão) ou barras pretas.
+- Exportação de diagnóstico em ZIP com logs e configurações redigidos.
+
 ## [1.9.0] - 2026-09-23
 
 ### Segurança

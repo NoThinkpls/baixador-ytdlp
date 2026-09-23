@@ -39,7 +39,10 @@ O primeiro uso de cada modelo baixa os pesos para os dados locais do aplicativo;
 - Downloads HTTPS sempre validam o certificado; não existe fallback TLS inseguro.
 - yt-dlp, FFmpeg e Deno só são instalados quando há um SHA-256 válido publicado pelo fornecedor. O hash verificado é guardado e conferido antes das execuções futuras.
 - Pesos Whisper e MLX são baixados de revisões imutáveis, nunca diretamente de uma branch mutável.
-- O instalador do aplicativo é validado com SHA-256 e os artefatos oficiais recebem atestados de proveniência do GitHub Actions. A assinatura Authenticode/Developer ID ainda depende da obtenção dos certificados próprios do projeto.
+- O instalador do aplicativo é validado com SHA-256, e o `SHA256SUMS.txt` é assinado com Ed25519: o atualizador só aceita o hash se a assinatura conferir com a chave pública embutida no app. Os artefatos também recebem atestados de proveniência do GitHub Actions. A assinatura Authenticode/Developer ID ainda depende da obtenção dos certificados próprios do projeto.
+- Dependências Python instaladas por locks com hashes (inclusive transitivas); SBOM CycloneDX gerado do ambiente real de cada build.
+- No Windows, cada subprocesso roda num Job Object: cancelar ou fechar o app encerra a árvore inteira (yt-dlp, FFmpeg, Deno), mesmo se o app cair.
+- O protocolo `baixador://` só analisa o link recebido; nenhum download começa sem confirmação.
 - Subprocessos são iniciados sem shell e com configurações externas do yt-dlp ignoradas.
 - Links, proxy e caminhos de cookies são redigidos antes de entrar nos logs. Cookies, histórico e configurações permanecem locais. Nunca publique `cookies.txt` ou `settings.json`.
 - Em máquinas corporativas, a execução de um aplicativo que baixa binários no perfil do usuário pode ser bloqueada por políticas de segurança.

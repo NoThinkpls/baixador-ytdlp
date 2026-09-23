@@ -19,7 +19,7 @@ from .downloader import (DownloadOptions, DownloadRunner, Progress, Transcoder,
 from .gpu import GpuInfo, detect
 from .media_tools import MediaToolError, MediaToolOptions, build_command, operation_duration, time_seconds
 from .processes import attach_pid_to_kill_job, popen_isolated, release_job, terminate_process_tree
-from .probe import probe
+from .probe import playlist_entries, probe
 from .security import validate_media_url
 from .tools import ToolManager, Toolchain, USER_AGENT, _verified_ssl_context
 from .updater import AppUpdater, ReleaseInfo
@@ -298,6 +298,28 @@ class ModelCacheWorker(QThread):
             self.failed.emit(str(exc))
         else:
             self.finished_ok.emit(self.model_size, int(changed))
+
+
+class PlaylistEntriesWorker(QThread):
+    """Lista os itens de uma playlist para o seletor, fora da thread da interface."""
+
+    finished_ok = Signal(list)
+    failed = Signal(str)
+
+    def __init__(self, url: str, tc: Toolchain, cfg: Settings, parent=None):
+        super().__init__(parent)
+        self.url, self.tc, self.cfg = url, tc, cfg
+
+    def run(self) -> None:
+        try:
+            entries = playlist_entries(
+                self.url, self.tc.ytdlp, self.cfg.cookies_browser, self.cfg.cookies_file,
+                self.cfg.proxy, extractor_args=self.cfg.extractor_args, env=self.tc.env())
+        except Exception as exc:  # noqa: BLE001
+            report_exception("listagem da playlist", exc)
+            self.failed.emit(str(exc))
+        else:
+            self.finished_ok.emit(entries)
 
 
 class ProbeWorker(QThread):

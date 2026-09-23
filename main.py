@@ -78,12 +78,25 @@ def main() -> int:
     window = MainWindow(
         cfg,
         ToolManager(runtime_check_hours=cfg.runtime_check_hours,
-                    allow_system_tools=cfg.allow_system_tools),
+                    allow_system_tools=cfg.allow_system_tools,
+                    ytdlp_channel=cfg.ytdlp_channel),
         icon,
         icon_path,
     )
     window.show()
     instance_server.arguments_received.connect(window.handle_external_arguments)
+    # macOS entrega baixador://… como QFileOpenEvent, não em sys.argv.
+    from PySide6.QtCore import QEvent, QObject
+
+    class _UrlOpenFilter(QObject):
+        def eventFilter(self, _watched, event):  # noqa: N802 - assinatura do Qt
+            if event.type() == QEvent.Type.FileOpen and event.url().isValid():
+                window.handle_external_arguments([event.url().toString()])
+                return True
+            return False
+
+    url_filter = _UrlOpenFilter(app)
+    app.installEventFilter(url_filter)
 
     if not window.run_setup() and window.toolchain is None:
         log_event("Encerrando: preparação inicial não foi concluída")

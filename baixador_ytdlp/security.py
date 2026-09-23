@@ -44,3 +44,32 @@ def redact_sensitive(value: str) -> str:
     text = _COOKIE_RE.sub(r"\1<cookies>", text)
     text = _HEADER_RE.sub(r"\1***", text)
     return _INLINE_SECRET_RE.sub(r"\1\2***", text)
+
+
+PROTOCOL_SCHEME = "baixador"
+
+
+def media_url_from_argument(value: str) -> str:
+    """Extrai a URL de mídia de um argumento de linha de comando ou do protocolo.
+
+    Aceita ``https://…`` direto e ``baixador://baixar?url=<URL codificada>``
+    (usado pelo bookmarklet/extensão). Devolve ``""`` para qualquer outra coisa.
+    O protocolo pode ser acionado por qualquer página web, então o app apenas
+    ANALISA o link recebido — nunca inicia um download sozinho.
+    """
+    text = (value or "").strip()
+    if text.lower().startswith(f"{PROTOCOL_SCHEME}:"):
+        parts = urllib.parse.urlsplit(text)
+        query = urllib.parse.parse_qs(parts.query)
+        candidate = (query.get("url") or [""])[0]
+        if not candidate:
+            # Forma curta: baixador://https://exemplo… (alguns navegadores
+            # normalizam para baixador:https://…)
+            candidate = text.split(":", 1)[1].lstrip("/")
+            if candidate.lower().startswith(("https//", "http//")):
+                candidate = candidate.replace("//", "://", 1)
+        text = candidate
+    try:
+        return validate_media_url(text)
+    except ValueError:
+        return ""

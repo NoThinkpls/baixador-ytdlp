@@ -55,6 +55,11 @@ DENO_RELEASES_API = "https://api.github.com/repos/denoland/deno/releases?per_pag
 DENO_SUPPORTED_MAJOR = 2
 
 YTDLP_RELEASE_API = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
+# Quando o YouTube muda algo, a correção sai no nightly dias antes do estável.
+# O repositório de nightly publica o mesmo SHA2-256SUMS, então a verificação
+# de integridade é idêntica.
+YTDLP_NIGHTLY_API = "https://api.github.com/repos/yt-dlp/yt-dlp-nightly-builds/releases/latest"
+YTDLP_CHANNELS = {"stable": YTDLP_RELEASE_API, "nightly": YTDLP_NIGHTLY_API}
 FFMPEG_RELEASE_API = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest"
 # O BtbN publica somente os ramos de release mais recentes (ex.: n8.1 e n9.0) e
 # remove os antigos. Fixar um nome quebrava instalações novas quando o ramo
@@ -227,8 +232,9 @@ class ToolManager:
     """Verifica, instala e atualiza yt-dlp e FFmpeg."""
 
     def __init__(self, bin_dir: Path = BIN_DIR, runtime_check_hours: int = 24,
-                 allow_system_tools: bool = False):
+                 allow_system_tools: bool = False, ytdlp_channel: str = "stable"):
         self.bin_dir = bin_dir
+        self.ytdlp_channel = ytdlp_channel if ytdlp_channel in YTDLP_CHANNELS else "stable"
         self.allow_system_tools = bool(allow_system_tools)
         self.state = self._load_state()
         self.runtime = RuntimeManager(check_hours=runtime_check_hours)
@@ -546,7 +552,7 @@ class ToolManager:
 
     def _latest_ytdlp(self) -> tuple[str, str, dict[str, str]]:
         """Devolve (tag, url_do_exe, {arquivo: sha256})."""
-        data = self._get_json(YTDLP_RELEASE_API)
+        data = self._get_json(YTDLP_CHANNELS[self.ytdlp_channel])
         tag = data.get("tag_name", "")
         assets = {a["name"]: a["browser_download_url"] for a in data.get("assets", [])}
         sums: dict[str, str] = {}

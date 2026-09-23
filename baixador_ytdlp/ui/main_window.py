@@ -376,6 +376,8 @@ class MainWindow(AppShell):
             lambda path: self._tray_message("Processamento concluído", Path(path).name)
         )
         self.settings.update_requested.connect(lambda: self.run_setup(check_now=True))
+        self.settings.ytdlp_channel_changed.connect(self._switch_ytdlp_channel)
+        self.settings.diagnostics_export_requested.connect(self._export_diagnostics)
         self.settings.app_update_requested.connect(lambda: self._check_app_update(force=True))
         self.settings.gpu_detection_requested.connect(self._detect_gpu)
         self.settings.download_dir_changed.connect(self.home.refresh_default_folder)
@@ -646,6 +648,31 @@ class MainWindow(AppShell):
         self.switchTo(self.home)
         self.home.analyze()
 
+    def _switch_ytdlp_channel(self, channel: str) -> None:
+        self.manager.ytdlp_channel = channel
+        Toast.info("Canal do yt-dlp", "Baixando a versão do canal escolhido…",
+                   parent=self, duration=4000)
+        self.run_setup(check_now=True)
+
+    def _export_diagnostics(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        from ..diagnostics import export_diagnostics
+
+        default = str(Path.home() / f"diagnostico-{APP_NAME}-{APP_VERSION}.zip")
+        path, _ = QFileDialog.getSaveFileName(self, "Exportar diagnóstico", default,
+                                              "Arquivo ZIP (*.zip)")
+        if not path:
+            return
+        try:
+            target = export_diagnostics(Path(path), self.cfg)
+        except OSError as exc:
+            Toast.error("Não foi possível exportar", str(exc), parent=self, duration=7000)
+            return
+        Toast.success("Diagnóstico exportado",
+                      f"{target.name} — revisado sem cookies, senhas nem tokens.",
+                      parent=self, duration=7000)
+
     def handle_external_arguments(self, arguments: list[str]) -> None:
         """Traz a janela à frente e recebe links enviados por uma segunda abertura."""
         if self.isMinimized():
@@ -653,7 +680,10 @@ class MainWindow(AppShell):
         self.show()
         self.raise_()
         self.activateWindow()
-        url = next((value for value in arguments if value.startswith(("http://", "https://"))), "")
+        from ..security import media_url_from_argument
+
+        url = next((found for value in arguments
+                    if (found := media_url_from_argument(value))), "")
         if url:
             self.home.set_url(url)
             self.switchTo(self.home)

@@ -2,7 +2,8 @@
 Type=Application
 Name=Baixador YT-DLP
 Comment=Baixe, organize e transcreva mídias locais
-Exec=baixador-ytdlp
+Exec=baixador-ytdlp %u
+MimeType=x-scheme-handler/baixador;
 Icon=baixador-ytdlp
 Terminal=false
 Categories=AudioVideo;Network;Utility;

@@ -22,9 +22,27 @@ Arraste um vídeo ou áudio para a área de transcrição, escolha idioma, taref
 
 Em **Gerenciar modelos**, baixe os pesos antes do uso, acompanhe o progresso, confira o espaço ocupado ou remova um modelo. Em máquinas NVIDIA compatíveis, a transcrição pode usar CUDA; nas demais, usa CPU automaticamente. No Apple Silicon, usa MLX.
 
+## Enviar um link do navegador
+
+O instalador registra o protocolo `baixador://`. Crie um favorito no navegador
+com o endereço abaixo; clicar nele numa página de vídeo abre o aplicativo e
+**analisa** o link — o download só começa quando você confirma.
+
+```text
+javascript:location.href='baixador://baixar?url='+encodeURIComponent(location.href)
+```
+
+No Linux o protocolo é registrado pelo pacote `.deb`; no macOS, pelo `.app`.
+
+## Playlists
+
+Depois de analisar uma playlist, use **Escolher itens** para marcar só os vídeos
+desejados (há busca por título). A seleção vira o `--playlist-items` do yt-dlp.
+A qualidade escolhida vale por altura (ex.: até 1080p) para todos os itens.
+
 ## Ferramentas de mídia
 
-A página **Ferramentas** trabalha localmente com FFmpeg: recorte, extraia MP3, remuxe sem recomprimir, compacte, converta para vertical e incorpore legendas. O percentual aparece na tela e, quando disponível, na barra de tarefas. Nenhum arquivo é enviado pelo aplicativo para executar essas operações.
+A página **Ferramentas** trabalha localmente com FFmpeg: recorte, extraia MP3, remuxe sem recomprimir, compacte, **faça caber num limite de tamanho** (Discord, WhatsApp, e-mail), converta para vertical com fundo desfocado e incorpore legendas. O percentual aparece na tela e, quando disponível, na barra de tarefas. Nenhum arquivo é enviado pelo aplicativo para executar essas operações.
 
 ## Bandeja e segundo plano
 
@@ -33,6 +51,14 @@ Em **Configurações → Comportamento**, escolha se conclusões devem gerar not
 ## Atualizações
 
 Em **Configurações → Atualizações do aplicativo**, você pode desligar a checagem ao abrir ou verificar manualmente. No Windows, quando há uma versão nova, a faixa inferior oferece atualizar ou dispensar o aviso. O instalador é conferido com SHA-256 antes de ser aberto.
+
+## Quando um site para de funcionar
+
+Em **Configurações → Downloads**, troque o **Canal do yt-dlp** para *Nightly*:
+as correções para mudanças do YouTube saem ali dias antes da versão estável.
+Para relatar um problema, use **Configurações → Diagnóstico → Exportar
+diagnóstico**: o ZIP sai sem cookies, senhas de proxy, tokens de URL e sem o
+nome da sua pasta de usuário.
 
 ## Onde ficam os dados
 
