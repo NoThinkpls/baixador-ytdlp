@@ -2,7 +2,7 @@ PySide6==6.8.3
 PySideSix-Frameless-Window==0.8.2
 faster-whisper==1.1.1
 ctranslate2==4.8.2
-huggingface-hub==0.29.3
+huggingface-hub==1.32.0
 certifi==2025.8.3
 send2trash==1.8.3
 # Runtime CUDA incluído no instalador. O CTranslate2 para CUDA 12 requer
