@@ -11,6 +11,7 @@ from qframelesswindow import FramelessWindow as _Base
 
 from . import icons, theme
 from .components import Chip, IconButton, SectionLabel
+from .i18n import tr
 
 class CaptionButton(QAbstractButton):
     """Botão de moldura com os três glifos desenhados na mesma métrica.
@@ -28,7 +29,7 @@ class CaptionButton(QAbstractButton):
         self.action = action
         self.setFixedSize(self.WIDTH, theme.TITLEBAR_HEIGHT)
         self.setCursor(Qt.CursorShape.ArrowCursor)
-        self.setToolTip({"minimize": "Minimizar", "maximize": "Maximizar", "close": "Fechar"}[action])
+        self.setToolTip(tr({"minimize": "Minimizar", "maximize": "Maximizar", "close": "Fechar"}[action]))
         self.setAccessibleName(self.toolTip())
         self.pressed.connect(self.update)
         self.released.connect(self.update)
@@ -115,8 +116,8 @@ class NavItem(QAbstractButton):
         super().__init__(parent)
         self._icon_name = icon_name
         self._compact = False
-        self.setText(text)
-        self.setAccessibleName(text)
+        self.setText(tr(text))
+        self.setAccessibleName(tr(text))
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedHeight(self.HEIGHT)
@@ -235,7 +236,7 @@ class Sidebar(QWidget):
         margin = 16 if collapsed else 14
         self._header_layout.setContentsMargins(margin, 0, margin, 0)
         self.toggle.set_icon_name("sidebar-expand" if collapsed else "sidebar-collapse")
-        self.toggle.setToolTip("Expandir navegação" if collapsed else "Recolher navegação")
+        self.toggle.setToolTip(tr("Expandir navegação" if collapsed else "Recolher navegação"))
         self.header_section.setVisible(not collapsed and bool(self.header_section.text()))
         for label in self._sections:
             label.setVisible(not collapsed)
@@ -249,7 +250,7 @@ class Sidebar(QWidget):
         # “NAVEGAÇÃO” ao controle de recolher e elimina o ícone solto acima do
         # menu. As seções extras continuam possíveis para telas futuras.
         if not self.header_section.text():
-            self.header_section.setText(text.upper())
+            self.header_section.setText(tr(text).upper())
             self.header_section.setVisible(not self._collapsed)
             return self.header_section
         label = SectionLabel(text, self)
@@ -497,3 +498,4 @@ class AppShell(_Base):
                 effect.removeBackgroundEffect(self.winId())
         except Exception:  # noqa: BLE001 - build do Windows sem suporte a Mica
             pass
+

@@ -1,5 +1,7 @@
 # Plataformas, desempenho e segurança
 
+[Read this guide in English](PLATFORMS-AND-SECURITY.en.md)
+
 ## Windows
 
 O instalador é por usuário e não exige UAC. A edição portable não instala atalhos nem altera a lista de aplicativos: basta descompactar o ZIP e executar `baixador-ytdlp.exe`. Configurações, logs e binários ficam na pasta `data` ao lado do executável.
@@ -46,3 +48,4 @@ O primeiro uso de cada modelo baixa os pesos para os dados locais do aplicativo;
 - Subprocessos são iniciados sem shell e com configurações externas do yt-dlp ignoradas.
 - Links, proxy e caminhos de cookies são redigidos antes de entrar nos logs. Cookies, histórico e configurações permanecem locais. Nunca publique `cookies.txt` ou `settings.json`.
 - Em máquinas corporativas, a execução de um aplicativo que baixa binários no perfil do usuário pode ser bloqueada por políticas de segurança.
+

@@ -7,3 +7,4 @@ certifi==2025.8.3
 send2trash==1.8.3
 # A primeira distribuição Linux usa CTranslate2 em CPU. CUDA continua opcional
 # e não é empacotado para evitar uma imagem muito maior e dependente do driver.
+

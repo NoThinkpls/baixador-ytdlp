@@ -190,7 +190,14 @@ class MainWindow(AppShell):
         self.update()
 
     def _enable_windows_resize_style(self) -> None:
-        """Garante que a janela frameless mantenha bordas arrastáveis no Windows."""
+        """Mantém os botões nativos sem reintroduzir uma moldura não pintada.
+
+        O redimensionamento é atendido por ``nativeEvent``/WM_NCHITTEST. Somar
+        ``WS_THICKFRAME`` fazia o DWM reservar uma borda física por fora da
+        área Qt; como a janela é frameless, ela ficava branca até um hover
+        acionar uma repintura. Removemos explicitamente esse estilo para também
+        corrigir instalações que já o receberam numa abertura anterior.
+        """
         if not sys.platform.startswith("win"):
             return
         try:
@@ -225,7 +232,7 @@ class MainWindow(AppShell):
             SWP_FRAMECHANGED = 0x0020
 
             style = get_style(hwnd, GWL_STYLE)
-            wanted = style | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
+            wanted = (style & ~WS_THICKFRAME) | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
             if wanted != style:
                 set_style(hwnd, GWL_STYLE, wanted)
                 set_window_pos(
@@ -382,6 +389,7 @@ class MainWindow(AppShell):
         self.settings.gpu_detection_requested.connect(self._detect_gpu)
         self.settings.download_dir_changed.connect(self.home.refresh_default_folder)
         self.settings.theme_changed.connect(self._refresh_appearance)
+        self.settings.language_changed.connect(self._language_changed)
         self.sidebar_collapsed_changed.connect(self._save_sidebar_state)
         self.update_banner.update_requested.connect(self._download_app_update)
         self.update_banner.dismissed.connect(self._dismiss_app_update)
@@ -391,6 +399,17 @@ class MainWindow(AppShell):
     def _save_sidebar_state(self, collapsed: bool) -> None:
         self.cfg.sidebar_collapsed = bool(collapsed)
         self.cfg.save()
+
+    def _language_changed(self, value: str) -> None:
+        from .i18n import set_language
+
+        set_language(value)
+        Toast.info(
+            "Idioma da interface",
+            "Reinicie o aplicativo para aplicar o novo idioma.",
+            parent=self,
+            duration=6500,
+        )
 
     def _refresh_appearance(self, _theme: str = "") -> None:
         """Reaplica tokens, folha de estilo e as cores dos botões da janela."""
@@ -849,3 +868,4 @@ class MainWindow(AppShell):
         self.cfg.window_maximized = self.isMaximized()
         self.cfg.save()
         super().closeEvent(event)
+

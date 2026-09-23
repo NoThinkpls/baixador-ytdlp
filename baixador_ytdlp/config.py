@@ -12,7 +12,7 @@ from .hardware import default_fragments, default_parallel_downloads
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.10.0"
+APP_VERSION = "1.10.1"
 IS_WINDOWS = sys.platform.startswith("win")
 
 
@@ -117,7 +117,7 @@ def default_download_dir() -> str:
 class Settings:
     """Preferências do usuário — gravadas em settings.json."""
 
-    settings_schema_version: int = 5
+    settings_schema_version: int = 6
     download_dir: str = field(default_factory=default_download_dir)
     ask_output_dir: bool = False     # liberar a escolha de pasta na página Baixar
     last_output_dir: str = ""        # última pasta escolhida por download
@@ -148,6 +148,7 @@ class Settings:
     auto_retry_delay: int = 5        # espera base entre tentativas, em segundos
     organize_audio_by_uploader: bool = False
     theme: str = "auto"              # auto | light | dark
+    ui_language: str = "pt-BR"       # pt-BR | en
     # Todas as superfícies do app são opacas: o Mica só aparecia em falhas de
     # repintura (bordas claras). Desligado por padrão desde a 1.8.1.
     mica: bool = False
@@ -263,6 +264,9 @@ class Settings:
             values["mica"] = False
             values["window_geometry"] = ""
             values["settings_schema_version"] = 5
+        if schema < 6:
+            values["ui_language"] = "pt-BR"
+            values["settings_schema_version"] = 6
         return cls(**values)
 
     def save(self) -> None:
@@ -280,3 +284,4 @@ class Settings:
 def ensure_dirs() -> None:
     for path in (DATA_DIR, BIN_DIR, LOG_DIR, MODEL_DIR, COOKIES_DIR, RUNTIME_DIR, UPDATE_DIR):
         path.mkdir(parents=True, exist_ok=True)
+

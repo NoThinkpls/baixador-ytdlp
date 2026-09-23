@@ -1,5 +1,7 @@
 # Baixador YT-DLP
 
+[Read this documentation in English](README.en.md)
+
 Baixe vídeos e áudios, transcreva localmente e faça ajustes de mídia em uma interface Apple + Discord para Windows, macOS Apple Silicon e Linux.
 
 [![Última versão](https://img.shields.io/github/v/release/NoThinkpls/baixador-ytdlp?display_name=tag&label=vers%C3%A3o)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
@@ -32,7 +34,7 @@ Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no 
 - Exportação de diagnóstico já redigido, sem cookies, senhas ou tokens.
 - Fila persistente, retomada de arquivos parciais e retentativas automáticas para falhas transitórias. Itens podem ser removidos mesmo durante a inicialização; solicitações repetidas só entram após confirmação.
 - Capa, metadados e capítulos incorporados também em áudio; opção de organizar músicas por canal/artista.
-- Transcrição local com modelos até Large v3 Turbo, tradução para inglês, vocabulário de contexto e legendas SRT, VTT, ASS, karaoke, TXT e JSON; no Apple Silicon ela usa MLX na GPU integrada.
+- Transcrição local com modelos até Large v3 Turbo, tradução para inglês, vocabulário de contexto e legendas SRT, VTT, ASS, karaoke, TXT e JSON; no Apple Silicon ela usa MLX na GPU integrada. A fila reutiliza o processo e o modelo já carregado entre mídias compatíveis.
 - Fluxo **Baixar e legendar**: ao concluir o download, o arquivo pode entrar automaticamente na fila do Whisper e receber uma faixa de legenda sem reencodificação.
 - Conversão por GPU com NVIDIA NVENC, AMD AMF ou VideoToolbox no Apple Silicon.
 - Ferramentas locais com progresso real para recortar, extrair áudio, compactar, criar Shorts e adicionar legendas ao vídeo.
@@ -55,6 +57,8 @@ Design da Microsoft — inclusive no Windows.
   colorido em tempo de execução, então nada some no tema claro ou no escuro.
 - **Tema claro e escuro** com troca imediata, acompanhando o sistema quando a
   opção é “Seguir o sistema”.
+- **Português e inglês.** Em **Configurações → Aparência**, escolha o idioma da
+  interface; a troca entra na próxima abertura para não interromper tarefas.
 - **Análise legível.** A prévia separa formatos, áudio e legendas em cartões curtos; a tabela deixa FPS junto da qualidade e destaca tamanhos aproximados.
 - **Nome antes de baixar.** A tela mostra uma prévia do template configurado e oferece atalhos para inserir título, canal, data, ID e resolução.
 - **Ferramentas guiadas.** As edições locais seguem quatro passos claros:
@@ -102,7 +106,9 @@ fonte de verdade visual do aplicativo.
 - [Changelog](CHANGELOG.md)
 - [Política de segurança](SECURITY.md)
 - [Como contribuir](CONTRIBUTING.md)
+- [Documentation in English](README.en.md)
 
 ## Licença e uso
 
 O projeto usa [yt-dlp](https://github.com/yt-dlp/yt-dlp) e [FFmpeg](https://ffmpeg.org/). Baixe apenas conteúdo que você tenha direito de acessar e utilizar. O código deste repositório está sob a [licença MIT](LICENSE); as bibliotecas distribuídas mantêm suas próprias licenças, listadas em [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+

@@ -23,7 +23,8 @@ from .probe import playlist_entries, probe
 from .security import validate_media_url
 from .tools import ToolManager, Toolchain, USER_AGENT, _verified_ssl_context
 from .updater import AppUpdater, ReleaseInfo
-from .transcription import TranscriptionOptions, transcription_process_main
+from .transcription import (TranscriptionOptions, transcription_process_main,
+                            transcription_server_main)
 
 
 class SetupWorker(QThread):
@@ -615,3 +616,176 @@ class TranscriptionWorker(QThread):
             if events is not None:
                 events.close()
                 events.join_thread()
+
+
+class PersistentTranscriptionWorker(QThread):
+    """Ponte Qt para o processo de transcrição que atende vários itens.
+
+    Há um processo filho por sessão da aba, mas não um por arquivo. Isso mantém
+    os pesos do Whisper na RAM/VRAM entre itens consecutivos sem abrir mão do
+    isolamento contra falhas das bibliotecas nativas.
+    """
+
+    status = Signal(str)
+    progress = Signal(int)
+    finished_ok = Signal(str)
+    cancelled = Signal()
+    failed = Signal(str)
+
+    def __init__(self, tc: Toolchain, parent=None):
+        super().__init__(parent)
+        self.tc = tc
+        self._context = multiprocessing.get_context("spawn")
+        self._commands = self._context.Queue()
+        self._events = self._context.Queue()
+        self._process = None
+        self._active_job = 0
+        self._busy = False
+        self._closing = False
+        self._force_stopped = False
+        self._state_lock = threading.Lock()
+
+    def is_busy(self) -> bool:
+        with self._state_lock:
+            return self._busy
+
+    def submit(self, opts: TranscriptionOptions) -> None:
+        """Envia o próximo item. A página só submete um por vez."""
+        with self._state_lock:
+            if self._closing:
+                raise RuntimeError("O processo de transcrição está sendo encerrado")
+            if self._busy:
+                raise RuntimeError("Já há uma transcrição em andamento")
+            self._active_job += 1
+            job_id = self._active_job
+            self._busy = True
+        if not self.isRunning():
+            self.start()
+        self._commands.put(("run", job_id, opts))
+
+    def cancel(self) -> None:
+        with self._state_lock:
+            job_id = self._active_job
+        if job_id:
+            self._commands.put(("cancel", job_id))
+
+    def pause(self, paused: bool) -> None:
+        with self._state_lock:
+            job_id = self._active_job
+        if job_id:
+            self._commands.put(("pause", job_id, bool(paused)))
+
+    def shutdown(self) -> None:
+        """Pede o encerramento seguro; ``force_stop`` é só o último recurso."""
+        with self._state_lock:
+            self._closing = True
+            job_id = self._active_job
+        if job_id:
+            self._commands.put(("cancel", job_id))
+        if self.isRunning():
+            self._commands.put(("shutdown",))
+
+    def force_stop(self) -> None:
+        self._force_stopped = True
+        self.shutdown()
+        process = self._process
+        if process is not None and process.is_alive():
+            log_event("Forçando encerramento do servidor de transcrição")
+            process.terminate()
+
+    def _terminal(self, kind: str, value) -> None:
+        with self._state_lock:
+            self._busy = False
+        if kind == "cancelled":
+            self.cancelled.emit()
+        elif kind == "error":
+            message = value.get("message", "Falha desconhecida no motor de transcrição")
+            trace = value.get("traceback", "")
+            get_logger().error("Falha recebida do servidor de transcrição:\n%s", trace.rstrip())
+            self.failed.emit(str(message))
+        else:
+            self.finished_ok.emit(str(value))
+
+    def run(self) -> None:
+        process = None
+        kill_job = 0
+        reported_crash = False
+        try:
+            process = self._context.Process(
+                name="baixador-ytdlp-transcription-server",
+                target=transcription_server_main,
+                args=(self.tc, self._commands, self._events),
+            )
+            self._process = process
+            log_event("Iniciando processo persistente do legendador")
+            process.start()
+            # Se o app cair, o Windows encerra o servidor e o FFmpeg que ele abriu.
+            kill_job = attach_pid_to_kill_job(process.pid or 0)
+
+            # Mesmo no encerramento, deixe o filho receber ``shutdown`` e
+            # fechar o modelo de forma limpa; a tela usa ``wait`` antes de
+            # recorrer a ``force_stop``.
+            while process.is_alive():
+                try:
+                    event = self._events.get(timeout=0.15)
+                except queue.Empty:
+                    continue
+                except (EOFError, OSError):
+                    break
+                try:
+                    job_id, kind, value = event
+                except (TypeError, ValueError):
+                    get_logger().warning("Evento inválido do servidor de transcrição: %r", event)
+                    continue
+                with self._state_lock:
+                    active = self._active_job
+                if job_id != active:
+                    continue
+                if kind == "status":
+                    self.status.emit(str(value))
+                elif kind == "progress":
+                    self.progress.emit(max(0, min(100, int(value))))
+                elif kind in {"finished", "cancelled", "error"}:
+                    self._terminal(kind, value)
+                else:
+                    get_logger().warning("Evento desconhecido do servidor de transcrição: %r", event)
+
+            with self._state_lock:
+                was_busy = self._busy
+            if was_busy and not self._closing and not self._force_stopped:
+                reported_crash = True
+                self._terminal("error", {
+                    "message": (
+                        "O motor de transcrição encerrou inesperadamente. O aplicativo continuou aberto; "
+                        "consulte native-fault.log."
+                    ),
+                    "traceback": "",
+                })
+        except Exception as exc:  # noqa: BLE001
+            report_exception("coordenação persistente da transcrição", exc)
+            with self._state_lock:
+                was_busy = self._busy
+            if was_busy:
+                self._terminal("error", {"message": str(exc), "traceback": ""})
+        finally:
+            if process is not None:
+                if process.is_alive():
+                    process.terminate()
+                    process.join(2)
+                self._process = None
+                process.close()
+            release_job(kill_job)
+            if not reported_crash:
+                with self._state_lock:
+                    if self._closing:
+                        self._busy = False
+
+    def close_queues(self) -> None:
+        """Fecha pipes após a thread encerrar, evitando recursos pendentes no Qt."""
+        for channel in (self._commands, self._events):
+            try:
+                channel.close()
+                channel.join_thread()
+            except (OSError, ValueError):
+                pass
+
