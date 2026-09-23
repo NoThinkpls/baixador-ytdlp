@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +31,8 @@ from .tools import CREATE_NO_WINDOW, Toolchain
 
 StatusCB = Callable[[str], None]
 ProgressCB = Callable[[int], None]
+
+MODEL_ORDER = ("tiny", "base", "small", "medium", "large-v3-turbo", "large-v3")
 
 FORMATS = {
     "srt": ("SRT — compatível com players", ".srt"),
@@ -50,6 +53,10 @@ FASTER_MODEL_SPECS = {
     "large": ("Systran/faster-whisper-large-v3", "edaa852ec7e145841d8ffdb056a99866b5f0a478"),
     "large-v2": ("Systran/faster-whisper-large-v3", "edaa852ec7e145841d8ffdb056a99866b5f0a478"),
     "large-v3": ("Systran/faster-whisper-large-v3", "edaa852ec7e145841d8ffdb056a99866b5f0a478"),
+    "large-v3-turbo": (
+        "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+        "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+    ),
 }
 
 # Pesos convertidos para MLX. Não usamos CTranslate2 no Mac quando o runtime MLX
@@ -62,6 +69,10 @@ MLX_MODEL_SPECS = {
     "large": ("mlx-community/whisper-large-v3-mlx", "ac13a70a47c7176ba7b69b4f1ebe6877ccd460d0"),
     "large-v2": ("mlx-community/whisper-large-v3-mlx", "ac13a70a47c7176ba7b69b4f1ebe6877ccd460d0"),
     "large-v3": ("mlx-community/whisper-large-v3-mlx", "ac13a70a47c7176ba7b69b4f1ebe6877ccd460d0"),
+    "large-v3-turbo": (
+        "mlx-community/whisper-large-v3-turbo",
+        "a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb",
+    ),
 }
 
 
@@ -77,6 +88,11 @@ class TranscriptionOptions:
     model_size: str = "medium"
     output_format: str = "srt"
     aggressive_filter: bool = False
+    task: str = "transcribe"
+    initial_prompt: str = ""
+    max_chars_per_line: int = 50
+    min_duration: float = 0.8
+    max_duration: float = 4.5
 
 
 @dataclass(frozen=True)
@@ -85,6 +101,133 @@ class DecodedInfo:
 
     language: str
     language_probability: float = 0.0
+
+
+def preferred_model_backend() -> bool:
+    """Retorna ``True`` quando o gerenciador deve operar sobre pesos MLX."""
+    return _is_apple_silicon() and _mlx_available()
+
+
+def _model_cache_dir(mlx: bool) -> Path:
+    return MODEL_DIR / ("mlx" if mlx else "ctranslate2")
+
+
+def _repo_blob_size(cache: Path, repo: str) -> int:
+    blobs = cache / f"models--{repo.replace('/', '--')}" / "blobs"
+    total = 0
+    if not blobs.is_dir():
+        return 0
+    for path in blobs.iterdir():
+        try:
+            if path.is_file():
+                total += path.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def cached_model_path(model_size: str, *, mlx: bool | None = None) -> Path | None:
+    """Localiza uma revisão completa sem abrir rede nem carregar o modelo."""
+    from huggingface_hub import snapshot_download
+
+    use_mlx = preferred_model_backend() if mlx is None else mlx
+    repo, revision = Transcriber._model_spec(model_size, mlx=use_mlx)
+    cache = _model_cache_dir(use_mlx)
+    try:
+        return Path(snapshot_download(
+            repo_id=repo,
+            revision=revision,
+            cache_dir=str(cache),
+            local_files_only=True,
+        ))
+    except Exception:
+        return None
+
+
+def model_cache_size(model_size: str, *, mlx: bool | None = None) -> int:
+    use_mlx = preferred_model_backend() if mlx is None else mlx
+    repo, _revision = Transcriber._model_spec(model_size, mlx=use_mlx)
+    return _repo_blob_size(_model_cache_dir(use_mlx), repo)
+
+
+def remove_cached_model(model_size: str, *, mlx: bool | None = None) -> int:
+    """Remove somente a revisão fixada do modelo e devolve os bytes liberados."""
+    from huggingface_hub import scan_cache_dir
+
+    use_mlx = preferred_model_backend() if mlx is None else mlx
+    repo_id, revision = Transcriber._model_spec(model_size, mlx=use_mlx)
+    cache = _model_cache_dir(use_mlx)
+    before = model_cache_size(model_size, mlx=use_mlx)
+    if not cache.exists():
+        return 0
+    info = scan_cache_dir(cache)
+    revisions = [
+        item.commit_hash
+        for repo in info.repos if repo.repo_id == repo_id
+        for item in repo.revisions if item.commit_hash.startswith(revision)
+    ]
+    if revisions:
+        info.delete_revisions(*revisions).execute()
+    return max(0, before - model_cache_size(model_size, mlx=use_mlx))
+
+
+def download_model_snapshot(
+    model_size: str,
+    *,
+    mlx: bool | None = None,
+    status: StatusCB | None = None,
+    progress: ProgressCB | None = None,
+    progress_range: tuple[int, int] = (0, 100),
+) -> Path:
+    """Baixa uma revisão imutável e acompanha os bytes gravados no cache."""
+    from huggingface_hub import HfApi, snapshot_download
+
+    use_mlx = preferred_model_backend() if mlx is None else mlx
+    repo, revision = Transcriber._model_spec(model_size, mlx=use_mlx)
+    cache = _model_cache_dir(use_mlx)
+    cache.mkdir(parents=True, exist_ok=True)
+    existing = cached_model_path(model_size, mlx=use_mlx)
+    if existing is not None:
+        if progress:
+            progress(progress_range[1])
+        return existing
+
+    if status:
+        status(f"Baixando modelo Whisper {model_size}…")
+    low, high = progress_range
+    if progress:
+        progress(low)
+    try:
+        metadata = HfApi().model_info(repo, revision=revision, files_metadata=True)
+        total = sum(int(getattr(item, "size", 0) or 0) for item in metadata.siblings or ())
+    except Exception:
+        total = 0
+    before = _repo_blob_size(cache, repo)
+    outcome: dict[str, object] = {}
+
+    def fetch() -> None:
+        try:
+            outcome["path"] = snapshot_download(
+                repo_id=repo,
+                revision=revision,
+                cache_dir=str(cache),
+            )
+        except BaseException as exc:  # propagado na thread chamadora
+            outcome["error"] = exc
+
+    download = threading.Thread(target=fetch, name="whisper-model-download", daemon=True)
+    download.start()
+    while download.is_alive():
+        if progress and total > 0:
+            received = max(0, _repo_blob_size(cache, repo) - before)
+            progress(min(high - 1, low + round((high - low) * received / total)))
+        time.sleep(0.2)
+    download.join()
+    if "error" in outcome:
+        raise outcome["error"]  # type: ignore[misc]
+    if progress:
+        progress(high)
+    return Path(str(outcome["path"]))
 
 
 def _is_apple_silicon() -> bool:
@@ -184,7 +327,14 @@ class Transcriber:
 
         self.status(f"Carregando Whisper {model_size} em {self.hardware_label}…")
         self.progress(5)
-        model_path = self._pinned_model_path(model_size, mlx=False)
+        model_path = download_model_snapshot(
+            model_size,
+            mlx=False,
+            status=self.status,
+            progress=self.progress,
+            progress_range=(5, 14),
+        )
+        self.status(f"Carregando Whisper {model_size} em {self.hardware_label}…")
         kwargs = {"device": self.device, "compute_type": self.compute_type}
         if self.device == "cpu":
             kwargs.update(cpu_threads=whisper_threads(), num_workers=1)
@@ -213,7 +363,14 @@ class Transcriber:
         os.environ.setdefault("HF_HOME", str(cache))
         self.status(f"Carregando Whisper {model_size} em {self.hardware_label}…")
         self.progress(5)
-        self._model_path = self._pinned_model_path(model_size, mlx=True)
+        self._model_path = download_model_snapshot(
+            model_size,
+            mlx=True,
+            status=self.status,
+            progress=self.progress,
+            progress_range=(5, 14),
+        )
+        self.status(f"Carregando Whisper {model_size} em {self.hardware_label}…")
 
     @staticmethod
     def _model_spec(model_size: str, *, mlx: bool) -> tuple[str, str]:
@@ -222,10 +379,13 @@ class Transcriber:
 
     @classmethod
     def _pinned_model_path(cls, model_size: str, *, mlx: bool) -> Path:
+        # Mantido como helper simples e determinístico para integrações e testes.
+        # Os fluxos da interface usam ``download_model_snapshot`` para também
+        # receber andamento em bytes.
         from huggingface_hub import snapshot_download
 
         repo, revision = cls._model_spec(model_size, mlx=mlx)
-        cache = MODEL_DIR / ("mlx" if mlx else "ctranslate2")
+        cache = _model_cache_dir(mlx)
         cache.mkdir(parents=True, exist_ok=True)
         return Path(snapshot_download(
             repo_id=repo,
@@ -242,7 +402,13 @@ class Transcriber:
         gc.collect()
         self.device, self.compute_type = "cpu", "int8"
         self.hardware_label = "CPU — fallback automático (int8)"
-        model_path = self._pinned_model_path(model_size, mlx=False)
+        model_path = download_model_snapshot(
+            model_size,
+            mlx=False,
+            status=self.status,
+            progress=self.progress,
+            progress_range=(5, 14),
+        )
         self.model = WhisperModel(
             str(model_path), device="cpu", compute_type="int8",
             cpu_threads=whisper_threads(), num_workers=1,
@@ -263,6 +429,8 @@ class Transcriber:
         """Consome o gerador do faster-whisper; erros de DLL podem ocorrer só aqui."""
         segments, info = self.model.transcribe(
             str(audio), language=None if opts.language == "auto" else opts.language,
+            task=opts.task if opts.task in {"transcribe", "translate"} else "transcribe",
+            initial_prompt=opts.initial_prompt.strip() or None,
             word_timestamps=True, vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 250, "speech_pad_ms": 50,
                             "max_speech_duration_s": 6.0},
@@ -302,6 +470,8 @@ class Transcriber:
         result = mlx_whisper.transcribe(
             str(audio), path_or_hf_repo=str(self._model_path), verbose=None,
             language=None if opts.language == "auto" else opts.language,
+            task=opts.task if opts.task in {"transcribe", "translate"} else "transcribe",
+            initial_prompt=opts.initial_prompt.strip() or None,
             word_timestamps=True, temperature=temperature,
             condition_on_previous_text=condition,
             compression_ratio_threshold=compression, logprob_threshold=log_probability,
@@ -413,6 +583,9 @@ class Transcriber:
             probability = float(getattr(info, "language_probability", 0.0) or 0.0)
             confidence = f" ({probability:.0%})" if probability else ""
             self.status(f"{len(raw)} segmentos brutos · idioma {language}{confidence}")
+            self.max_chars_per_line = max(20, min(100, int(opts.max_chars_per_line)))
+            self.min_duration = max(0.2, min(5.0, float(opts.min_duration)))
+            self.max_duration = max(self.min_duration, min(15.0, float(opts.max_duration)))
             result = self._fix_timing(self._split_segments(self._clean(raw)))
             self._write(opts.output_path, opts.output_format, result, language)
             self.progress(100)

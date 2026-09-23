@@ -32,7 +32,7 @@ Na primeira abertura, yt-dlp, FFmpeg e Deno são obtidos das fontes oficiais par
 
 Downloads dependem sobretudo da rede. Para transcrição, o aplicativo usa CUDA quando uma NVIDIA compatível está disponível e CPU/int8 como fallback. No Apple Silicon, usa **MLX Whisper** na GPU integrada; se esse backend não puder iniciar, cai automaticamente para CPU/NEON, usando somente os núcleos de desempenho que o macOS informa. O CTranslate2 não possui backend Metal/MPS para Whisper, por isso o MLX é o caminho acelerado no Mac. A conversão de vídeo pode usar NVENC ou AMD AMF no Windows e VideoToolbox no macOS quando o FFmpeg disponível oferecer suporte. No Linux, a primeira distribuição prioriza CPU/int8 e o mesmo fallback seguro.
 
-O primeiro uso de cada modelo no macOS baixa os pesos MLX para os dados locais do aplicativo. Não há envio de áudio ou vídeo a um serviço remoto.
+O primeiro uso de cada modelo baixa os pesos para os dados locais do aplicativo; o gerenciador permite antecipar o download, acompanhar o progresso e liberar o espaço depois. Não há envio de áudio ou vídeo a um serviço remoto.
 
 ## Medidas de segurança
 

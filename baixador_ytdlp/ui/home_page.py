@@ -6,16 +6,18 @@ import shutil
 import urllib.parse
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileDialog, QHBoxLayout,
-                               QHeaderView, QInputDialog, QPlainTextEdit, QTableWidget, QTableWidgetItem,
-                               QVBoxLayout, QWidget)
+                               QHeaderView, QInputDialog, QLabel, QPlainTextEdit, QTableWidget,
+                               QTableWidgetItem, QVBoxLayout, QWidget)
 
 from ..config import Settings
 from ..downloader import DownloadOptions
+from ..filename_preview import render_filename_preview
 from ..probe import MediaInfo, kill_running, playlist_selector
 from ..security import validate_media_url
-from ..workers import ProbeWorker
+from ..workers import ProbeWorker, ThumbnailWorker
 from . import theme
 from .components import (BusyBar, Button, Card, Divider, Headline, InsetGroup, Muted,
                          PageHeader, PrimaryButton, ScrollColumn, SectionLabel, Select,
@@ -49,6 +51,7 @@ class HomePage(QWidget):
         self.toolchain = None
         self.info: MediaInfo | None = None
         self.worker: ProbeWorker | None = None
+        self._thumbnail_workers: set[ThumbnailWorker] = set()
         self._build_ui()
         self.setAcceptDrops(True)
 
@@ -202,6 +205,8 @@ class HomePage(QWidget):
                 container=self.container_combo.currentData(), audio_only=audio_only,
                 audio_format=self.audio_combo.currentData(),
                 playlist=_is_playlist_url(url), title=url,
+                transcribe_after=self.transcribe_switch.isChecked(),
+                embed_transcription=self.embed_transcription_switch.isChecked(),
             )
             for url in urls
         ]
@@ -212,10 +217,28 @@ class HomePage(QWidget):
 
     def _info_card(self) -> Card:
         card = Card(self, padding=(16, 14, 16, 14), spacing=10)
-        self.media_title = Headline("—", card, wrap=True)
-        self.media_meta = Muted("", card)
-        card.body.addWidget(self.media_title)
-        card.body.addWidget(self.media_meta)
+        summary = QWidget(card)
+        summary_row = QHBoxLayout(summary)
+        summary_row.setContentsMargins(0, 0, 0, 0)
+        summary_row.setSpacing(14)
+        self.thumbnail = QLabel(summary)
+        self.thumbnail.setObjectName("mediaThumbnail")
+        self.thumbnail.setFixedSize(QSize(160, 90))
+        self.thumbnail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.thumbnail.setAccessibleName("Miniatura da mídia analisada")
+        self.thumbnail.hide()
+        summary_row.addWidget(self.thumbnail)
+        text = QWidget(summary)
+        text_column = QVBoxLayout(text)
+        text_column.setContentsMargins(0, 2, 0, 2)
+        text_column.setSpacing(5)
+        self.media_title = Headline("—", text, wrap=True)
+        self.media_meta = Muted("", text)
+        text_column.addWidget(self.media_title)
+        text_column.addWidget(self.media_meta)
+        text_column.addStretch(1)
+        summary_row.addWidget(text, 1)
+        card.body.addWidget(summary)
 
         stats = QWidget(card)
         stats.setObjectName("analysisStats")
@@ -279,6 +302,7 @@ class HomePage(QWidget):
             self.container_combo.addItem(label, userData=value)
         self._select_data(self.container_combo, self.cfg.container)
         self.container_combo.setMinimumWidth(200)
+        self.container_combo.currentIndexChanged.connect(self._refresh_filename_preview)
         group.add_row(SettingRow(
             "Formato do arquivo",
             "Container do vídeo final. MKV nunca reconverte.",
@@ -286,6 +310,7 @@ class HomePage(QWidget):
 
         self.audio_switch = Switch(group)
         self.audio_switch.checkedChanged.connect(self._toggle_audio)
+        self.audio_switch.checkedChanged.connect(self._refresh_filename_preview)
         group.add_row(SettingRow(
             "Somente áudio",
             "Extrai a trilha e descarta o vídeo.",
@@ -297,10 +322,38 @@ class HomePage(QWidget):
         self._select_data(self.audio_combo, self.cfg.audio_format)
         self.audio_combo.setEnabled(False)
         self.audio_combo.setMinimumWidth(200)
+        self.audio_combo.currentIndexChanged.connect(self._refresh_filename_preview)
         group.add_row(SettingRow(
             "Formato do áudio",
             "Vale quando “Somente áudio” está ligado.",
             self.audio_combo, group))
+
+        self.filename_preview = Muted("Analise uma mídia para visualizar o nome final.", group)
+        self.filename_preview.setAccessibleName("Prévia do nome do arquivo")
+        group.add_row(SettingRow(
+            "Nome previsto",
+            "Usa o modelo definido em Configurações; o yt-dlp ainda aplica a sanitização do sistema.",
+            self.filename_preview,
+            group,
+        ))
+
+        self.transcribe_switch = Switch(group)
+        self.transcribe_switch.checkedChanged.connect(self._toggle_transcription_after)
+        group.add_row(SettingRow(
+            "Gerar legenda ao terminar",
+            "Envia o arquivo concluído para a fila do Whisper sem bloquear os próximos downloads.",
+            self.transcribe_switch,
+            group,
+        ))
+
+        self.embed_transcription_switch = Switch(group)
+        self.embed_transcription_switch.setEnabled(False)
+        group.add_row(SettingRow(
+            "Incorporar legenda como faixa",
+            "Cria uma cópia legendada sem reencodar o vídeo; a faixa pode ser desligada no player.",
+            self.embed_transcription_switch,
+            group,
+        ))
 
         self.trim_check = Switch(group)
         self.trim_check.setToolTip(
@@ -507,6 +560,8 @@ class HomePage(QWidget):
                 audio_format=self.audio_combo.currentData(),
                 playlist=_is_playlist_url(url),
                 title=url,
+                transcribe_after=self.transcribe_switch.isChecked(),
+                embed_transcription=self.embed_transcription_switch.isChecked(),
             )
             for url in urls
         ]
@@ -639,6 +694,16 @@ class HomePage(QWidget):
         self.audio_combo.setEnabled(checked)
         self.container_combo.setEnabled(not checked)
         self.table.setEnabled(not checked)
+        can_embed = self.transcribe_switch.isChecked() and not checked
+        self.embed_transcription_switch.setEnabled(can_embed)
+        if not can_embed:
+            self.embed_transcription_switch.setChecked(False)
+
+    def _toggle_transcription_after(self, checked: bool) -> None:
+        can_embed = bool(checked) and not self.audio_switch.isChecked()
+        self.embed_transcription_switch.setEnabled(can_embed)
+        if not can_embed:
+            self.embed_transcription_switch.setChecked(False)
 
     def _toggle_trim(self, checked: bool) -> None:
         self.start_edit.setEnabled(checked)
@@ -708,12 +773,17 @@ class HomePage(QWidget):
         execução: o Qt chama qFatal e o processo morre com fast-fail (0xc0000409),
         sem gravar traceback nenhum.
         """
-        if not (self.worker and self.worker.isRunning()):
-            return
-        kill_running()
-        if not self.worker.wait(5000):
-            self.worker.terminate()
-            self.worker.wait(1000)
+        if self.worker and self.worker.isRunning():
+            kill_running()
+            if not self.worker.wait(5000):
+                self.worker.terminate()
+                self.worker.wait(1000)
+        for worker in tuple(self._thumbnail_workers):
+            if worker.isRunning():
+                worker.requestInterruption()
+                if not worker.wait(2000):
+                    worker.terminate()
+                    worker.wait(500)
 
     def _reset_analyze_button(self) -> None:
         self.busy.hide()
@@ -742,6 +812,8 @@ class HomePage(QWidget):
             subtitle_parts.append("Auto: " + self._short_languages(info.auto_subtitles))
         self.subtitles_stat.setText(" · ".join(subtitle_parts) or "Não disponíveis")
         self.info_card.show()
+        self._load_thumbnail(info.thumbnail)
+        self._refresh_filename_preview()
 
         self.playlist_hint.setText(
             f"Playlist detectada: os {info.playlist_count} itens vão para uma subpasta."
@@ -753,6 +825,34 @@ class HomePage(QWidget):
         self.table.show()
         self.download_btn.setEnabled(True)
         self.download_btn.setToolTip("")
+
+    def _load_thumbnail(self, url: str) -> None:
+        self.thumbnail.clear()
+        self.thumbnail.hide()
+        if not url:
+            return
+        worker = ThumbnailWorker(url, self.cfg.proxy, self)
+        self._thumbnail_workers.add(worker)
+        worker.finished_ok.connect(self._set_thumbnail)
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(lambda w=worker: self._clear_thumbnail_worker(w))
+        worker.start()
+
+    def _set_thumbnail(self, url: str, data: bytes) -> None:
+        if not self.info or url != self.info.thumbnail:
+            return
+        pixmap = QPixmap()
+        if not pixmap.loadFromData(data):
+            return
+        self.thumbnail.setPixmap(pixmap.scaled(
+            self.thumbnail.size(),
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        ))
+        self.thumbnail.show()
+
+    def _clear_thumbnail_worker(self, worker: ThumbnailWorker) -> None:
+        self._thumbnail_workers.discard(worker)
 
     def _fill_table(self, info: MediaInfo) -> None:
         rows = info.rows
@@ -780,6 +880,23 @@ class HomePage(QWidget):
 
         self.table.selectRow(0)
         self.table.setUpdatesEnabled(True)
+
+    def _refresh_filename_preview(self, *_args) -> None:
+        if not hasattr(self, "filename_preview"):
+            return
+        extension = (
+            str(self.audio_combo.currentData() or "mp3")
+            if self.audio_switch.isChecked()
+            else str(self.container_combo.currentData() or "mp4")
+        )
+        if extension == "original":
+            extension = str((self.info.raw if self.info else {}).get("ext") or "ext")
+        metadata = self.info.raw if self.info else None
+        self.filename_preview.setText(render_filename_preview(
+            self.cfg.filename_template,
+            metadata,
+            extension,
+        ))
 
     @staticmethod
     def _short_languages(languages: list[str], empty: str = "—") -> str:
@@ -832,6 +949,8 @@ class HomePage(QWidget):
             title=self.info.title,
             section_start=start,
             section_end=end,
+            transcribe_after=self.transcribe_switch.isChecked(),
+            embed_transcription=self.embed_transcription_switch.isChecked(),
         )
         self.enqueue.emit(opts)
 

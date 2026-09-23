@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QVBoxLayout, QWidget
 
 from ..config import Settings
 from ..cookies import EXPORT_INSTRUCTIONS, cookie_age_days, import_cookie_file
+from ..filename_preview import render_filename_preview
 from ..gpu import GPU_ENCODER_LABELS, GpuInfo
 from ..hardware import default_fragments, default_parallel_downloads, usable_cores
 from . import theme
@@ -76,9 +77,7 @@ class SettingsPage(QWidget):
         self._switch_row("Perguntar a pasta em cada download",
                          "Deixa a opção “Escolher a pasta” já ligada na página Baixar.",
                          "ask_output_dir")
-        self._line_row("Nome do arquivo",
-                       "Modelo do yt-dlp. Ex.: %(title)s [%(id)s].%(ext)s",
-                       "filename_template", "%(title)s.%(ext)s")
+        self._filename_template_row()
         self._combo_row("Formato padrão do vídeo",
                         "Container usado quando você não muda nada na página Baixar.",
                         [("MP4", "mp4"), ("MKV", "mkv"), ("WebM", "webm"),
@@ -187,6 +186,13 @@ class SettingsPage(QWidget):
                          "O ícone do app na barra de tarefas do Windows enche conforme o "
                          "download ou a transcrição avança e pisca ao concluir.",
                          "taskbar_progress")
+        self._switch_row("Notificações na bandeja",
+                         "Avisa quando downloads, legendas e ferramentas terminam.",
+                         "tray_notifications")
+        self._switch_row("Fechar para a bandeja",
+                         "O botão fechar esconde a janela e mantém as tarefas em andamento. "
+                         "Use Sair no ícone da bandeja para encerrar.",
+                         "close_to_tray")
 
         self._section("Atalhos de teclado")
         shortcuts, _shortcut_layout = self._custom_row(
@@ -313,6 +319,49 @@ class SettingsPage(QWidget):
 
         button.clicked.connect(choose)
         self._add_row(row)
+
+    def _filename_template_row(self) -> None:
+        row, column = self._custom_row(
+            "Nome do arquivo",
+            "Modelo do yt-dlp. A prévia usa dados de exemplo e não acessa a rede.",
+        )
+        self.filename_template_edit = TextField("%(title)s.%(ext)s", row)
+        self.filename_template_edit.setText(self.cfg.filename_template)
+        self.filename_template_edit.textChanged.connect(self._refresh_template_preview)
+        self.filename_template_edit.editingFinished.connect(
+            lambda: self._set("filename_template", self.filename_template_edit.text().strip())
+        )
+        column.addWidget(self.filename_template_edit)
+
+        tokens = QHBoxLayout()
+        tokens.setSpacing(6)
+        for label, value in (
+            ("Título", "%(title)s"), ("Canal", "%(uploader)s"),
+            ("Data", "%(upload_date)s"), ("ID", "%(id)s"),
+            ("Resolução", "%(height)sp"),
+        ):
+            button = Button(label, "plus", "ghost", row)
+            button.setToolTip(f"Inserir {value}")
+            button.clicked.connect(lambda _checked=False, token=value: self._insert_template_token(token))
+            tokens.addWidget(button)
+        tokens.addStretch(1)
+        column.addLayout(tokens)
+        self.filename_template_preview = Muted("", row)
+        self.filename_template_preview.setAccessibleName("Prévia do nome do arquivo")
+        column.addWidget(self.filename_template_preview)
+        self._refresh_template_preview()
+        self._add_row(row)
+
+    def _insert_template_token(self, token: str) -> None:
+        self.filename_template_edit.insert(token)
+        self.filename_template_edit.setFocus()
+
+    def _refresh_template_preview(self) -> None:
+        if not hasattr(self, "filename_template_preview"):
+            return
+        self.filename_template_preview.setText(
+            "Prévia: " + render_filename_preview(self.filename_template_edit.text(), None, "mp4")
+        )
 
     def _gpu_row(self) -> None:
         row, column = self._custom_row(

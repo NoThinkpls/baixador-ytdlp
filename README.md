@@ -24,14 +24,15 @@ Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no 
 ## O que o aplicativo oferece
 
 - Download de vídeo, áudio, playlists e trechos com escolha de qualidade e formato. Recortes exatos mostram o andamento e tentam NVENC, AMF ou VideoToolbox diretamente; NVIDIA e Apple também usam decodificação por hardware quando a mídia aceita. Se o decoder não for compatível, a codificação continua na GPU; só então há fallback seguro para CPU.
-- Análise prévia com tamanhos aproximados, codecs, formatos, idiomas de áudio e legendas manuais/automáticas disponíveis.
+- Análise prévia com miniatura, nome final estimado, tamanhos aproximados, codecs, formatos, idiomas de áudio e legendas manuais/automáticas disponíveis.
 - Entrada em lote pela própria tela: cole vários links, um por linha, e envie todos à fila.
 - Fila persistente, retomada de arquivos parciais e retentativas automáticas para falhas transitórias. Itens podem ser removidos mesmo durante a inicialização; solicitações repetidas só entram após confirmação.
 - Capa, metadados e capítulos incorporados também em áudio; opção de organizar músicas por canal/artista.
-- Transcrição local com legendas SRT, VTT, ASS, karaoke, TXT e JSON; no Apple
-  Silicon ela usa MLX na GPU integrada.
+- Transcrição local com modelos até Large v3 Turbo, tradução para inglês, vocabulário de contexto e legendas SRT, VTT, ASS, karaoke, TXT e JSON; no Apple Silicon ela usa MLX na GPU integrada.
+- Fluxo **Baixar e legendar**: ao concluir o download, o arquivo pode entrar automaticamente na fila do Whisper e receber uma faixa de legenda sem reencodificação.
 - Conversão por GPU com NVIDIA NVENC, AMD AMF ou VideoToolbox no Apple Silicon.
-- Ferramentas locais para recortar, extrair áudio, compactar, criar Shorts e adicionar legendas ao vídeo.
+- Ferramentas locais com progresso real para recortar, extrair áudio, compactar, criar Shorts e adicionar legendas ao vídeo.
+- Gerenciador de modelos Whisper, notificações pela bandeja do sistema e opção de continuar tarefas em segundo plano.
 - Atualização opcional no Windows, conferida por SHA-256 antes de abrir o instalador.
 - Componentes de runtime só são instalados quando o fornecedor publica um SHA-256 válido; a conexão TLS nunca desliga a validação de certificado.
 - Uma segunda abertura traz a janela existente para frente e encaminha o link recebido, em vez de descartá-lo.
@@ -51,14 +52,16 @@ Design da Microsoft — inclusive no Windows.
 - **Tema claro e escuro** com troca imediata, acompanhando o sistema quando a
   opção é “Seguir o sistema”.
 - **Análise legível.** A prévia separa formatos, áudio e legendas em cartões curtos; a tabela deixa FPS junto da qualidade e destaca tamanhos aproximados.
+- **Nome antes de baixar.** A tela mostra uma prévia do template configurado e oferece atalhos para inserir título, canal, data, ID e resolução.
 - **Ferramentas guiadas.** As edições locais seguem quatro passos claros:
   escolher a tarefa, selecionar a origem, ajustar apenas o necessário e salvar.
 - **Avisos que não atrapalham:** aparecem no alto do conteúdo, longe dos botões
   do cabeçalho, e somem sozinhos.
 - **Barra de tarefas do Windows.** O ícone do aplicativo é mantido mesmo com a
-  janela sem moldura; ele exibe o andamento dos downloads e das transcrições.
+  janela sem moldura; ele exibe o andamento dos downloads, transcrições e ferramentas.
   Ao concluir, o botão fica em 100% por instantes e pisca para avisar mesmo com
   a janela minimizada.
+- **Bandeja do sistema.** Conclusões podem gerar avisos nativos; opcionalmente, fechar a janela mantém downloads, transcrições e edições em execução.
 - **Cookies sem adivinhação:** o app mostra o passo a passo, abre o guia do
   yt-dlp e indica uma extensão de exportação que processa o arquivo localmente.
 
@@ -67,8 +70,9 @@ nas placas NVIDIA, MLX na GPU integrada de Macs Apple Silicon e CPU otimizada na
 placas AMD, pois o motor de transcrição atual não possui backend AMD para Windows.
 No Linux da primeira versão, a transcrição usa CPU/int8 e a conversão por GPU fica
 desativada quando o FFmpeg não oferecer um encoder compatível. No Mac, o primeiro
-uso de cada modelo do Whisper ainda precisa baixá-lo para o perfil local do usuário;
-os usos seguintes reaproveitam esse cache. A build do macOS inclui sua própria
+uso de cada modelo do Whisper precisa baixá-lo para o perfil local do usuário;
+esse download pode ser antecipado e acompanhado no gerenciador de modelos, e os
+usos seguintes reaproveitam o cache. A build do macOS inclui sua própria
 cadeia atualizada de certificados para que a preparação do ambiente consiga baixar
 o yt-dlp e o FFmpeg com validação TLS completa, sem aceitar certificados inválidos.
 

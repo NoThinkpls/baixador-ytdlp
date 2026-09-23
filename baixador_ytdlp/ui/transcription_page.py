@@ -1,20 +1,22 @@
 """Página 'Legendar': transcrição local de áudio e vídeo com faster-whisper."""
 from __future__ import annotations
 
+from collections import deque
 from pathlib import Path
 
-from PySide6.QtCore import QUrl, Signal
+from PySide6.QtCore import QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from ..config import Settings
 from ..diagnostics import log_event
-from ..media_tools import available_destination
+from ..media_tools import MediaToolOptions, available_destination, default_destination
 from ..transcription import FORMATS, TranscriptionOptions
-from ..workers import TranscriptionWorker
+from ..workers import MediaToolWorker, TranscriptionWorker
 from .components import (Button, Card, Divider, Headline, InsetGroup, LogView, Muted,
                          PageHeader, PrimaryButton, ProgressBar, ScrollColumn,
-                         SectionLabel, Select, SettingRow, Switch, TextField, Toast)
+                         SectionLabel, Select, SettingRow, Stepper, Switch, TextField, Toast)
+from .model_manager import ModelManagerDialog
 
 LANGUAGES = [("Português", "pt"), ("Inglês", "en"), ("Espanhol", "es"),
              ("Francês", "fr"), ("Alemão", "de"), ("Italiano", "it"),
@@ -22,7 +24,10 @@ LANGUAGES = [("Português", "pt"), ("Inglês", "en"), ("Espanhol", "es"),
              ("Detectar automaticamente", "auto")]
 MODELS = [("tiny — mais rápido", "tiny"), ("base — rápido", "base"),
           ("small — equilibrado", "small"), ("medium — recomendado", "medium"),
+          ("large-v3-turbo — rápido e preciso", "large-v3-turbo"),
           ("large-v3 — mais preciso", "large-v3")]
+TASKS = [("Transcrever no idioma original", "transcribe"),
+         ("Traduzir para inglês", "translate")]
 MEDIA_FILTER = ("Mídias (*.mp4 *.mkv *.mov *.avi *.webm *.m4v *.flv *.wmv *.mpeg *.mp3 "
                 "*.wav *.flac *.aac *.ogg *.m4a *.opus *.m4b);;Todos os arquivos (*.*)")
 
@@ -32,6 +37,7 @@ class TranscriptionPage(QWidget):
     transcription_finished = Signal(str, str)
     # -1 informa que não há nenhuma transcrição ativa.
     taskbar_progress = Signal(float)
+    embedded_finished = Signal(str)
 
     def __init__(self, cfg: Settings, parent=None):
         super().__init__(parent)
@@ -39,6 +45,9 @@ class TranscriptionPage(QWidget):
         self.cfg = cfg
         self.toolchain = None
         self.worker: TranscriptionWorker | None = None
+        self.mux_worker: MediaToolWorker | None = None
+        self._pending: deque[tuple[str, bool]] = deque()
+        self._current_embed = False
         self._paused = False
         self._build_ui()
         self.setAcceptDrops(True)
@@ -121,6 +130,69 @@ class TranscriptionPage(QWidget):
         group.add_row(SettingRow("Modelo Whisper",
                                  "Modelos maiores acertam mais e demoram mais.",
                                  self.model, group))
+
+        manage_models = Button("Gerenciar modelos", "settings", "secondary", group)
+        manage_models.clicked.connect(self._manage_models)
+        group.add_row(SettingRow(
+            "Modelos no disco",
+            "Baixe antes de usar, confira o espaço ocupado ou remova pesos antigos.",
+            manage_models,
+            group,
+        ))
+
+        self.task = self._combo(TASKS, self.cfg.transcription_task, group)
+        self.task.currentIndexChanged.connect(
+            lambda: self._save("transcription_task", self.task.currentData()))
+        group.add_row(SettingRow(
+            "Tarefa",
+            "A tradução gera texto em inglês; o modelo Turbo é apenas para transcrição.",
+            self.task,
+            group,
+        ))
+
+        self.initial_prompt = TextField("Nomes próprios, siglas e termos técnicos", group)
+        self.initial_prompt.setText(self.cfg.transcription_initial_prompt)
+        self.initial_prompt.editingFinished.connect(
+            lambda: self._save("transcription_initial_prompt", self.initial_prompt.text().strip()))
+        group.add_row(SettingRow(
+            "Vocabulário de contexto",
+            "Ajuda o Whisper com nomes próprios e termos esperados; não é enviado à internet.",
+            self.initial_prompt,
+            group,
+        ))
+
+        self.max_chars = Stepper(group)
+        self.max_chars.setRange(20, 100)
+        self.max_chars.setValue(int(self.cfg.transcription_max_chars))
+        self.max_chars.valueChanged.connect(
+            lambda value: self._save("transcription_max_chars", int(value)))
+        group.add_row(SettingRow(
+            "Caracteres por linha",
+            "Controla a largura máxima antes de quebrar a legenda.",
+            self.max_chars,
+            group,
+        ))
+
+        duration_controls = QWidget(group)
+        duration_row = QHBoxLayout(duration_controls)
+        duration_row.setContentsMargins(0, 0, 0, 0)
+        duration_row.setSpacing(8)
+        self.min_duration = TextField("mín. 0,8 s", duration_controls)
+        self.max_duration = TextField("máx. 4,5 s", duration_controls)
+        self.min_duration.setFixedWidth(105)
+        self.max_duration.setFixedWidth(105)
+        self.min_duration.setText(str(self.cfg.transcription_min_duration).replace(".", ","))
+        self.max_duration.setText(str(self.cfg.transcription_max_duration).replace(".", ","))
+        self.min_duration.editingFinished.connect(self._save_durations)
+        self.max_duration.editingFinished.connect(self._save_durations)
+        duration_row.addWidget(self.min_duration)
+        duration_row.addWidget(self.max_duration)
+        group.add_row(SettingRow(
+            "Duração dos blocos",
+            "Limites em segundos para evitar flashes curtos ou legendas longas demais.",
+            duration_controls,
+            group,
+        ))
 
         format_items = [(label, key) for key, (label, _ext) in FORMATS.items()]
         self.output_format = self._combo(format_items, self.cfg.transcription_format, group)
@@ -215,8 +287,27 @@ class TranscriptionPage(QWidget):
         setattr(self.cfg, key, value)
         self.cfg.save()
 
+    def _save_durations(self) -> None:
+        try:
+            minimum = float(self.min_duration.text().strip().replace(",", "."))
+            maximum = float(self.max_duration.text().strip().replace(",", "."))
+        except ValueError:
+            minimum = self.cfg.transcription_min_duration
+            maximum = self.cfg.transcription_max_duration
+        minimum = max(0.2, min(5.0, minimum))
+        maximum = max(minimum, min(15.0, maximum))
+        self.cfg.transcription_min_duration = minimum
+        self.cfg.transcription_max_duration = maximum
+        self.cfg.save()
+        self.min_duration.setText(str(minimum).replace(".", ","))
+        self.max_duration.setText(str(maximum).replace(".", ","))
+
     def set_toolchain(self, toolchain) -> None:
         self.toolchain = toolchain
+
+    def _manage_models(self) -> None:
+        dialog = ModelManagerDialog(str(self.model.currentData()), self.window())
+        dialog.exec()
 
     def _pick_media(self) -> None:
         from PySide6.QtWidgets import QFileDialog
@@ -267,9 +358,26 @@ class TranscriptionPage(QWidget):
                 event.acceptProposedAction()
                 return
 
-    def start(self) -> None:
+    def enqueue_media(self, path: str, embed: bool = False) -> None:
+        """Enfileira uma mídia vinda de um download sem interromper a atual."""
+        request = (path, bool(embed))
+        if ((self.worker and self.worker.isRunning())
+                or (self.mux_worker and self.mux_worker.isRunning())):
+            self._pending.append(request)
+            self._status(f"Adicionado à fila de transcrição: {Path(path).name}")
+            return
+        self._start_request(*request)
+
+    def _start_request(self, path: str, embed: bool) -> None:
+        self._current_embed = bool(embed)
+        self.set_media(path)
+        self.start(automatic=True)
+
+    def start(self, automatic: bool = False) -> None:
         if self.worker and self.worker.isRunning():
             return
+        if not automatic:
+            self._current_embed = False
         if not self.toolchain:
             self._warn("As dependências ainda estão sendo verificadas.")
             return
@@ -277,13 +385,27 @@ class TranscriptionPage(QWidget):
         if not media.is_file():
             self._warn("Selecione um arquivo de áudio ou vídeo existente.")
             return
+        if self.task.currentData() == "translate" and self.model.currentData() == "large-v3-turbo":
+            self._warn("O Large v3 Turbo não foi treinado para tradução. Escolha o Large v3.")
+            return
         fmt = self.output_format.currentData()
         output = available_destination(Path(
             self.output_edit.text().strip() or str(media.with_suffix(FORMATS[fmt][1]))
         ).with_suffix(FORMATS[fmt][1]))
         self.output_edit.setText(str(output))
-        opts = TranscriptionOptions(media, output, self.language.currentData(), self.model.currentData(),
-                                    fmt, self.aggressive.isChecked())
+        opts = TranscriptionOptions(
+            media_path=media,
+            output_path=output,
+            language=self.language.currentData(),
+            model_size=self.model.currentData(),
+            output_format=fmt,
+            aggressive_filter=self.aggressive.isChecked(),
+            task=self.task.currentData(),
+            initial_prompt=self.initial_prompt.text().strip(),
+            max_chars_per_line=self.max_chars.value(),
+            min_duration=self.cfg.transcription_min_duration,
+            max_duration=self.cfg.transcription_max_duration,
+        )
         self.log.clear()
         self.progress.setValue(0)
         self.taskbar_progress.emit(0.0)
@@ -331,24 +453,93 @@ class TranscriptionPage(QWidget):
 
     def _done(self, path: str) -> None:
         self._finish_controls()
-        self.transcription_finished.emit(path, self.media_edit.text().strip())
+        source = self.media_edit.text().strip()
+        self.transcription_finished.emit(path, source)
         Toast.success("Transcrição concluída", f"Legenda salva em {Path(path).name}",
                       parent=self.window(), duration=6000)
+        if self._current_embed:
+            self._start_soft_subtitle(source, path)
 
     def _clear_finished_worker(self) -> None:
         """Não retém uma referência Qt já destruída entre duas execuções."""
         worker = self.sender()
         if worker is self.worker:
             self.worker = None
+        if not (self.mux_worker and self.mux_worker.isRunning()):
+            QTimer.singleShot(0, self._start_next_pending)
 
     def _cancelled(self) -> None:
         self._finish_controls()
         self._status("Transcrição cancelada.")
+        self._current_embed = False
 
     def _failed(self, error: str) -> None:
         self._finish_controls()
         self._status(f"Erro: {error}")
         Toast.error("Falha na transcrição", error, parent=self.window(), duration=9000)
+        self._current_embed = False
+
+    def _start_soft_subtitle(self, source: str, subtitle: str) -> None:
+        media = Path(source)
+        caption = Path(subtitle)
+        if not self.toolchain or not media.is_file() or not caption.is_file():
+            self._status("Legenda criada, mas não foi possível iniciar a incorporação automática.")
+            self._current_embed = False
+            return
+        destination = default_destination(media, "soft_sub")
+        worker = MediaToolWorker(
+            MediaToolOptions(
+                source=media,
+                destination=destination,
+                operation="soft_sub",
+                subtitles=caption,
+            ),
+            self.toolchain,
+            self,
+        )
+        self.mux_worker = worker
+        worker.progress.connect(self._status)
+        worker.progress_value.connect(self._set_progress)
+        worker.finished_ok.connect(self._mux_done)
+        worker.failed.connect(self._mux_failed)
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(lambda w=worker: self._clear_mux_worker(w))
+        self._status("Incorporando a legenda como faixa, sem reencodar o vídeo…")
+        worker.start()
+
+    def _mux_done(self, output: str) -> None:
+        self.embedded_finished.emit(output)
+        self._status(f"Cópia legendada criada: {Path(output).name}")
+        Toast.success(
+            "Legenda incorporada",
+            f"Arquivo salvo em {Path(output).name}",
+            parent=self.window(),
+            duration=6500,
+        )
+
+    def _mux_failed(self, error: str) -> None:
+        self._status(f"A legenda foi criada, mas não foi possível incorporá-la: {error}")
+        Toast.warning(
+            "Legenda criada sem incorporação",
+            error,
+            parent=self.window(),
+            duration=7500,
+        )
+
+    def _clear_mux_worker(self, worker: MediaToolWorker) -> None:
+        if self.mux_worker is worker:
+            self.mux_worker = None
+        self._current_embed = False
+        self.taskbar_progress.emit(-1.0)
+        QTimer.singleShot(0, self._start_next_pending)
+
+    def _start_next_pending(self) -> None:
+        if ((self.worker and self.worker.isRunning())
+                or (self.mux_worker and self.mux_worker.isRunning())
+                or not self._pending):
+            return
+        path, embed = self._pending.popleft()
+        self._start_request(path, embed)
 
     def _finish_controls(self) -> None:
         self.start_btn.setEnabled(True)
@@ -361,13 +552,16 @@ class TranscriptionPage(QWidget):
     def shutdown(self) -> None:
         """Finaliza o worker antes de o Qt destruir a janela principal."""
         worker = self.worker
-        if worker is None or not worker.isRunning():
-            return
-        self._status("Encerrando transcrição antes de fechar o aplicativo…")
-        worker.cancel()
-        if not worker.wait(5000):
-            worker.force_stop()
-            worker.wait(2000)
+        if worker is not None and worker.isRunning():
+            self._status("Encerrando transcrição antes de fechar o aplicativo…")
+            worker.cancel()
+            if not worker.wait(5000):
+                worker.force_stop()
+                worker.wait(2000)
+        mux = self.mux_worker
+        if mux is not None and mux.isRunning():
+            mux.cancel()
+            mux.wait(3000)
 
     def open_output_folder(self) -> None:
         path = Path(self.output_edit.text().strip() or self.media_edit.text().strip())

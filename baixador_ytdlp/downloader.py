@@ -49,6 +49,8 @@ class DownloadOptions:
     title: str = ""
     section_start: str = ""         # "00:01:30" — vazio = do começo
     section_end: str = ""           # "00:04:00" — vazio = até o fim
+    transcribe_after: bool = False   # envia os arquivos concluídos para o Whisper
+    embed_transcription: bool = False # incorpora a legenda como faixa, sem reencodar
 
 
 @dataclass
