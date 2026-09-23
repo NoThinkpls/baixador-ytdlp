@@ -12,7 +12,7 @@ from ..config import Settings
 from ..diagnostics import log_event
 from ..media_tools import MediaToolOptions, available_destination, default_destination
 from ..transcription import FORMATS, TranscriptionOptions
-from ..workers import MediaToolWorker, TranscriptionWorker
+from ..workers import MediaToolWorker, PersistentTranscriptionWorker
 from .components import (Button, Card, Divider, Headline, InsetGroup, LogView, Muted,
                          PageHeader, PrimaryButton, ProgressBar, ScrollColumn,
                          SectionLabel, Select, SettingRow, Stepper, Switch, TextField, Toast)
@@ -44,7 +44,7 @@ class TranscriptionPage(QWidget):
         self.setObjectName("transcriptionPage")
         self.cfg = cfg
         self.toolchain = None
-        self.worker: TranscriptionWorker | None = None
+        self.worker: PersistentTranscriptionWorker | None = None
         self.mux_worker: MediaToolWorker | None = None
         # Cada item guarda as próprias opções no momento em que entra na fila.
         # Antes a fila relia o formulário ao começar e, na conclusão, pegava a
@@ -429,7 +429,7 @@ class TranscriptionPage(QWidget):
         self._run(opts, embed)
 
     def _busy(self) -> bool:
-        return bool((self.worker and self.worker.isRunning())
+        return bool((self.worker and self.worker.is_busy())
                     or (self.mux_worker and self.mux_worker.isRunning()))
 
     def _build_options(self, media: Path, *, automatic: bool = False) -> TranscriptionOptions | None:
@@ -494,17 +494,21 @@ class TranscriptionPage(QWidget):
         self.start_btn.setEnabled(True)
         self.pause_btn.setEnabled(True)
         self.cancel_btn.setEnabled(True)
-        worker = TranscriptionWorker(opts, self.toolchain, self)
-        self.worker = worker
-        worker.status.connect(self._status)
-        worker.progress.connect(self._set_progress)
-        worker.finished_ok.connect(self._done)
-        worker.cancelled.connect(self._cancelled)
-        worker.failed.connect(self._failed)
-        worker.finished.connect(self._clear_finished_worker)
-        worker.finished.connect(worker.deleteLater)
+        if self.worker is None:
+            worker = PersistentTranscriptionWorker(self.toolchain, self)
+            self.worker = worker
+            worker.status.connect(self._status)
+            worker.progress.connect(self._set_progress)
+            worker.finished_ok.connect(self._done)
+            worker.cancelled.connect(self._cancelled)
+            worker.failed.connect(self._failed)
+        else:
+            worker = self.worker
         log_event("Transcrição iniciada: %s", opts.media_path)
-        worker.start()
+        try:
+            worker.submit(opts)
+        except RuntimeError as exc:
+            self._failed(str(exc))
 
     def _status(self, message: str) -> None:
         self.log.appendPlainText(message)
@@ -540,25 +544,21 @@ class TranscriptionPage(QWidget):
                       parent=self.window(), duration=6000)
         if self._current_embed:
             self._start_soft_subtitle(source, path)
-
-    def _clear_finished_worker(self) -> None:
-        """Não retém uma referência Qt já destruída entre duas execuções."""
-        worker = self.sender()
-        if worker is self.worker:
-            self.worker = None
-        if not (self.mux_worker and self.mux_worker.isRunning()):
+        else:
             QTimer.singleShot(0, self._start_next_pending)
 
     def _cancelled(self) -> None:
         self._finish_controls()
         self._status("Transcrição cancelada.")
         self._current_embed = False
+        QTimer.singleShot(0, self._start_next_pending)
 
     def _failed(self, error: str) -> None:
         self._finish_controls()
         self._status(f"Erro: {error}")
         Toast.error("Falha na transcrição", error, parent=self.window(), duration=9000)
         self._current_embed = False
+        QTimer.singleShot(0, self._start_next_pending)
 
     def _start_soft_subtitle(self, source: str, subtitle: str) -> None:
         media = Path(source)
@@ -619,7 +619,7 @@ class TranscriptionPage(QWidget):
         QTimer.singleShot(0, self._start_next_pending)
 
     def _start_next_pending(self) -> None:
-        if ((self.worker and self.worker.isRunning())
+        if ((self.worker and self.worker.is_busy())
                 or (self.mux_worker and self.mux_worker.isRunning())
                 or not self._pending):
             return
@@ -639,10 +639,11 @@ class TranscriptionPage(QWidget):
         worker = self.worker
         if worker is not None and worker.isRunning():
             self._status("Encerrando transcrição antes de fechar o aplicativo…")
-            worker.cancel()
+            worker.shutdown()
             if not worker.wait(5000):
                 worker.force_stop()
                 worker.wait(2000)
+            worker.close_queues()
         mux = self.mux_worker
         if mux is not None and mux.isRunning():
             mux.cancel()
@@ -655,3 +656,4 @@ class TranscriptionPage(QWidget):
 
     def _warn(self, message: str) -> None:
         Toast.warning("Atenção", message, parent=self.window(), duration=5000)
+

@@ -37,6 +37,7 @@ BROWSERS = [("Não usar cookies", ""),
             ("Vivaldi — não funciona no Windows", "vivaldi"),
             ("Opera — não funciona no Windows", "opera")]
 THEMES = [("Seguir o sistema", "auto"), ("Claro", "light"), ("Escuro", "dark")]
+UI_LANGUAGES = [("Português (Brasil)", "pt-BR"), ("English", "en")]
 PRESETS = [("p1 — mais rápido", "p1"), ("p4 — equilibrado", "p4"),
            ("p5 — recomendado", "p5"), ("p7 — mais lento e melhor", "p7")]
 
@@ -48,6 +49,7 @@ class SettingsPage(QWidget):
     app_update_requested = Signal()
     gpu_detection_requested = Signal()
     theme_changed = Signal(str)
+    language_changed = Signal(str)
     download_dir_changed = Signal(str)
 
     def __init__(self, cfg: Settings, parent=None):
@@ -178,6 +180,13 @@ class SettingsPage(QWidget):
         self._section("Aparência")
         self._combo_row("Tema", "Claro, escuro ou o que o sistema estiver usando.",
                         THEMES, "theme", on_change=self._apply_theme)
+        self._combo_row(
+            "Idioma da interface",
+            "Aplique na próxima abertura para não interromper downloads ou transcrições em andamento.",
+            UI_LANGUAGES,
+            "ui_language",
+            on_change=self._apply_language,
+        )
         self._switch_row("Efeito Mica na janela",
                          "Experimental. As superfícies do app são opacas, então o material quase "
                          "não aparece; mantenha desligado se notar bordas claras. Requer reiniciar.",
@@ -564,6 +573,9 @@ class SettingsPage(QWidget):
         theme.set_mode(value)
         self.theme_changed.emit(value)
 
+    def _apply_language(self, value: str) -> None:
+        self.language_changed.emit(value)
+
     def set_gpu(self, gpu: GpuInfo) -> None:
         self.gpu = gpu
         self.gpu_label.setText(gpu.summary)
@@ -612,3 +624,4 @@ class SettingsPage(QWidget):
         if transcription_runtime:
             text += f"\n{transcription_runtime}"
         self.versions.setText(text)
+

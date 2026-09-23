@@ -18,13 +18,14 @@ from PySide6.QtWidgets import (QAbstractButton, QComboBox, QFrame, QGraphicsOpac
                                QWidget)
 
 from . import icons, theme
+from .i18n import tr
 
 
 # ============================================================== textos
 
 def _label(text: str, font, object_name: str = "", parent=None,
            wrap: bool = False) -> QLabel:
-    label = QLabel(text, parent)
+    label = QLabel(tr(text), parent)
     label.setFont(font)
     if object_name:
         label.setObjectName(object_name)
@@ -95,7 +96,7 @@ class Button(QAbstractButton):
         self._tone = tone
         self.setObjectName(object_name)
         self.setText(text)
-        self.setAccessibleName(text)
+        self.setAccessibleName(tr(text))
         self.setFont(theme.callout())
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -103,6 +104,9 @@ class Button(QAbstractButton):
         # QAbstractButton nem sempre repinta sozinho ao mudar de estado pressionado.
         self.pressed.connect(self.update)
         self.released.connect(self.update)
+
+    def setText(self, text: str) -> None:  # noqa: N802 - API Qt
+        super().setText(tr(str(text)))
 
     # O desenho é manual para que ícone e rótulo fiquem opticamente centrados,
     # o que o par QPushButton+QSS não garante quando há ícone.
@@ -222,8 +226,8 @@ class IconButton(QAbstractButton):
         self.pressed.connect(self.update)
         self.released.connect(self.update)
         if tooltip:
-            self.setToolTip(tooltip)
-            self.setAccessibleName(tooltip)
+            self.setToolTip(tr(tooltip))
+            self.setAccessibleName(tr(tooltip))
 
     def set_icon_name(self, name: str) -> None:
         self._icon_name = name
@@ -352,8 +356,8 @@ class CheckBox(QAbstractButton):
     def __init__(self, text: str = "", parent=None):
         super().__init__(parent)
         self.setCheckable(True)
-        self.setText(text)
-        self.setAccessibleName(text)
+        self.setText(tr(text))
+        self.setAccessibleName(tr(text))
         self.setFont(theme.body())
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMinimumHeight(26)
@@ -418,6 +422,9 @@ class Select(QComboBox):
         self.setMinimumHeight(theme.FIELD_HEIGHT)
         self.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContentsOnFirstShow)
 
+    def addItem(self, text: str, userData=None) -> None:  # noqa: N802 - API Qt
+        super().addItem(tr(str(text)), userData)
+
     def paintEvent(self, event):  # noqa: N802 - assinatura do Qt
         super().paintEvent(event)
         painter = QPainter(self)
@@ -433,7 +440,7 @@ class TextField(QLineEdit):
         self.setFont(theme.body())
         self.setMinimumHeight(theme.FIELD_HEIGHT)
         if placeholder:
-            self.setPlaceholderText(placeholder)
+            self.setPlaceholderText(tr(placeholder))
 
 
 class Stepper(QWidget):
@@ -790,7 +797,7 @@ class LogView(QPlainTextEdit):
         self.setMaximumBlockCount(500)
         self.setFrameShape(QFrame.Shape.NoFrame)
         if placeholder:
-            self.setPlaceholderText(placeholder)
+            self.setPlaceholderText(tr(placeholder))
 
 
 # ============================================================== avisos
@@ -943,3 +950,4 @@ class Toast(QFrame):
         if event.type() == QEvent.Type.Resize and watched is self.parentWidget():
             self.__class__._relayout(watched)
         return super().eventFilter(watched, event)
+

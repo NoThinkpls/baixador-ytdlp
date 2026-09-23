@@ -1,5 +1,7 @@
 # Compilação e publicação de Releases
 
+[Read this guide in English](BUILD-AND-RELEASE.en.md)
+
 As builds oficiais são geradas pelo GitHub Actions. Um push em `main` valida e
 compila Windows, macOS e Linux e, somente se todas passarem, cria a tag `vX.Y.Z`
 compatível com `APP_VERSION` e publica a Release. Uma tag enviada manualmente
@@ -37,3 +39,4 @@ andamento, os links de download ainda podem retornar arquivo não encontrado.
 ## Desenvolvimento local
 
 Os scripts `build.ps1` e `build.cmd` existem apenas como apoio ao desenvolvimento. Para distribuição, use os artefatos produzidos pelo GitHub Actions.
+

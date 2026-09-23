@@ -12,6 +12,7 @@ import importlib.util
 import json
 import os
 import platform
+import queue
 import re
 import subprocess
 import sys
@@ -340,6 +341,13 @@ class Transcriber:
             self.backend, self.device, self.compute_type, self.hardware_label = self._detect_hardware()
         self.model = None
         self._model_path: Path | None = None
+        # O processo persistente conserva o motor na memória entre itens da
+        # fila.  Estes campos identificam exatamente qual configuração está
+        # carregada para recarregar somente quando a pessoa troca o modelo ou
+        # o perfil de memória da GPU.
+        self._loaded_model_size: str | None = None
+        self._loaded_model_profile: tuple[str, str, str] | None = None
+        self._hardware_label_base = self.hardware_label
 
     def cancel(self) -> None:
         self.cancel_event.set()
@@ -417,6 +425,8 @@ class Transcriber:
                 cpu_threads=whisper_threads(), num_workers=1,
             )
         self.progress(15)
+        self._loaded_model_size = model_size
+        self._loaded_model_profile = (self.backend, self.device, self.compute_type)
         self.status(f"Modelo pronto: {self.hardware_label}")
 
     def _prepare_mlx(self, model_size: str) -> None:
@@ -435,6 +445,8 @@ class Transcriber:
             progress=self.progress,
             progress_range=(5, 14),
         )
+        self._loaded_model_size = model_size
+        self._loaded_model_profile = (self.backend, self.device, self.compute_type)
         self.status(f"Carregando Whisper {model_size} em {self.hardware_label}…")
 
     @staticmethod
@@ -463,10 +475,10 @@ class Transcriber:
         from faster_whisper import WhisperModel
 
         self.status(f"CUDA indisponível durante a transcrição ({reason}). Alternando para CPU int8…")
-        self.model = None
-        gc.collect()
+        self._discard_model()
         self.device, self.compute_type = "cpu", "int8"
         self.hardware_label = "CPU — fallback automático (int8)"
+        self._hardware_label_base = self.hardware_label
         model_path = download_model_snapshot(
             model_size,
             mlx=False,
@@ -478,6 +490,8 @@ class Transcriber:
             str(model_path), device="cpu", compute_type="int8",
             cpu_threads=whisper_threads(), num_workers=1,
         )
+        self._loaded_model_size = model_size
+        self._loaded_model_profile = (self.backend, self.device, self.compute_type)
         self.status(f"Modelo pronto: {self.hardware_label}")
 
     def _switch_mlx_to_cpu(self, model_size: str, reason: Exception) -> None:
@@ -485,9 +499,42 @@ class Transcriber:
         self.status(f"MLX indisponível durante a transcrição ({reason}). Alternando para CPU int8…")
         self.backend, self.device, self.compute_type = "faster-whisper", "cpu", "int8"
         self.hardware_label = "Apple Silicon — fallback CPU/NEON (int8)"
-        self.model = None
-        gc.collect()
+        self._discard_model()
         self._load_model(model_size)
+
+    def _discard_model(self) -> None:
+        """Libera o modelo somente quando ele não serve mais para o próximo item."""
+        self.model = None
+        self._loaded_model_size = None
+        self._loaded_model_profile = None
+        gc.collect()
+
+    def close(self) -> None:
+        """Libera os pesos ao encerrar o processo persistente do legendador."""
+        self._discard_model()
+        self._model_path = None
+
+    def _prepare_model_for(self, opts: TranscriptionOptions) -> None:
+        """Mantém o modelo vivo se o próximo item usa a mesma configuração."""
+        if self.backend == "mlx":
+            if self._loaded_model_size != opts.model_size or self._model_path is None:
+                self._prepare_mlx(opts.model_size)
+            return
+
+        desired_compute = self.compute_type
+        if self.device == "cuda":
+            desired_compute = "int8_float16" if opts.low_vram else "float16"
+            suffix = " · int8_float16" if opts.low_vram else ""
+            self.hardware_label = self._hardware_label_base + suffix
+
+        desired_profile = (self.backend, self.device, desired_compute)
+        if (self.model is not None and
+                (self._loaded_model_size != opts.model_size or
+                 self._loaded_model_profile != desired_profile)):
+            self._discard_model()
+        self.compute_type = desired_compute
+        if self.model is None:
+            self._load_model(opts.model_size)
 
     def _decode_faster_whisper(self, audio: Path, opts: TranscriptionOptions,
                                duration: float) -> tuple[list[dict], object]:
@@ -620,14 +667,8 @@ class Transcriber:
             raise FileNotFoundError("Selecione um arquivo de áudio ou vídeo válido.")
         audio: Path | None = None
         try:
-            if self.device == "cuda" and opts.low_vram:
-                self.compute_type = "int8_float16"
-                self.hardware_label += " · int8_float16"
             self._check_interrupt()
-            if self.backend == "mlx":
-                self._prepare_mlx(opts.model_size)
-            elif not self.model:
-                self._load_model(opts.model_size)
+            self._prepare_model_for(opts)
             audio = self._extract_audio(opts.media_path)
             duration = self._duration(opts.media_path)
             self.status(f"Transcrevendo {opts.media_path.name}…")
@@ -661,10 +702,6 @@ class Transcriber:
         finally:
             if audio:
                 audio.unlink(missing_ok=True)
-            self.model = None
-            # Descarregar o modelo já devolve a VRAM no CTranslate2; o gc fecha
-            # as referências restantes sem depender do torch.
-            gc.collect()
 
     def _batched_transcribe(self, audio: Path, opts: TranscriptionOptions):
         """Processa vários trechos em paralelo na GPU (faster-whisper ≥ 1.1).
@@ -947,3 +984,129 @@ def transcription_process_main(opts: TranscriptionOptions, toolchain: Toolchain,
     else:
         log_event("Transcrição auxiliar concluída: %s", opts.output_path)
         send("finished", str(opts.output_path))
+
+
+def transcription_server_main(toolchain: Toolchain, commands, events) -> None:
+    """Mantém um único processo de Whisper para toda a fila de legendas.
+
+    O processo continua separado da interface para que uma falha nativa de
+    CUDA/CTranslate2 nunca derrube a janela. Diferente do worker antigo, ele
+    recebe vários trabalhos pela fila de comandos e preserva o ``Transcriber``
+    (e portanto os pesos já carregados) enquanto modelo e perfil de GPU não
+    mudarem.
+    """
+    install_diagnostics("transcription-server")
+    from .runtime import prepare_embedded_cuda
+
+    cuda_problem = prepare_embedded_cuda()
+    jobs: queue.Queue = queue.Queue()
+    cancel_event = threading.Event()
+    pause_event = threading.Event()
+    stop_event = threading.Event()
+    active_job: list[int | None] = [None]
+    pending_cancellations: set[int] = set()
+    pending_pauses: dict[int, bool] = {}
+
+    def send(job_id: int, kind: str, value=None) -> None:
+        try:
+            events.put((job_id, kind, value))
+        except Exception as exc:  # noqa: BLE001 - o pai pode ter sido encerrado
+            report_exception("envio de evento do servidor de transcrição", exc)
+
+    def receive_commands() -> None:
+        """Escuta pausa/cancelamento enquanto o motor nativo está ocupado."""
+        while not stop_event.is_set():
+            try:
+                command = commands.get()
+            except (EOFError, OSError):
+                stop_event.set()
+                cancel_event.set()
+                return
+            if not command:
+                continue
+            kind = command[0]
+            target = command[1] if len(command) > 1 else None
+            if kind == "cancel":
+                if target == active_job[0]:
+                    cancel_event.set()
+                elif isinstance(target, int):
+                    pending_cancellations.add(target)
+            elif kind == "pause":
+                paused = bool(command[2])
+                if target == active_job[0]:
+                    if paused:
+                        pause_event.set()
+                    else:
+                        pause_event.clear()
+                elif isinstance(target, int):
+                    pending_pauses[target] = paused
+            elif kind == "shutdown":
+                stop_event.set()
+                cancel_event.set()
+                jobs.put(("shutdown",))
+                return
+            elif kind == "run":
+                jobs.put(command)
+
+    listener = threading.Thread(
+        target=receive_commands, name="whisper-command-listener", daemon=True,
+    )
+    listener.start()
+    transcriber: Transcriber | None = None
+
+    try:
+        while not stop_event.is_set():
+            command = jobs.get()
+            if not command or command[0] == "shutdown":
+                break
+            _kind, job_id, opts = command
+            active_job[0] = int(job_id)
+            cancel_event.clear()
+            pause_event.clear()
+            if int(job_id) in pending_cancellations:
+                pending_cancellations.discard(int(job_id))
+                cancel_event.set()
+            if pending_pauses.pop(int(job_id), False):
+                pause_event.set()
+            try:
+                if transcriber is None:
+                    transcriber = Transcriber(
+                        toolchain,
+                        lambda message: send(int(job_id), "status", message),
+                        lambda percent: send(int(job_id), "progress", percent),
+                        opts.aggressive_filter,
+                        cancel_event=cancel_event,
+                        pause_event=pause_event,
+                        force_cpu=bool(cuda_problem),
+                    )
+                    if cuda_problem:
+                        send(int(job_id), "status",
+                             f"CUDA interno indisponível ({cuda_problem}). Usando CPU int8…")
+                else:
+                    # Os filtros são escolhas de cada item, não uma propriedade
+                    # permanente do modelo em memória.
+                    transcriber.aggressive_filter = opts.aggressive_filter
+                    transcriber.status = lambda message: send(int(job_id), "status", message)
+                    transcriber.progress = lambda percent: send(int(job_id), "progress", percent)
+
+                log_event("Transcrição persistente iniciada: entrada=%s saída=%s modelo=%s",
+                          opts.media_path, opts.output_path, opts.model_size)
+                transcriber.run(opts)
+            except TranscriptionCancelled:
+                log_event("Transcrição persistente cancelada pelo usuário")
+                send(int(job_id), "cancelled")
+            except Exception as exc:  # noqa: BLE001 - precisa voltar à interface
+                report_exception("transcrição persistente", exc)
+                send(int(job_id), "error", {
+                    "message": str(exc), "traceback": traceback.format_exc(),
+                })
+            else:
+                log_event("Transcrição persistente concluída: %s", opts.output_path)
+                send(int(job_id), "finished", str(opts.output_path))
+            finally:
+                active_job[0] = None
+                pause_event.clear()
+    finally:
+        if transcriber is not None:
+            transcriber.close()
+

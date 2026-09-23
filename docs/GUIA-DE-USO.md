@@ -1,5 +1,7 @@
 # Guia de uso
 
+[Read this guide in English](USAGE-GUIDE.en.md)
+
 ## Baixar conteúdo
 
 Cole o link, analise as qualidades disponíveis e escolha vídeo, áudio ou apenas um trecho. O aplicativo usa a melhor qualidade por padrão e permite selecionar contêiner, resolução, codec e pasta de saída.
@@ -21,6 +23,12 @@ O aplicativo instala o Deno automaticamente quando necessário para o desafio Ja
 Arraste um vídeo ou áudio para a área de transcrição, escolha idioma, tarefa e modelo, e exporte SRT, WebVTT, ASS, ASS karaoke, TXT ou JSON. É possível traduzir a fala para inglês, informar nomes e termos técnicos como contexto e ajustar largura e duração dos blocos. O Large v3 Turbo prioriza velocidade e precisão, mas não oferece tradução.
 
 Em **Gerenciar modelos**, baixe os pesos antes do uso, acompanhe o progresso, confira o espaço ocupado ou remova um modelo. Em máquinas NVIDIA compatíveis, a transcrição pode usar CUDA; nas demais, usa CPU automaticamente. No Apple Silicon, usa MLX.
+
+O processo protegido do Whisper permanece aberto entre itens consecutivos da fila e reaproveita o modelo que já está na memória. O carregamento só acontece de novo ao trocar o modelo ou o perfil de economia de memória da GPU.
+
+## Idioma da interface
+
+Em **Configurações → Aparência → Idioma da interface**, escolha **English** para usar o aplicativo em inglês. Feche e abra o aplicativo para aplicar a escolha: assim downloads, conversões e transcrições já em andamento não são interrompidos.
 
 ## Enviar um link do navegador
 
@@ -63,3 +71,4 @@ nome da sua pasta de usuário.
 ## Onde ficam os dados
 
 No Windows, configurações, histórico, fila, modelos e dependências ficam em `%LOCALAPPDATA%\\BaixadorYtdlp`. No macOS, ficam em `~/Library/Application Support/BaixadorYtdlp`. No Linux, ficam em `~/.local/share/BaixadorYtdlp` (ou no diretório definido em `XDG_DATA_HOME`). A pasta dos downloads é configurável.
+

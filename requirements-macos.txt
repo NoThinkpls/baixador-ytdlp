@@ -138,3 +138,4 @@ pyobjc-framework-VideoSubscriberAccount==12.2.2
 pyobjc-framework-VideoToolbox==12.2.2
 pyobjc-framework-Virtualization==12.2.2
 pyobjc-framework-Vision==12.2.2
+

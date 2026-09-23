@@ -75,6 +75,11 @@ def main() -> int:
         log_event("Migração de modelos ignorada: %s", exc)
 
     cfg = Settings.load()
+    # A árvore de widgets é construída já no idioma escolhido. Trocas feitas
+    # na tela de Configurações entram na próxima abertura, sem recriar a UI no
+    # meio de uma fila ativa.
+    from baixador_ytdlp.ui.i18n import set_language
+    set_language(cfg.ui_language)
     window = MainWindow(
         cfg,
         ToolManager(runtime_check_hours=cfg.runtime_check_hours,
@@ -114,3 +119,4 @@ if __name__ == "__main__":
     # processo auxiliar, sem abrir uma segunda janela Qt.
     multiprocessing.freeze_support()
     raise SystemExit(main())
+

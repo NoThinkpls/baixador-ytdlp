@@ -81,7 +81,7 @@ class TranscriptionQueueTests(unittest.TestCase):
 
 
 class WindowSettingsTests(unittest.TestCase):
-    def test_schema_5_disables_mica_and_legacy_geometry(self) -> None:
+    def test_schema_6_disables_mica_and_legacy_geometry(self) -> None:
         import json
 
         from baixador_ytdlp import config
@@ -95,7 +95,8 @@ class WindowSettingsTests(unittest.TestCase):
                 loaded = config.Settings.load()
         self.assertFalse(loaded.mica)
         self.assertEqual(loaded.window_geometry, "")
-        self.assertEqual(loaded.settings_schema_version, 5)
+        self.assertEqual(loaded.settings_schema_version, 6)
+        self.assertEqual(loaded.ui_language, "pt-BR")
 
     def test_portable_marker_next_to_macos_bundle(self) -> None:
         from baixador_ytdlp import config
@@ -117,3 +118,4 @@ class WindowSettingsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

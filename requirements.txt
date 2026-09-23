@@ -11,3 +11,4 @@ send2trash==1.8.3
 nvidia-cuda-runtime-cu12==12.4.127
 nvidia-cublas-cu12==12.4.5.8
 nvidia-cudnn-cu12==8.9.7.29
+
