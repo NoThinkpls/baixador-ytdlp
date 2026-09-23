@@ -11,3 +11,6 @@ certifi==2025.8.3
 # MLX Whisper executa o modelo na GPU integrada do Apple Silicon. O
 # faster-whisper/CTranslate2 continua incluído como fallback CPU/NEON seguro.
 mlx-whisper==0.4.3
+# O meta-pacote pyobjc exige esta extensão no macOS; listá-la garante que o
+# lock contenha o hash mesmo quando o resolvedor a trata como condicional.
+pyobjc-framework-libdispatch==12.2.2
