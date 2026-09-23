@@ -58,6 +58,7 @@ class Palette:
     text_secondary: str
     text_tertiary: str
     accent: str
+    accent_text: str       # variante legível quando a cor é usada como texto
     accent_hover: str
     accent_pressed: str
     accent_soft: str     # fundo tênue do item ativo / seleção
@@ -84,12 +85,13 @@ DARK = Palette(
     text_secondary="#B7BCC4",
     text_tertiary="#9A9FA8",
     accent="#5865F2",
+    accent_text="#8C95F7",
     accent_hover="#6C77F5",
     accent_pressed="#4752C4",
     accent_soft="rgba(88, 101, 242, 0.18)",
     on_accent="#FFFFFF",
     success="#2BB673",
-    danger="#F04A4E",
+    danger="#FF6B6E",
     danger_hover="#F76C6F",
     warning="#F0B232",
     scrim="rgba(0, 0, 0, 0.45)",
@@ -110,6 +112,7 @@ LIGHT = Palette(
     text_secondary="#4E5058",
     text_tertiary="#5E6370",
     accent="#5865F2",
+    accent_text="#5865F2",
     accent_hover="#4752C4",
     accent_pressed="#3C45A5",
     accent_soft="rgba(88, 101, 242, 0.12)",
@@ -286,6 +289,11 @@ def stylesheet() -> str:
     #analysisStat {{
         background-color: {'rgba(255,255,255,0.035)' if dark else '#F7F8FB'};
         border: 1px solid {p.separator};
+        border-radius: {RADIUS_SMALL}px;
+    }}
+    QLabel#mediaThumbnail {{
+        background-color: {p.field};
+        border: 1px solid {p.border};
         border-radius: {RADIUS_SMALL}px;
     }}
     #analysisStat QLabel#muted {{

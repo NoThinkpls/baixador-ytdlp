@@ -6,6 +6,7 @@ import queue
 import subprocess
 import threading
 import time
+import urllib.request
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
@@ -15,10 +16,11 @@ from .diagnostics import get_logger, log_event, report_exception
 from .downloader import (DownloadOptions, DownloadRunner, Progress, Transcoder,
                          is_retryable_error)
 from .gpu import GpuInfo, detect
-from .media_tools import MediaToolError, MediaToolOptions, build_command
+from .media_tools import MediaToolError, MediaToolOptions, build_command, operation_duration, time_seconds
 from .processes import isolated_process_kwargs, terminate_process_tree
 from .probe import probe
-from .tools import ToolManager, Toolchain
+from .security import validate_media_url
+from .tools import ToolManager, Toolchain, USER_AGENT, _verified_ssl_context
 from .updater import AppUpdater, ReleaseInfo
 from .transcription import TranscriptionOptions, transcription_process_main
 
@@ -118,6 +120,7 @@ class MediaToolWorker(QThread):
     """Executa FFmpeg para edição local e permite cancelamento sem bloquear a UI."""
 
     progress = Signal(str)
+    progress_value = Signal(int)
     finished_ok = Signal(str)
     failed = Signal(str)
 
@@ -139,12 +142,13 @@ class MediaToolWorker(QThread):
             if self._cancelled.is_set():
                 raise MediaToolError("Operação cancelada.")
             command = build_command(self.options, self.tc)
+            duration = operation_duration(self.options, self.tc)
             self.options.destination.parent.mkdir(parents=True, exist_ok=True)
             self.progress.emit("Processando com FFmpeg…")
             self._process = subprocess.Popen(
                 command,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
@@ -152,14 +156,30 @@ class MediaToolWorker(QThread):
             )
             if self._cancelled.is_set():
                 terminate_process_tree(self._process)
-            _, stderr = self._process.communicate()
+            output_tail: list[str] = []
+            assert self._process.stdout is not None
+            for raw_line in self._process.stdout:
+                line = raw_line.strip()
+                if line:
+                    output_tail.append(line)
+                    del output_tail[:-80]
+                if duration and line.startswith("out_time="):
+                    elapsed = time_seconds(line.partition("=")[2])
+                    percent = max(0, min(99, round(elapsed * 100 / duration)))
+                    self.progress_value.emit(percent)
+                    self.progress.emit(f"Processando com FFmpeg… {percent}%")
+                if self._cancelled.is_set() and self._process.poll() is None:
+                    terminate_process_tree(self._process)
+            self._process.wait()
             if self._cancelled.is_set():
                 raise MediaToolError("Operação cancelada.")
             if self._process.returncode:
-                detail = (stderr or "").strip().splitlines()
-                raise MediaToolError(detail[-1] if detail else "O FFmpeg encerrou com erro.")
+                raise MediaToolError(
+                    output_tail[-1] if output_tail else "O FFmpeg encerrou com erro."
+                )
             if not self.options.destination.is_file():
                 raise MediaToolError("O FFmpeg terminou sem gerar o arquivo esperado.")
+            self.progress_value.emit(100)
         except Exception as exc:  # noqa: BLE001
             report_exception("ferramenta local de mídia", exc)
             self.failed.emit(str(exc))
@@ -167,6 +187,92 @@ class MediaToolWorker(QThread):
             self.finished_ok.emit(str(self.options.destination))
         finally:
             self._process = None
+
+
+class ThumbnailWorker(QThread):
+    """Obtém uma miniatura pequena sem bloquear a interface nem relaxar o TLS."""
+
+    finished_ok = Signal(str, bytes)
+    failed = Signal(str)
+
+    def __init__(self, url: str, proxy: str = "", parent=None):
+        super().__init__(parent)
+        self.url = url
+        self.proxy = proxy.strip()
+
+    def run(self) -> None:
+        try:
+            url = validate_media_url(self.url)
+            handlers = [urllib.request.HTTPSHandler(context=_verified_ssl_context())]
+            if self.proxy:
+                handlers.append(urllib.request.ProxyHandler({"http": self.proxy, "https": self.proxy}))
+            opener = urllib.request.build_opener(*handlers)
+            request = urllib.request.Request(
+                url,
+                headers={"User-Agent": USER_AGENT, "Accept": "image/avif,image/webp,image/*"},
+            )
+            with opener.open(request, timeout=15) as response:
+                content_type = str(response.headers.get("Content-Type") or "")
+                if not content_type.casefold().startswith("image/"):
+                    raise ValueError("A miniatura recebida não é uma imagem.")
+                chunks: list[bytes] = []
+                size = 0
+                while True:
+                    if self.isInterruptionRequested():
+                        return
+                    chunk = response.read(256 * 1024)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    size += len(chunk)
+                    if size > 8 * 1024 * 1024:
+                        raise ValueError("A miniatura ultrapassa o limite de 8 MB.")
+                data = b"".join(chunks)
+            if not data or len(data) > 8 * 1024 * 1024:
+                raise ValueError("A miniatura ultrapassa o limite de 8 MB.")
+        except Exception as exc:  # noqa: BLE001 - miniatura é melhoria opcional
+            self.failed.emit(str(exc))
+        else:
+            self.finished_ok.emit(self.url, data)
+
+
+class ModelCacheWorker(QThread):
+    """Baixa ou remove pesos do Whisper fora da thread da interface."""
+
+    status = Signal(str)
+    progress = Signal(int)
+    finished_ok = Signal(str, int)
+    failed = Signal(str)
+
+    def __init__(self, action: str, model_size: str, mlx: bool, parent=None):
+        super().__init__(parent)
+        self.action = action
+        self.model_size = model_size
+        self.mlx = mlx
+
+    def run(self) -> None:
+        try:
+            from .transcription import download_model_snapshot, model_cache_size, remove_cached_model
+
+            if self.action == "download":
+                download_model_snapshot(
+                    self.model_size,
+                    mlx=self.mlx,
+                    status=self.status.emit,
+                    progress=self.progress.emit,
+                )
+                changed = model_cache_size(self.model_size, mlx=self.mlx)
+            elif self.action == "remove":
+                self.status.emit(f"Removendo modelo {self.model_size}…")
+                changed = remove_cached_model(self.model_size, mlx=self.mlx)
+                self.progress.emit(100)
+            else:
+                raise ValueError("Ação desconhecida para o cache de modelos.")
+        except Exception as exc:  # noqa: BLE001
+            report_exception(f"{self.action} do modelo Whisper", exc)
+            self.failed.emit(str(exc))
+        else:
+            self.finished_ok.emit(self.model_size, int(changed))
 
 
 class ProbeWorker(QThread):

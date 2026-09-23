@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QEvent, Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QGuiApplication, QIcon, QKeySequence, QShortcut
-from PySide6.QtWidgets import QApplication, QMessageBox, QSizePolicy
+from PySide6.QtGui import QAction, QDesktopServices, QGuiApplication, QIcon, QKeySequence, QShortcut
+from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSizePolicy, QSystemTrayIcon
 
 from ..config import APP_NAME, APP_VERSION, Settings
 from ..history import DOWNLOAD, TRANSCRIPTION, History, HistoryEntry
@@ -53,6 +53,9 @@ class MainWindow(AppShell):
         self._icon_path = icon_path
         self._download_taskbar_progress: float | None = None
         self._transcription_taskbar_progress: float | None = None
+        self._media_taskbar_progress: float | None = None
+        self._quitting = False
+        self.tray: QSystemTrayIcon | None = None
         self._taskbar_completion_timer = QTimer(self)
         self._taskbar_completion_timer.setSingleShot(True)
         self._taskbar_completion_timer.timeout.connect(self._clear_taskbar_completion)
@@ -68,6 +71,7 @@ class MainWindow(AppShell):
         self.update_banner = UpdateBanner(self)
 
         self._init_window(icon)
+        self._init_tray(icon)
         self._init_navigation()
         self._init_update_banner()
         self._init_shortcuts()
@@ -197,6 +201,49 @@ class MainWindow(AppShell):
         self.addSubInterface(self.history_page, "history", "Histórico")
         self.addSubInterface(self.settings, "settings", "Configurações", bottom=True)
 
+    def _init_tray(self, icon: QIcon | None) -> None:
+        if not QSystemTrayIcon.isSystemTrayAvailable() or icon is None or icon.isNull():
+            return
+        tray = QSystemTrayIcon(icon, self)
+        tray.setToolTip(f"{APP_NAME} {APP_VERSION}")
+        menu = QMenu(self)
+        open_action = QAction("Abrir baixador-ytdlp", menu)
+        queue_action = QAction("Mostrar fila", menu)
+        quit_action = QAction("Sair", menu)
+        open_action.triggered.connect(lambda _checked=False: self._restore_from_tray())
+        queue_action.triggered.connect(
+            lambda _checked=False: self._restore_from_tray(self.queue)
+        )
+        quit_action.triggered.connect(self._quit_from_tray)
+        menu.addAction(open_action)
+        menu.addAction(queue_action)
+        menu.addSeparator()
+        menu.addAction(quit_action)
+        tray.setContextMenu(menu)
+        tray.activated.connect(self._tray_activated)
+        tray.show()
+        self.tray = tray
+
+    def _tray_activated(self, reason) -> None:
+        if reason in {
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        }:
+            self._restore_from_tray()
+
+    def _restore_from_tray(self, page=None) -> None:
+        if self.isMinimized():
+            self.showNormal()
+        self.show()
+        if page is not None:
+            self.switchTo(page)
+        self.raise_()
+        self.activateWindow()
+
+    def _quit_from_tray(self) -> None:
+        self._quitting = True
+        self.close()
+
     def _init_update_banner(self) -> None:
         """Reserva uma faixa inferior sem sobrepor o conteúdo das páginas."""
         self.add_footer_widget(self.update_banner)
@@ -263,7 +310,14 @@ class MainWindow(AppShell):
         self.history_page.reopen_requested.connect(self._on_reopen)
         self.history_page.transcribe_requested.connect(self._on_transcribe)
         self.transcription.transcription_finished.connect(self._on_transcribed)
+        self.transcription.embedded_finished.connect(
+            lambda path: self._tray_message("Vídeo legendado concluído", Path(path).name)
+        )
         self.transcription.taskbar_progress.connect(self._on_transcription_progress)
+        self.media_tools.taskbar_progress.connect(self._on_media_progress)
+        self.media_tools.operation_finished.connect(
+            lambda path: self._tray_message("Processamento concluído", Path(path).name)
+        )
         self.settings.update_requested.connect(lambda: self.run_setup(check_now=True))
         self.settings.app_update_requested.connect(lambda: self._check_app_update(force=True))
         self.settings.gpu_detection_requested.connect(self._detect_gpu)
@@ -458,7 +512,32 @@ class MainWindow(AppShell):
     def _on_finished(self, opts, files) -> None:
         title = opts.title or opts.url
         Toast.success("Download concluído", title, parent=self, duration=6000)
+        self._tray_message("Download concluído", title)
         self._notify_taskbar_completion()
+        paths = [Path(f) for f in files]
+        final_paths = []
+        seen: set[Path] = set()
+        media_extensions = {
+            ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".flv", ".wmv",
+            ".mpeg", ".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".opus", ".m4b",
+        }
+        for path in paths:
+            resolved = path.resolve() if path.exists() else path
+            if path.is_file() and path.suffix.casefold() in media_extensions and resolved not in seen:
+                seen.add(resolved)
+                final_paths.append(path)
+        if opts.transcribe_after and final_paths:
+            for path in final_paths:
+                self.transcription.enqueue_media(
+                    str(path),
+                    embed=bool(opts.embed_transcription and not opts.audio_only),
+                )
+            Toast.info(
+                "Fila de transcrição",
+                f"{len(final_paths)} arquivo(s) enviado(s) ao Whisper.",
+                parent=self,
+                duration=5000,
+            )
         if not self.cfg.history_enabled:
             return
         # A URL vem do próprio job, não do campo da tela: entre o início e o fim
@@ -466,7 +545,6 @@ class MainWindow(AppShell):
         # Guarda o primeiro arquivo que de fato existe. O yt-dlp também imprime
         # caminhos de arquivos intermediários, que somem depois da junção — era
         # por isso que "Mostrar na pasta" e "Legendar" apareciam desabilitados.
-        paths = [Path(f) for f in files]
         final = next((p for p in paths if p.is_file()), paths[0] if paths else None)
         self.history.add(HistoryEntry(
             title=title,
@@ -483,6 +561,7 @@ class MainWindow(AppShell):
     def _on_transcribed(self, output: str, source: str) -> None:
         """Registra a legenda no histórico, ao lado dos downloads."""
         self._notify_taskbar_completion()
+        self._tray_message("Legenda concluída", Path(output).name if output else Path(source).name)
         if not self.cfg.history_enabled or not output:
             return
         legenda = Path(output)
@@ -529,6 +608,10 @@ class MainWindow(AppShell):
         )
         self._sync_taskbar_progress()
 
+    def _on_media_progress(self, percent: float) -> None:
+        self._media_taskbar_progress = None if percent < 0 else max(0.0, min(100.0, percent))
+        self._sync_taskbar_progress()
+
     def _sync_taskbar_progress(self) -> None:
         if not self.cfg.taskbar_progress:
             return
@@ -536,6 +619,7 @@ class MainWindow(AppShell):
             value for value in (
                 self._download_taskbar_progress,
                 self._transcription_taskbar_progress,
+                self._media_taskbar_progress,
             ) if value is not None
         ]
         handle = int(self.winId())
@@ -553,8 +637,14 @@ class MainWindow(AppShell):
         self._taskbar_completion_timer.start(1500)
 
     def _clear_taskbar_completion(self) -> None:
-        if self._download_taskbar_progress is None and self._transcription_taskbar_progress is None:
+        if (self._download_taskbar_progress is None
+                and self._transcription_taskbar_progress is None
+                and self._media_taskbar_progress is None):
             self.taskbar.clear(int(self.winId()))
+
+    def _tray_message(self, title: str, message: str) -> None:
+        if self.tray is not None and self.cfg.tray_notifications:
+            self.tray.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 6000)
 
     # ------------------------------------------------------- área de transf.
     def nativeEvent(self, event_type, message):  # noqa: N802 - assinatura do Qt
@@ -623,6 +713,17 @@ class MainWindow(AppShell):
             self.home.set_url(text)
 
     def closeEvent(self, event):  # noqa: N802 - assinatura do Qt
+        if self.cfg.close_to_tray and self.tray is not None and not self._quitting:
+            self.hide()
+            event.ignore()
+            if self.cfg.tray_notifications:
+                self.tray.showMessage(
+                    "Continuando em segundo plano",
+                    "O baixador-ytdlp permanece na bandeja do sistema.",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    4500,
+                )
+            return
         if self.queue.has_pending_work():
             dialog = QMessageBox(self)
             dialog.setWindowTitle("Downloads em andamento")
@@ -640,6 +741,8 @@ class MainWindow(AppShell):
                 return
         self._taskbar_completion_timer.stop()
         self.taskbar.shutdown(int(self.winId()))
+        if self.tray is not None:
+            self.tray.hide()
         self.home.shutdown()
         self.transcription.shutdown()
         self.media_tools.shutdown()

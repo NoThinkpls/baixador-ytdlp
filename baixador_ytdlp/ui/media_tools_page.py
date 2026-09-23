@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtCore import QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (QAbstractButton, QButtonGroup, QFileDialog, QGridLayout,
                                QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget)
@@ -11,9 +11,9 @@ from PySide6.QtWidgets import (QAbstractButton, QButtonGroup, QFileDialog, QGrid
 from ..media_tools import MediaToolOptions, available_destination, default_destination
 from ..workers import MediaToolWorker
 from . import icons, theme
-from .components import (BusyBar, Button, Divider, Headline, InsetGroup, Muted, PageHeader,
-                         PrimaryButton, ScrollColumn, SectionLabel, SettingRow, TextField,
-                         Toast)
+from .components import (Button, Divider, Headline, InsetGroup, Muted, PageHeader,
+                         PrimaryButton, ProgressBar, ScrollColumn, SectionLabel, SettingRow,
+                         TextField, Toast)
 
 MEDIA_FILTER = ("Mídia (*.mp4 *.mkv *.webm *.mov *.avi *.m4v *.mp3 *.m4a *.wav *.flac);;"
                 "Todos os arquivos (*.*)")
@@ -66,6 +66,9 @@ class ToolCard(QAbstractButton):
         self.setMinimumHeight(112)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setToolTip(self.data["summary"])
+        self.setAccessibleName(self.data["title"])
+        self.setAccessibleDescription(self.data["summary"])
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.toggled.connect(self.update)
         self.pressed.connect(self.update)
         self.released.connect(self.update)
@@ -110,10 +113,15 @@ class ToolCard(QAbstractButton):
                          int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), summary)
 
         painter.setFont(theme.caption())
-        painter.setPen(QPen(theme.qcolor("accent" if active else "text_tertiary")))
+        painter.setPen(QPen(theme.qcolor("accent_text" if active else "text_tertiary")))
         painter.drawText(QRectF(14, 84, self.width() - 28, 16),
                          int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
                          self.data["tag"])
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(theme.qcolor("accent_text"), 2))
+            painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1),
+                                    theme.RADIUS_CARD, theme.RADIUS_CARD)
 
     def enterEvent(self, event):  # noqa: N802 - assinatura do Qt
         self.update()
@@ -126,6 +134,9 @@ class ToolCard(QAbstractButton):
 
 class MediaToolsPage(QWidget):
     """Executa uma única tarefa local por vez, sempre fora da thread da UI."""
+
+    taskbar_progress = Signal(float)
+    operation_finished = Signal(str)
 
     def __init__(self, cfg, parent=None):
         super().__init__(parent)
@@ -265,9 +276,18 @@ class MediaToolsPage(QWidget):
         column.setSpacing(0)
         column.addWidget(Divider(bar))
 
-        self.progress = BusyBar(bar)
-        self.progress.hide()
-        column.addWidget(self.progress)
+        self.progress_host = QWidget(bar)
+        progress_row = QHBoxLayout(self.progress_host)
+        progress_row.setContentsMargins(0, 0, 0, 0)
+        progress_row.setSpacing(10)
+        self.progress = ProgressBar(self.progress_host)
+        self.progress_percent = Muted("0%", self.progress_host)
+        self.progress_percent.setFixedWidth(42)
+        self.progress_percent.setWordWrap(False)
+        progress_row.addWidget(self.progress, 1)
+        progress_row.addWidget(self.progress_percent)
+        self.progress_host.hide()
+        column.addWidget(self.progress_host)
 
         row = QHBoxLayout()
         row.setContentsMargins(0, 14, 0, 16)
@@ -357,12 +377,14 @@ class MediaToolsPage(QWidget):
         worker = MediaToolWorker(options, self.toolchain, self)
         self.worker = worker
         worker.progress.connect(self.status.setText)
+        worker.progress_value.connect(self._set_progress)
         worker.finished_ok.connect(self._done)
         worker.failed.connect(self._failed)
         worker.finished.connect(worker.deleteLater)
         worker.finished.connect(lambda w=worker: self._clear_worker(w))
         worker.start()
-        self.progress.show()
+        self._set_progress(0)
+        self.progress_host.show()
         self.run_button.setEnabled(False)
         self.cancel_button.show()
         self.status.setText(f"Preparando: {OPERATIONS[self._operation()]['title'].lower()}…")
@@ -380,19 +402,29 @@ class MediaToolsPage(QWidget):
         self._cancel()
 
     def _done(self, output: str) -> None:
-        self.progress.hide()
+        self._set_progress(100)
+        self.progress_host.hide()
+        self.taskbar_progress.emit(-1.0)
         self.run_button.setEnabled(True)
         self.cancel_button.hide()
         self.status.setText(f"Concluído: {Path(output).name}")
+        self.operation_finished.emit(output)
         Toast.success("Processamento concluído", f"Arquivo salvo em {output}",
                       parent=self.window(), duration=7000)
 
     def _failed(self, message: str) -> None:
-        self.progress.hide()
+        self.progress_host.hide()
+        self.taskbar_progress.emit(-1.0)
         self.run_button.setEnabled(True)
         self.cancel_button.hide()
         self.status.setText(message)
         self._show_error(message)
+
+    def _set_progress(self, value: int) -> None:
+        percent = max(0, min(100, int(value)))
+        self.progress.setValue(percent)
+        self.progress_percent.setText(f"{percent}%")
+        self.taskbar_progress.emit(float(percent))
 
     def _show_error(self, message: str) -> None:
         title = ("Não foi possível adicionar as legendas"

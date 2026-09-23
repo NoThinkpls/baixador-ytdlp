@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,13 +19,16 @@ class MediaToolError(RuntimeError):
 class MediaToolOptions:
     source: Path
     destination: Path
-    operation: str  # trim | audio | remux | compress | shorts | burn
+    operation: str  # trim | audio | remux | compress | shorts | burn | soft_sub
     start: str = ""
     end: str = ""
     subtitles: Path | None = None
 
 
 def default_destination(source: Path, operation: str) -> Path:
+    if operation == "soft_sub":
+        extension = ".mp4" if source.suffix.casefold() in {".mp4", ".m4v", ".mov"} else ".mkv"
+        return available_destination(source.with_name(f"{source.stem}_legendado{extension}"))
     suffixes = {
         "trim": ("_trecho", ".mkv"),
         "audio": ("_audio", ".mp3"),
@@ -48,6 +52,41 @@ def available_destination(path: Path) -> Path:
     raise MediaToolError("Há arquivos demais com o mesmo nome na pasta de destino.")
 
 
+def time_seconds(value: str) -> float:
+    parts = [float(part) for part in value.strip().split(":") if part != ""]
+    if not parts:
+        return 0.0
+    seconds = 0.0
+    for part in parts:
+        seconds = seconds * 60 + part
+    return seconds
+
+
+def media_duration(source: Path, toolchain: Toolchain) -> float:
+    """Lê a duração fora da UI; falha apenas torna o progresso indeterminado."""
+    try:
+        result = subprocess.run(
+            [str(toolchain.ffprobe), "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nokey=1:noprint_wrappers=1", str(source)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        return max(0.0, float(result.stdout.strip())) if result.returncode == 0 else 0.0
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return 0.0
+
+
+def operation_duration(options: MediaToolOptions, toolchain: Toolchain) -> float:
+    total = media_duration(options.source, toolchain)
+    if options.operation != "trim":
+        return total
+    start = time_seconds(options.start) if options.start else 0.0
+    end = time_seconds(options.end) if options.end else total
+    return max(0.0, end - start)
+
+
 def build_command(options: MediaToolOptions, toolchain: Toolchain) -> list[str]:
     """Monta uma invocação FFmpeg sem shell e sem nunca alterar o arquivo de origem."""
     if not options.source.is_file():
@@ -56,7 +95,8 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain) -> list[str]:
         raise MediaToolError("Escolha outro nome de saída para preservar o arquivo original.")
     if options.operation == "trim":
         _validate_time_range(options.start, options.end)
-    if options.operation == "burn" and not (options.subtitles and options.subtitles.is_file()):
+    if options.operation in {"burn", "soft_sub"} and not (
+            options.subtitles and options.subtitles.is_file()):
         raise MediaToolError("Selecione um arquivo de legenda .srt, .vtt ou .ass.")
 
     command = [str(toolchain.ffmpeg), "-hide_banner", "-n"]
@@ -103,10 +143,16 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain) -> list[str]:
             # contêiner não aceita.
             "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
         ]
+    elif options.operation == "soft_sub":
+        command += ["-i", str(options.subtitles), "-map", "0", "-map", "1:0", "-c", "copy"]
+        if options.destination.suffix.casefold() == ".mp4":
+            command += ["-c:s", "mov_text", "-movflags", "+faststart"]
+        else:
+            command += ["-c:s", "srt"]
     else:
         raise MediaToolError("Ferramenta de mídia desconhecida.")
 
-    command.append(str(options.destination))
+    command += ["-progress", "pipe:1", "-nostats", str(options.destination)]
     return command
 
 

@@ -12,7 +12,7 @@ from .hardware import default_fragments, default_parallel_downloads
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.8.0"
 IS_WINDOWS = sys.platform.startswith("win")
 
 
@@ -64,7 +64,7 @@ def default_download_dir() -> str:
 class Settings:
     """Preferências do usuário — gravadas em settings.json."""
 
-    settings_schema_version: int = 3
+    settings_schema_version: int = 4
     download_dir: str = field(default_factory=default_download_dir)
     ask_output_dir: bool = False     # liberar a escolha de pasta na página Baixar
     last_output_dir: str = ""        # última pasta escolhida por download
@@ -107,6 +107,8 @@ class Settings:
     limit_rate: str = ""             # ex.: "5M"
     proxy: str = ""
     taskbar_progress: bool = True    # progresso no ícone da barra de tarefas
+    tray_notifications: bool = True # conclusão também aparece na bandeja do sistema
+    close_to_tray: bool = False      # fechar esconde a janela e mantém tarefas ativas
     history_enabled: bool = True
     history_limit: int = 200
     runtime_check_hours: int = 24    # intervalo entre checagens do runtime do Whisper
@@ -122,6 +124,11 @@ class Settings:
     transcription_model: str = "medium"
     transcription_format: str = "srt"    # srt | vtt | ass | txt | json
     transcription_aggressive_filter: bool = False
+    transcription_task: str = "transcribe"  # transcribe | translate
+    transcription_initial_prompt: str = ""
+    transcription_max_chars: int = 50
+    transcription_min_duration: float = 0.8
+    transcription_max_duration: float = 4.5
     window_geometry: str = ""
     window_maximized: bool = False
 
@@ -189,6 +196,8 @@ class Settings:
             values["settings_schema_version"] = 2
         if schema < 3:
             values["settings_schema_version"] = 3
+        if schema < 4:
+            values["settings_schema_version"] = 4
         return cls(**values)
 
     def save(self) -> None:
