@@ -26,6 +26,17 @@ USER_AGENT = f"{APP_ID}/{APP_VERSION} update-check"
 _VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$")
 _SHA256_RE = re.compile(r"^([A-Fa-f0-9]{64})\s+\*?(.+?)\s*$")
 
+# Chaves públicas Ed25519 (base64, 32 bytes) aceitas para o SHA256SUMS.txt.
+# Gere o par com ``python scripts/release_signing.py generate``: a privada vai
+# para o segredo RELEASE_SIGNING_KEY do GitHub (ambiente protegido), a pública
+# entra aqui. Mais de uma chave permite rotação sem quebrar atualizações.
+#
+# Enquanto a tupla estiver vazia, a assinatura é conferida quando existir, mas
+# não é exigida — para que as versões atuais continuem atualizando até a
+# primeira release assinada. Com uma chave aqui, release sem .sig é RECUSADA.
+RELEASE_PUBLIC_KEYS: tuple[str, ...] = ()
+SIGNATURE_ASSET = "SHA256SUMS.txt.sig"
+
 
 class UpdateError(RuntimeError):
     """Erro seguro para apresentar na interface sem expor detalhes de rede."""
@@ -115,7 +126,9 @@ class AppUpdater:
             raise UpdateError("A release não possui links de download válidos.")
 
         installer_name = str(installer.get("name") or "")
-        sha256 = self._checksum_for(installer_name, self._request_text(checksum_url))
+        checksum_text = self._request_text(checksum_url)
+        self._verify_checksum_signature(assets, checksum_text)
+        sha256 = self._checksum_for(installer_name, checksum_text)
         if sha256 is None:
             raise UpdateError("O hash do instalador não foi publicado na release.")
 
@@ -127,6 +140,29 @@ class AppUpdater:
             installer_url=installer_url,
             sha256=sha256.lower(),
         )
+
+    def _verify_checksum_signature(self, assets: list, checksum_text: str,
+                                   keys: tuple[str, ...] | None = None) -> None:
+        """Autenticidade: o SHA256SUMS precisa ter sido assinado pela chave do projeto."""
+        from .signing import verify_detached
+
+        keys = RELEASE_PUBLIC_KEYS if keys is None else keys
+        signature_asset = next(
+            (asset for asset in assets if asset.get("name") == SIGNATURE_ASSET), None)
+        if not keys:
+            return  # período de transição: ainda não há chave publicada no app
+        if not signature_asset:
+            raise UpdateError(
+                "A release não traz a assinatura do SHA256SUMS.txt. Por segurança, a "
+                "atualização automática foi bloqueada; baixe manualmente pela página da release."
+            )
+        signature_url = str(signature_asset.get("browser_download_url") or "")
+        signature = self._request_text(signature_url)
+        if not verify_detached(keys, checksum_text.encode("utf-8"), signature):
+            raise UpdateError(
+                "A assinatura do SHA256SUMS.txt não confere com a chave do projeto. "
+                "A atualização foi bloqueada."
+            )
 
     def download(
         self,

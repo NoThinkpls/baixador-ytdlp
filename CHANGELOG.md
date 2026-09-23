@@ -3,6 +3,43 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.9.0] - 2026-09-23
+
+### Segurança
+
+- `SHA256SUMS.txt` das releases assinado com Ed25519 (`scripts/release_signing.py`);
+  o atualizador confere a assinatura com as chaves públicas embutidas em
+  `RELEASE_PUBLIC_KEYS` e recusa releases sem `.sig` quando há chave configurada.
+  O segredo fica num *environment* protegido (`release`) do GitHub.
+- Dependências instaladas por locks com hashes (`requirements-*.lock`,
+  `--require-hashes`), inclusive as transitivas; job semanal confere a sincronia
+  com os `requirements*.txt` e o `pip-audit` roda sobre os locks.
+- SBOM CycloneDX gerado do ambiente real de cada build (em venv separado) e
+  textos integrais das licenças (`THIRD_PARTY_LICENSES.md`) no instalador.
+- Instância única com `QLockFile` e canal restrito ao usuário; no Linux, socket em
+  `$XDG_RUNTIME_DIR`.
+- Miniaturas só por HTTPS, sem rede local, e apenas JPEG/PNG/WebP; redação de
+  logs cobre senhas de proxy com `/` e tracebacks.
+- Telemetria do Hugging Face desligada.
+
+### Adicionado
+
+- Modo rápido do Whisper em GPU (`BatchedInferencePipeline`) e opção de economia
+  de VRAM (`int8_float16`).
+- Gerenciador de modelos migra os pesos de versões anteriores e mostra as sobras.
+- Job semanal que confere os assets do FFmpeg (BtbN) e do Deno.
+
+### Corrigido
+
+- Legenda ASS/karaokê incorporada em MKV sem perder o estilo, com idioma e faixa
+  padrão marcados.
+- Deno fica na maior versão 2.x publicada, sem travar quando sair a 3.x.
+- Consultas ao GitHub com `ETag` (respostas 304 não gastam o limite anônimo).
+
+### Alterado
+
+- Whisper volta a usar a sequência de temperaturas de fallback e blocos de VAD de 20 s.
+
 ## [1.8.1] - 2026-09-23
 
 ### Corrigido
