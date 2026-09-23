@@ -4,6 +4,23 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # CTranslate2 >= 4.5 exige cuDNN 9; o instalador embute cuDNN 8. Subir um
+      # sem o outro faz a transcrição cair para CPU sem nenhum teste acusar
+      # (o CI não tem GPU). A migração deve ser feita de propósito, em conjunto.
+      - dependency-name: ctranslate2
+        versions: [">=4.5"]
+      - dependency-name: nvidia-cudnn-cu12
+        versions: [">=9"]
+      - dependency-name: nvidia-cublas-cu12
+        versions: [">=12.5"]
+      - dependency-name: nvidia-cuda-runtime-cu12
+        versions: [">=12.5"]
+    groups:
+      whisper-cuda:
+        patterns: ["ctranslate2", "faster-whisper", "nvidia-*"]
+      qt:
+        patterns: ["PySide6*", "shiboken6", "PySideSix-Frameless-Window"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

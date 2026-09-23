@@ -71,28 +71,62 @@ def describe_source(cfg: Settings) -> str:
     return "nenhuma fonte de cookies"
 
 
-def import_cookie_file(source: Path) -> Path:
-    """Copia cookies para a área privada do app e restringe o acesso ao usuário."""
+def _system32(executable: str) -> str:
+    """Caminho absoluto de uma ferramenta do Windows — nunca pelo PATH."""
+    root = os.environ.get("SystemRoot") or r"C:\Windows"
+    return str(Path(root) / "System32" / executable)
+
+
+def current_user_sid() -> str:
+    """SID do usuário atual (ASCII, independe de idioma e de acentos no nome).
+
+    Usar o nome devolvido por ``whoami`` falhava para ``DESKTOP\\joão``: o
+    console escreve em CP850 e o Python decodificava em CP1252, então o
+    ``icacls`` recebia um nome inexistente e a importação era desfeita.
+    """
+    from .processes import CREATE_NO_WINDOW
+
+    output = subprocess.run(
+        [_system32("whoami.exe"), "/user", "/fo", "csv", "/nh"],
+        capture_output=True, text=True, timeout=5, check=True,
+        creationflags=CREATE_NO_WINDOW,
+    ).stdout.strip()
+    sid = output.rsplit(",", 1)[-1].strip().strip('"') if output else ""
+    if not sid.startswith("S-1-"):
+        raise RuntimeError("Não foi possível identificar o usuário atual.")
+    return sid
+
+
+def import_cookie_file(source: Path) -> tuple[Path, str]:
+    """Copia cookies para a área privada do app e restringe o acesso ao usuário.
+
+    Devolve ``(destino, aviso)``. O aviso é preenchido quando o volume não
+    suporta ACL (FAT32/exFAT de pendrive): a cópia é mantida mesmo assim.
+    """
+    from .processes import CREATE_NO_WINDOW
+
     if not source.is_file():
         raise FileNotFoundError("Arquivo cookies.txt não encontrado.")
     COOKIES_DIR.mkdir(parents=True, exist_ok=True)
     destination = COOKIES_DIR / "cookies.txt"
     staged = COOKIES_DIR / "cookies.txt.new"
+    warning = ""
     try:
         shutil.copyfile(source, staged)
         os.chmod(staged, stat.S_IRUSR | stat.S_IWUSR)
         if IS_WINDOWS:
-            identity = subprocess.run(
-                ["whoami"], capture_output=True, text=True, timeout=5, check=True,
-            ).stdout.strip()
-            if not identity:
-                raise RuntimeError("Não foi possível identificar o usuário atual.")
-            subprocess.run(
-                ["icacls", str(staged), "/inheritance:r", "/grant:r", f"{identity}:(R,W)"],
-                capture_output=True, text=True, timeout=10, check=True,
+            sid = current_user_sid()
+            result = subprocess.run(
+                [_system32("icacls.exe"), str(staged), "/inheritance:r",
+                 "/grant:r", f"*{sid}:(R,W)"],
+                capture_output=True, text=True, timeout=10, check=False,
+                creationflags=CREATE_NO_WINDOW,
             )
+            if result.returncode != 0:
+                warning = ("A cópia foi criada, mas este disco não aceita permissões "
+                           "por usuário (comum em pendrives FAT32/exFAT).")
         staged.replace(destination)
-        return destination
+        return destination, warning
     except Exception:
         staged.unlink(missing_ok=True)
         raise

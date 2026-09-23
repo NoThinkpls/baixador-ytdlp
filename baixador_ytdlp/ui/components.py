@@ -536,7 +536,7 @@ class Chip(QLabel):
         mapping = {
             "accent": ("accent", "accent_soft"),
             "success": ("success", None),
-            "danger": ("danger", None),
+            "danger": ("danger_text", None),
             "warning": ("warning", None),
             "neutral": ("text_tertiary", None),
         }
@@ -664,6 +664,30 @@ class PageHeader(QWidget):
         self.actions.addWidget(widget, 0, Qt.AlignmentFlag.AlignVCenter)
         return widget
 
+    def follow(self, scroll_area) -> None:
+        """Mostra um fio sob o cabeçalho enquanto o conteúdo rola por baixo dele.
+
+        Sem isso, o cartão de cima aparecia simplesmente cortado pelo título.
+        """
+        self._scrolled = False
+        bar = scroll_area.verticalScrollBar()
+
+        def changed(value: int) -> None:
+            scrolled = value > 0
+            if scrolled != self._scrolled:
+                self._scrolled = scrolled
+                self.update()
+
+        bar.valueChanged.connect(changed)
+        changed(bar.value())
+
+    def paintEvent(self, event):  # noqa: N802 - assinatura do Qt
+        super().paintEvent(event)
+        if getattr(self, "_scrolled", False):
+            painter = QPainter(self)
+            painter.setPen(QPen(theme.qcolor("separator"), 1))
+            painter.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
+
 
 class EmptyState(QWidget):
     """Estado vazio com ícone em disco, título e uma frase de orientação."""
@@ -706,6 +730,13 @@ class SmoothScrollArea(QScrollArea):
 
     def wheelEvent(self, event):  # noqa: N802 - assinatura do Qt
         bar = self.verticalScrollBar()
+        # Touchpads de precisão mandam pixelDelta com inércia própria: animar por
+        # cima deixava a rolagem "em degraus". Shift+roda (horizontal) segue o Qt.
+        if (not event.pixelDelta().isNull()
+                or event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+                or event.angleDelta().x()):
+            self._scroll_animation.stop()
+            return super().wheelEvent(event)
         delta = event.angleDelta().y()
         if not delta:
             return super().wheelEvent(event)
@@ -778,7 +809,7 @@ class Toast(QFrame):
 
     _TONES = {
         "success": ("success", "success"),
-        "error": ("error", "danger"),
+        "error": ("error", "danger_text"),
         "warning": ("warning", "warning"),
         "info": ("info", "accent"),
     }

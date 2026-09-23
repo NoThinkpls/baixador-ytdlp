@@ -11,6 +11,13 @@ cudart_datas, cudart_binaries, cudart_hidden = collect_all('nvidia.cuda_runtime'
 cublas_datas, cublas_binaries, cublas_hidden = collect_all('nvidia.cublas')
 cudnn_datas, cudnn_binaries, cudnn_hidden = collect_all('nvidia.cudnn')
 
+import os
+
+# Gerado no CI por pip-licenses a partir do ambiente real de build (textos
+# integrais das licenças, exigidos pela LGPL). Localmente pode não existir.
+LICENSE_DATAS = ([('THIRD_PARTY_LICENSES.md', '.')]
+                 if os.path.isfile('THIRD_PARTY_LICENSES.md') else [])
+
 block_cipher = None
 
 a = Analysis(
@@ -19,6 +26,7 @@ a = Analysis(
     binaries=(fw_binaries + ct_binaries + av_binaries + cudart_binaries
               + cublas_binaries + cudnn_binaries),
     datas=([('assets/icon.ico', 'assets'), ('THIRD_PARTY_NOTICES.md', '.')]
+           + LICENSE_DATAS
            + fw_datas + ct_datas + av_datas
            + cudart_datas + cublas_datas + cudnn_datas),
     hiddenimports=(['qframelesswindow', 'PySide6.QtSvg'] + fw_hidden + ct_hidden + av_hidden

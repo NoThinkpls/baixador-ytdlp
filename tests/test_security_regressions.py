@@ -45,11 +45,37 @@ class SecurityRegressionTests(unittest.TestCase):
             source = root / "exportado.txt"
             source.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
             with patch("baixador_ytdlp.cookies.COOKIES_DIR", root / "privado"):
-                destination = import_cookie_file(source)
+                destination, warning = import_cookie_file(source)
             self.assertEqual(destination.name, "cookies.txt")
+            self.assertEqual(warning, "")
             self.assertEqual(destination.read_text(encoding="utf-8"), source.read_text(encoding="utf-8"))
             if os.name != "nt":
                 self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o600)
+
+    def test_windows_acl_uses_sid_and_absolute_system32_paths(self) -> None:
+        """O nome vindo do whoami quebrava com acentos (CP850 x CP1252)."""
+        from baixador_ytdlp import cookies
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "exportado.txt"
+            source.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+            calls = []
+
+            def fake_run(command, **kwargs):
+                calls.append((command, kwargs))
+                stdout = '"desktop\\joão","S-1-5-21-1-2-3-1001"' if "whoami" in command[0] else ""
+                return SimpleNamespace(stdout=stdout, returncode=0)
+
+            with patch("baixador_ytdlp.cookies.COOKIES_DIR", root / "privado"), \
+                    patch("baixador_ytdlp.cookies.IS_WINDOWS", True), \
+                    patch("baixador_ytdlp.cookies.subprocess.run", side_effect=fake_run):
+                cookies.import_cookie_file(source)
+        whoami, icacls = calls
+        self.assertTrue(whoami[0][0].lower().endswith("whoami.exe"))
+        self.assertTrue(icacls[0][0].lower().endswith("icacls.exe"))
+        self.assertIn("*S-1-5-21-1-2-3-1001:(R,W)", icacls[0])
+        self.assertIn("creationflags", icacls[1])
 
     def test_url_is_validated_and_placed_after_end_of_options(self) -> None:
         tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))

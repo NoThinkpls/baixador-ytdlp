@@ -18,7 +18,7 @@ from typing import Callable, Optional
 from .config import IS_WINDOWS, Settings
 from .cookies import cookie_args
 from .gpu import select_section_encoder
-from .processes import isolated_process_kwargs, terminate_process_tree
+from .processes import popen_isolated, terminate_process_tree
 from .tools import CREATE_NO_WINDOW, Toolchain, decode_external_output
 from .diagnostics import log_event
 from .security import validate_media_url
@@ -402,12 +402,12 @@ class DownloadRunner:
         else:
             prog.stage = "Conectando ao servidor…"
         self._emit_progress(on_progress, prog, force=True)
-        self._proc = subprocess.Popen(
+        self._proc = popen_isolated(
             args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             # Ler bytes permite reconhecer de forma segura uma versão antiga
             # do yt-dlp que imprima na página de código do Windows.
             text=False, bufsize=0,
-            env=self.tc.env(), **isolated_process_kwargs(),
+            env=self.tc.env(),
         )
         # Fecha a janela de corrida entre a verificação acima e a atribuição de
         # _proc: se o cancelamento aconteceu durante o Popen, encerra o processo
@@ -672,12 +672,12 @@ class Transcoder:
             if self._cancelled.is_set():
                 raise DownloadError("Conversão cancelada.")
             args = self.build_args(src, dst, hwaccel=hwaccel)
-            self._proc = subprocess.Popen(
+            self._proc = popen_isolated(
                 # Mesclar stderr evita o deadlock clássico: o FFmpeg pode
                 # encher a pipe de erro antes de o processo principal chegar a
                 # lê-la. Mantemos somente o final para a mensagem ao usuário.
                 args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=False,
-                bufsize=0, **isolated_process_kwargs(),
+                bufsize=0,
             )
             if self._cancelled.is_set():
                 terminate_process_tree(self._proc)

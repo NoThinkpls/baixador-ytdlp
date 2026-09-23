@@ -780,10 +780,10 @@ class HomePage(QWidget):
                 self.worker.wait(1000)
         for worker in tuple(self._thumbnail_workers):
             if worker.isRunning():
+                # Sem terminate(): matar uma QThread no meio do urllib pode deixar
+                # locks internos presos. O timeout de 15 s do socket encerra o resto.
                 worker.requestInterruption()
-                if not worker.wait(2000):
-                    worker.terminate()
-                    worker.wait(500)
+                worker.wait(2000)
 
     def _reset_analyze_button(self) -> None:
         self.busy.hide()

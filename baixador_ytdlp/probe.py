@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from .cookies import is_cookie_source_failure
-from .processes import isolated_process_kwargs, terminate_process_tree
+from .processes import popen_isolated, terminate_process_tree
 from .tools import decode_external_output
 from .diagnostics import log_event
 from .security import validate_media_url
@@ -129,10 +129,10 @@ def _kill_tree(proc: subprocess.Popen) -> None:
 
 def _popen(args: list[str], env: dict | None) -> subprocess.Popen:
     """Popen com o grupo de processos isolado, para o kill alcançar os filhos."""
-    return subprocess.Popen(
+    return popen_isolated(
         args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=False,
-        env=env, **isolated_process_kwargs(),
+        env=env,
     )
 
 
