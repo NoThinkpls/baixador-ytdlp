@@ -6,6 +6,7 @@ frágil em cima da saída humana.
 """
 from __future__ import annotations
 
+import re
 import shlex
 import subprocess
 import threading
@@ -51,6 +52,7 @@ class DownloadOptions:
     section_end: str = ""           # "00:04:00" — vazio = até o fim
     transcribe_after: bool = False   # envia os arquivos concluídos para o Whisper
     embed_transcription: bool = False # incorpora a legenda como faixa, sem reencodar
+    playlist_items: str = ""         # ex.: "1-3,7" — vazio = playlist inteira
 
 
 @dataclass
@@ -135,6 +137,9 @@ def build_args(
 
     if opts.playlist:
         args += ["--yes-playlist"]
+        items = opts.playlist_items.strip()
+        if items and re.fullmatch(r"\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*", items):
+            args += ["--playlist-items", items]
         args += ["--output", "%(playlist_title)s/%(playlist_index)03d - " + _output_template(opts, cfg)]
     else:
         args += ["--no-playlist"]

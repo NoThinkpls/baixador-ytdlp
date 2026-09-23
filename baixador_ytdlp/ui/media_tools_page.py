@@ -12,8 +12,8 @@ from ..media_tools import MediaToolOptions, available_destination, default_desti
 from ..workers import MediaToolWorker
 from . import icons, theme
 from .components import (Button, Divider, Headline, InsetGroup, Muted, PageHeader,
-                         PrimaryButton, ProgressBar, ScrollColumn, SectionLabel, SettingRow,
-                         TextField, Toast)
+                         PrimaryButton, ProgressBar, ScrollColumn, SectionLabel, Select,
+                         SettingRow, Switch, TextField, Toast)
 
 MEDIA_FILTER = ("Mídia (*.mp4 *.mkv *.webm *.mov *.avi *.m4v *.mp3 *.m4a *.wav *.flac);;"
                 "Todos os arquivos (*.*)")
@@ -39,6 +39,11 @@ OPERATIONS = {
         "title": "Reduzir tamanho", "icon": "tools", "tag": "H.264",
         "summary": "Crie um MP4 menor, equilibrando tamanho e qualidade.",
         "action": "Comprimir",
+    },
+    "target_size": {
+        "title": "Caber em um limite", "icon": "tools", "tag": "MB",
+        "summary": "Comprima para caber no limite do Discord, WhatsApp ou e-mail.",
+        "action": "Comprimir para o limite",
     },
     "shorts": {
         "title": "Criar versão vertical", "icon": "media", "tag": "9:16",
@@ -239,6 +244,24 @@ class MediaToolsPage(QWidget):
             "A legenda será incorporada na imagem do vídeo e não poderá ser desligada no player.",
             self.subtitle_edit, subtitle_button)
         group.add_row(self.subtitle_row)
+
+        self.target_combo = Select(group)
+        for label, value in (("8 MB — e-mail pequeno", 8), ("10 MB — Discord (grátis)", 10),
+                             ("16 MB — WhatsApp (vídeo)", 16), ("25 MB — e-mail / Discord antigo", 25),
+                             ("50 MB — Discord Nitro Basic", 50), ("100 MB", 100)):
+            self.target_combo.addItem(label, userData=value)
+        self.target_combo.setCurrentIndex(1)
+        self.target_row = SettingRow(
+            "Tamanho máximo", "A resolução baixa sozinha quando o limite é apertado.",
+            self.target_combo, group)
+        group.add_row(self.target_row)
+
+        self.blur_switch = Switch(group)
+        self.blur_switch.setChecked(True)
+        self.blur_row = SettingRow(
+            "Fundo desfocado", "Preenche as laterais com o próprio vídeo desfocado "
+            "em vez de barras pretas.", self.blur_switch, group)
+        group.add_row(self.blur_row)
         return group
 
     def _destination_group(self) -> InsetGroup:
@@ -325,6 +348,8 @@ class MediaToolsPage(QWidget):
         self.options_summary.setText(data["summary"])
         self.trim_row.setVisible(operation == "trim")
         self.subtitle_row.setVisible(operation == "burn")
+        self.target_row.setVisible(operation == "target_size")
+        self.blur_row.setVisible(operation == "shorts")
         self.run_button.setText(data["action"])
         self._suggest_destination()
 
@@ -373,6 +398,8 @@ class MediaToolsPage(QWidget):
             start=self.start_edit.text().strip(),
             end=self.end_edit.text().strip(),
             subtitles=Path(self.subtitle_edit.text().strip()) if self.subtitle_edit.text().strip() else None,
+            target_mb=int(self.target_combo.currentData() or 25),
+            shorts_blur=self.blur_switch.isChecked(),
         )
         worker = MediaToolWorker(options, self.toolchain, self)
         self.worker = worker

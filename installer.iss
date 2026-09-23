@@ -5,7 +5,7 @@
 #define AppName "baixador-ytdlp"
 ; A versão pode vir da linha de comando: ISCC /DAppVersion=1.2.3 installer.iss
 #ifndef AppVersion
-#define AppVersion "1.9.0"
+#define AppVersion "1.10.0"
 #endif
 #define AppExe "baixador-ytdlp.exe"
 
@@ -43,6 +43,14 @@ Source: "dist\{#AppName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdi
 ; cópia anterior evita DLLs e módulos órfãos após atualizar 1.0.x → 1.1.x.
 [InstallDelete]
 Type: filesandordirs; Name: "{app}\_internal"
+
+; Protocolo baixador:// — usado pelo bookmarklet "Enviar para o baixador".
+; Por usuário (HKCU): não exige administrador. O app só ANALISA o link recebido.
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\baixador"; ValueType: string; ValueName: ""; ValueData: "URL:baixador-ytdlp"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\baixador"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\baixador\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"",0"
+Root: HKCU; Subkey: "Software\Classes\baixador\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"; IconIndex: 0

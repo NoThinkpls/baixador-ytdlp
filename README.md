@@ -26,6 +26,10 @@ Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no 
 - Download de vídeo, áudio, playlists e trechos com escolha de qualidade e formato. Recortes exatos mostram o andamento e tentam NVENC, AMF ou VideoToolbox diretamente; NVIDIA e Apple também usam decodificação por hardware quando a mídia aceita. Se o decoder não for compatível, a codificação continua na GPU; só então há fallback seguro para CPU.
 - Análise prévia com miniatura, nome final estimado, tamanhos aproximados, codecs, formatos, idiomas de áudio e legendas manuais/automáticas disponíveis.
 - Entrada em lote pela própria tela: cole vários links, um por linha, e envie todos à fila.
+- Envio direto do navegador pelo protocolo `baixador://` (favorito de um clique) e escolha dos itens de uma playlist.
+- Canal *nightly* do yt-dlp opcional para receber correções de sites antes da versão estável.
+- Compactação para caber num limite (Discord, WhatsApp, e-mail) e versão vertical com fundo desfocado.
+- Exportação de diagnóstico já redigido, sem cookies, senhas ou tokens.
 - Fila persistente, retomada de arquivos parciais e retentativas automáticas para falhas transitórias. Itens podem ser removidos mesmo durante a inicialização; solicitações repetidas só entram após confirmação.
 - Capa, metadados e capítulos incorporados também em áudio; opção de organizar músicas por canal/artista.
 - Transcrição local com modelos até Large v3 Turbo, tradução para inglês, vocabulário de contexto e legendas SRT, VTT, ASS, karaoke, TXT e JSON; no Apple Silicon ela usa MLX na GPU integrada.

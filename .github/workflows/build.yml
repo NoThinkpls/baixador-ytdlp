@@ -266,6 +266,15 @@ jobs:
             --add-data "assets/icon.png:assets" \
             --add-data "THIRD_PARTY_NOTICES.md:."
 
+      - name: Registrar o protocolo baixador:// no Info.plist
+        run: |
+          plist="dist/baixador-ytdlp.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" "$plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" "$plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLName string com.nothinkpls.baixador-ytdlp" "$plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string baixador" "$plist"
+
       - name: Conferir o bundle Apple Silicon
         run: |
           app="dist/baixador-ytdlp.app"

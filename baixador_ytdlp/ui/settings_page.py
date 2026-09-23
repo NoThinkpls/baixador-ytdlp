@@ -43,6 +43,8 @@ PRESETS = [("p1 — mais rápido", "p1"), ("p4 — equilibrado", "p4"),
 
 class SettingsPage(QWidget):
     update_requested = Signal()
+    ytdlp_channel_changed = Signal(str)
+    diagnostics_export_requested = Signal()
     app_update_requested = Signal()
     gpu_detection_requested = Signal()
     theme_changed = Signal(str)
@@ -217,11 +219,20 @@ class SettingsPage(QWidget):
         self._section("Componentes e atualizações")
         self._dependencies_row()
         self._app_update_row()
+        self._diagnostics_row()
         self._switch_row("Verificar novas versões ao abrir",
                          "Apenas procura atualizações. O download e a instalação só começam "
                          "quando você confirmar no aviso inferior.", "auto_update")
         self._spin_row("Intervalo entre checagens de atualização (horas)",
                        "Use 0 para consultar em toda abertura.", "update_check_hours", 0, 720)
+        self._combo_row(
+            "Canal do yt-dlp",
+            "Estável é o padrão. Nightly recebe correções de sites (como o YouTube) dias "
+            "antes; troque se um link parar de funcionar. Também tem SHA-256 conferido.",
+            [("Estável (recomendado)", "stable"), ("Nightly — correções mais rápidas", "nightly")],
+            "ytdlp_channel",
+            on_change=self._ytdlp_channel_changed,
+        )
         self._switch_row(
             "Usar ferramentas instaladas no sistema",
             "Permite procurar yt-dlp e FFmpeg no PATH quando a cópia verificada do app não existe. "
@@ -320,6 +331,9 @@ class SettingsPage(QWidget):
         button.clicked.connect(choose)
         self._add_row(row)
 
+    def _ytdlp_channel_changed(self, channel: str) -> None:
+        self.ytdlp_channel_changed.emit(str(channel))
+
     def _filename_template_row(self) -> None:
         row, column = self._custom_row(
             "Nome do arquivo",
@@ -383,6 +397,20 @@ class SettingsPage(QWidget):
         line.addWidget(self.versions, 1)
         button = PrimaryButton("Verificar componentes", "update", row)
         button.clicked.connect(self.update_requested.emit)
+        line.addWidget(button)
+        column.addLayout(line)
+        self._add_row(row)
+
+    def _diagnostics_row(self) -> None:
+        row, column = self._custom_row(
+            "Diagnóstico",
+            "Gera um ZIP com os logs para anexar a uma issue. Cookies, senhas de proxy, "
+            "tokens de URL e a sua pasta de usuário são removidos antes.")
+        line = QHBoxLayout()
+        line.setSpacing(12)
+        line.addStretch(1)
+        button = Button("Exportar diagnóstico", "download", "secondary", row)
+        button.clicked.connect(self.diagnostics_export_requested.emit)
         line.addWidget(button)
         column.addLayout(line)
         self._add_row(row)

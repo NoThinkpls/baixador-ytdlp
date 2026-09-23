@@ -17,7 +17,8 @@ from ..downloader import DownloadOptions
 from ..filename_preview import render_filename_preview
 from ..probe import MediaInfo, kill_running, playlist_selector
 from ..security import validate_media_url
-from ..workers import ProbeWorker, ThumbnailWorker
+from ..workers import PlaylistEntriesWorker, ProbeWorker, ThumbnailWorker
+from .playlist_picker import PlaylistPickerDialog
 from . import theme
 from .components import (BusyBar, Button, Card, Divider, Headline, InsetGroup, Muted,
                          PageHeader, PrimaryButton, ScrollColumn, SectionLabel, Select,
@@ -52,6 +53,9 @@ class HomePage(QWidget):
         self.info: MediaInfo | None = None
         self.worker: ProbeWorker | None = None
         self._thumbnail_workers: set[ThumbnailWorker] = set()
+        self._playlist_items = ""
+        self._playlist_entries: list | None = None
+        self._entries_worker: PlaylistEntriesWorker | None = None
         self._build_ui()
         self.setAcceptDrops(True)
 
@@ -457,6 +461,11 @@ class HomePage(QWidget):
         row.setSpacing(16)
         self.playlist_hint = Muted("", bar)
         row.addWidget(self.playlist_hint, 1)
+        self.pick_items_btn = Button("Escolher itens", "queue", "secondary", bar)
+        self.pick_items_btn.setToolTip("Selecionar quais vídeos da playlist baixar")
+        self.pick_items_btn.clicked.connect(self._pick_playlist_items)
+        self.pick_items_btn.hide()
+        row.addWidget(self.pick_items_btn)
 
         self.download_btn = PrimaryButton("Baixar", "download", bar)
         self.download_btn.setMinimumHeight(42)
@@ -773,8 +782,16 @@ class HomePage(QWidget):
         execução: o Qt chama qFatal e o processo morre com fast-fail (0xc0000409),
         sem gravar traceback nenhum.
         """
-        if self.worker and self.worker.isRunning():
+        entries = self._entries_worker
+        try:
+            entries_running = bool(entries and entries.isRunning())
+        except RuntimeError:  # objeto Qt já destruído
+            entries_running = False
+        if (self.worker and self.worker.isRunning()) or entries_running:
             kill_running()
+        if entries_running:
+            entries.wait(5000)
+        if self.worker and self.worker.isRunning():
             if not self.worker.wait(5000):
                 self.worker.terminate()
                 self.worker.wait(1000)
@@ -815,9 +832,10 @@ class HomePage(QWidget):
         self._load_thumbnail(info.thumbnail)
         self._refresh_filename_preview()
 
-        self.playlist_hint.setText(
-            f"Playlist detectada: os {info.playlist_count} itens vão para uma subpasta."
-            if info.is_playlist else "")
+        self._playlist_items = ""
+        self._playlist_entries = None
+        self.pick_items_btn.setVisible(info.is_playlist)
+        self._update_playlist_hint()
 
         self._fill_table(info)
         self.quality_label.show()
@@ -949,10 +967,57 @@ class HomePage(QWidget):
             title=self.info.title,
             section_start=start,
             section_end=end,
+            playlist_items=self._playlist_items if self.info.is_playlist else "",
             transcribe_after=self.transcribe_switch.isChecked(),
             embed_transcription=self.embed_transcription_switch.isChecked(),
         )
         self.enqueue.emit(opts)
+
+    def _update_playlist_hint(self) -> None:
+        info = self.info
+        if not info or not info.is_playlist:
+            self.playlist_hint.setText("")
+            return
+        if self._playlist_items:
+            chosen = len(PlaylistPickerDialog._parse(self._playlist_items))
+            self.playlist_hint.setText(
+                f"Playlist: {chosen} de {info.playlist_count} itens selecionados.")
+        else:
+            self.playlist_hint.setText(
+                f"Playlist detectada: os {info.playlist_count} itens vão para uma subpasta.")
+
+    def _pick_playlist_items(self) -> None:
+        if not self.info or not self.toolchain:
+            return
+        if self._playlist_entries is not None:
+            self._open_playlist_picker(self._playlist_entries)
+            return
+        self.pick_items_btn.setEnabled(False)
+        self.pick_items_btn.setText("Listando…")
+        worker = PlaylistEntriesWorker(self.url_edit.text().strip(), self.toolchain, self.cfg, self)
+        self._entries_worker = worker
+        worker.finished_ok.connect(self._on_playlist_entries)
+        worker.failed.connect(lambda message: self._warn(f"Não deu para listar a playlist: {message}"))
+        worker.finished.connect(self._reset_pick_button)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _reset_pick_button(self) -> None:
+        self.pick_items_btn.setEnabled(True)
+        self.pick_items_btn.setText("Escolher itens")
+
+    def _on_playlist_entries(self, entries: list) -> None:
+        self._playlist_entries = entries
+        if entries:
+            self._open_playlist_picker(entries)
+        else:
+            self._warn("A playlist não retornou itens.")
+
+    def _open_playlist_picker(self, entries: list) -> None:
+        dialog = PlaylistPickerDialog(entries, self._playlist_items, self.window())
+        if dialog.exec():
+            self._playlist_items = dialog.selection()
+            self._update_playlist_hint()
 
     def _warn(self, message: str) -> None:
         Toast.warning("Atenção", message, parent=self.window(), duration=4500)
