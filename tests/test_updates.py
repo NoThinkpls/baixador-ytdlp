@@ -1,6 +1,7 @@
 """Regressões para as checagens manuais de componentes e do aplicativo."""
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import unittest
@@ -126,11 +127,17 @@ class IntegrityRepairTests(unittest.TestCase):
             root = Path(tmp)
             binary = root / ("yt-dlp.exe" if sys.platform.startswith("win") else "yt-dlp")
             binary.write_bytes(b"original")
+            baseline_stat = binary.stat()
             with patch("baixador_ytdlp.tools.STATE_PATH", root / "state.json"):
                 manager = ToolManager(bin_dir=root)
                 manager._record_integrity(binary.name, binary)
                 manager.state["ytdlp_checked_at"] = 1e12
                 binary.write_bytes(b"alterado")
+                # Os dois conteúdos têm o mesmo tamanho. Em NTFS, escritas no
+                # mesmo tick podem manter o mtime; force a alteração que o
+                # caminho rápido de integridade verifica em produção.
+                os.utime(binary, ns=(baseline_stat.st_atime_ns,
+                                     baseline_stat.st_mtime_ns + 1_000_000_000))
                 messages = []
                 repaired = manager.repair_tampered_tools(lambda msg, _pct: messages.append(msg))
             self.assertEqual(repaired, [binary.name])
