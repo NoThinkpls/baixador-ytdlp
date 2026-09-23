@@ -32,7 +32,8 @@ jobs:
       - name: Instalar dependências
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-build.txt
+          # Locks com hashes: exatamente os mesmos pacotes em toda build.
+          pip install --require-hashes -r requirements-windows.lock -r requirements-build-windows.lock
           # Sem PyTorch: o motor de transcrição é o CTranslate2, com runtime
           # CUDA (cuBLAS/cuDNN 8) incluído no instalador.
 
@@ -59,11 +60,17 @@ jobs:
 
       - name: Inventário real do ambiente de build (SBOM e licenças)
         run: |
-          python -m pip install -r requirements-security.txt
+          # Ferramentas num venv separado: o inventário descreve só o que vai para
+          # o instalador, sem pip-audit/cyclonedx misturados.
+          $buildPython = (Get-Command python).Source
+          python -m venv .sbom
+          .sbom\Scripts\python -m pip install -r requirements-security.txt
           New-Item -ItemType Directory -Force dist\installer | Out-Null
-          python -m cyclonedx_py environment --output-format JSON --output-file dist\installer\sbom-windows.cdx.json
+          .sbom\Scripts\python -m cyclonedx_py environment $buildPython --output-format JSON `
+            --output-file dist\installer\sbom-windows.cdx.json
+          python -m pip install pip-licenses==5.5.5
           python -m piplicenses --format=markdown --with-urls --with-license-file --no-license-path `
-            --output-file THIRD_PARTY_LICENSES.md
+            --ignore-packages pip-licenses prettytable wcwidth --output-file THIRD_PARTY_LICENSES.md
 
       - name: Definir a versão
         id: ver
@@ -196,8 +203,17 @@ jobs:
       - name: Instalar dependências
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements-macos.txt -r requirements-build.txt
+          python -m pip install --require-hashes -r requirements-macos.lock -r requirements-build-macos.lock
           python -m compileall -q baixador_ytdlp main.py
+
+      - name: Inventário real do ambiente de build (SBOM)
+        run: |
+          build_python="$(command -v python)"
+          python -m venv .sbom
+          .sbom/bin/python -m pip install -r requirements-security.txt
+          mkdir -p dist/installer
+          .sbom/bin/python -m cyclonedx_py environment "$build_python" --output-format JSON \
+            --output-file dist/installer/sbom-macos.cdx.json
 
       - name: Executar testes de diagnóstico
         run: QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v
@@ -314,6 +330,7 @@ jobs:
             dist/installer/*.dmg
             dist/installer/*.zip
             dist/installer/SHA256SUMS-macos.txt
+            dist/installer/sbom-macos.cdx.json
           retention-days: 30
 
   linux:
@@ -343,8 +360,17 @@ jobs:
       - name: Instalar dependências
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements-linux.txt -r requirements-build.txt
+          python -m pip install --require-hashes -r requirements-linux.lock -r requirements-build-linux.lock
           python -m compileall -q baixador_ytdlp main.py
+
+      - name: Inventário real do ambiente de build (SBOM)
+        run: |
+          build_python="$(command -v python)"
+          python -m venv .sbom
+          .sbom/bin/python -m pip install -r requirements-security.txt
+          mkdir -p dist/installer
+          .sbom/bin/python -m cyclonedx_py environment "$build_python" --output-format JSON \
+            --output-file dist/installer/sbom-linux.cdx.json
 
       - name: Executar testes de diagnóstico
         run: QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v
@@ -421,6 +447,7 @@ jobs:
             dist/installer/*.deb
             dist/installer/*.tar.gz
             dist/installer/SHA256SUMS-linux.txt
+            dist/installer/sbom-linux.cdx.json
           retention-days: 30
 
   release:
@@ -430,6 +457,9 @@ jobs:
     # pacotes foram validados, evitando uma Release sem downloads.
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
+    # Ambiente protegido: configure "Required reviewers" em Settings → Environments
+    # para que o segredo de assinatura só seja liberado com aprovação manual.
+    environment: release
     permissions:
       contents: write
       id-token: write
@@ -505,14 +535,14 @@ jobs:
         shell: bash
         run: |
           python -m pip install -r requirements-security.txt
-          # O Windows já traz o SBOM do ambiente real de build; os demais ainda
-          # descrevem os requisitos declarados.
+          # Os jobs de build já trazem o SBOM do ambiente real; os requisitos
+          # declarados só servem de reserva se algum artefato faltar.
           test -f release-assets/sbom-windows.cdx.json || python -m cyclonedx_py requirements \
             requirements.txt --output-format JSON --output-file release-assets/sbom-windows.cdx.json
-          python -m cyclonedx_py requirements requirements-macos.txt \
-            --output-format JSON --output-file release-assets/sbom-macos.cdx.json
-          python -m cyclonedx_py requirements requirements-linux.txt \
-            --output-format JSON --output-file release-assets/sbom-linux.cdx.json
+          test -f release-assets/sbom-macos.cdx.json || python -m cyclonedx_py requirements \
+            requirements-macos.txt --output-format JSON --output-file release-assets/sbom-macos.cdx.json
+          test -f release-assets/sbom-linux.cdx.json || python -m cyclonedx_py requirements \
+            requirements-linux.txt --output-format JSON --output-file release-assets/sbom-linux.cdx.json
 
       - name: Validar os ativos da Release
         if: steps.release.outputs.publish == 'true'
@@ -546,6 +576,29 @@ jobs:
             }
           done
 
+      - name: Assinar o SHA256SUMS.txt (Ed25519)
+        if: steps.release.outputs.publish == 'true'
+        shell: bash
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          # O atualizador do app confere esta assinatura com a chave pública
+          # embutida. Sem o segredo configurado, a release sai sem .sig — e,
+          # quando RELEASE_PUBLIC_KEYS estiver preenchida, o app a recusará.
+          if [[ -z "$RELEASE_SIGNING_KEY" ]]; then
+            if python -c "from baixador_ytdlp.updater import RELEASE_PUBLIC_KEYS as k; raise SystemExit(0 if k else 1)"; then
+              echo "::error::O app exige releases assinadas, mas RELEASE_SIGNING_KEY não está configurado."
+              exit 1
+            fi
+            echo "::warning::RELEASE_SIGNING_KEY ausente; release publicada sem assinatura."
+            exit 0
+          fi
+          python scripts/release_signing.py sign release-assets/SHA256SUMS.txt
+          if python -c "from baixador_ytdlp.updater import RELEASE_PUBLIC_KEYS as k; raise SystemExit(0 if k else 1)"; then
+            python scripts/release_signing.py verify release-assets/SHA256SUMS.txt || {
+              echo "::error::A chave privada não corresponde a RELEASE_PUBLIC_KEYS."; exit 1; }
+          fi
+
       - name: Atestar a proveniência dos instaladores
         if: steps.release.outputs.publish == 'true'
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
@@ -566,6 +619,7 @@ jobs:
             release-assets/*.deb
             release-assets/*.tar.gz
             release-assets/SHA256SUMS*.txt
+            release-assets/SHA256SUMS.txt.sig
             release-assets/*.cdx.json
           generate_release_notes: true
           make_latest: true

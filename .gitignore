@@ -43,3 +43,4 @@ settings.json
 tools_state.json
 history.json
 runtime_state.json
+.sbom/

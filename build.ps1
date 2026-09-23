@@ -78,7 +78,9 @@ function Invoke-Python {
 
 Write-Host '> Instalando dependências' -ForegroundColor Cyan
 Invoke-Python @('-m', 'pip', 'install', '--upgrade', 'pip')
-Invoke-Python @('-m', 'pip', 'install', '-r', 'requirements.txt', 'pyinstaller')
+# Locks com hashes (gerados por scripts/update_locks.sh): a build local recebe
+# exatamente os mesmos pacotes do CI, inclusive o CTranslate2 compatível com cuDNN 8.
+Invoke-Python @('-m', 'pip', 'install', '--require-hashes', '-r', 'requirements-windows.lock', '-r', 'requirements-build-windows.lock')
 # Sem PyTorch: o Whisper roda sobre CTranslate2. As DLLs CUDA compatíveis
 # (runtime, cuBLAS e cuDNN 8) entram no instalador e não são baixadas pelo app.
 
