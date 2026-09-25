@@ -9,21 +9,16 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 from .hardware import default_fragments, default_parallel_downloads
+from .plataforma import is_macos, is_windows, pasta_dados_usuario
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.10.1"
-IS_WINDOWS = sys.platform.startswith("win")
+APP_VERSION = "1.10.2"
+IS_WINDOWS = is_windows()
 
 
 def _system_data_root() -> Path:
-    if IS_WINDOWS:
-        base = os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local"
-    elif sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support"
-    else:
-        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return Path(base) / APP_ID
+    return pasta_dados_usuario(APP_ID)
 
 
 def _app_bundle(executable_dir: Path) -> Path | None:
@@ -54,7 +49,7 @@ def _portable_root() -> Path | None:
     """
     executable_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) \
         else Path(__file__).resolve().parents[1]
-    bundle = _app_bundle(executable_dir) if sys.platform == "darwin" else None
+    bundle = _app_bundle(executable_dir) if is_macos(sys.platform) else None
     markers = [executable_dir / "portable.txt"]
     if bundle is not None:
         markers.append(bundle.parent / "portable.txt")

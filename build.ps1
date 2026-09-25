@@ -2,14 +2,17 @@
     Compila o baixador-ytdlp e (opcionalmente) gera o instalador.
 
     Uso:
-        .\build.ps1                         # só compila
+        .\build.ps1                         # compila com Nuitka
+        .\build.ps1 -Packager PyInstaller   # usa a rota de contingência
         .\build.ps1 -Installer              # compila e gera o setup
         .\build.ps1 -Installer -InstallInnoSetup # instala o Inno Setup, se necessário
 #>
 [CmdletBinding()]
 param(
     [switch]$Installer,
-    [switch]$InstallInnoSetup
+    [switch]$InstallInnoSetup,
+    [ValidateSet('PyInstaller', 'Nuitka')]
+    [string]$Packager = 'Nuitka'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -84,13 +87,53 @@ Invoke-Python @('-m', 'pip', 'install', '--require-hashes', '-r', 'requirements-
 # Sem PyTorch: o Whisper roda sobre CTranslate2. As DLLs CUDA compatíveis
 # (runtime, cuBLAS e cuDNN 8) entram no instalador e não são baixadas pelo app.
 
-Write-Host '> Compilando' -ForegroundColor Cyan
-Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
-Invoke-Python @('-m', 'PyInstaller', 'baixador_ytdlp.spec', '--noconfirm')
+$versionLine = Select-String -Path 'baixador_ytdlp\config.py' -Pattern '^APP_VERSION\s*=\s*"([^"]+)"' | Select-Object -First 1
+if (-not $versionLine -or $versionLine.Line -notmatch '"([^"]+)"') {
+    throw 'Não foi possível identificar APP_VERSION em baixador_ytdlp\config.py.'
+}
+$appVersion = $Matches[1]
 
-$exe = Join-Path $PSScriptRoot 'dist\baixador-ytdlp\baixador-ytdlp.exe'
-if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
-    throw "O PyInstaller terminou sem gerar $exe"
+Write-Host "> Compilando com $Packager" -ForegroundColor Cyan
+Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
+if ($Packager -eq 'Nuitka') {
+    # A distribuição standalone preserva bibliotecas e dados ao lado do executável.
+    # Ao final ela é normalizada para o mesmo layout esperado pelo Inno Setup e
+    # pelos artefatos portáteis: dist\baixador-ytdlp\baixador-ytdlp.exe.
+    Invoke-Python @(
+        '-m', 'nuitka', '--mode=standalone', '--assume-yes-for-downloads',
+        '--enable-plugin=pyside6', '--windows-console-mode=disable',
+        '--windows-icon-from-ico=assets\icon.ico',
+        "--file-version=$appVersion", "--product-version=$appVersion",
+        '--file-description=Baixador YT-DLP', '--include-data-dir=assets=assets',
+        '--include-data-files=THIRD_PARTY_NOTICES.md=THIRD_PARTY_NOTICES.md',
+        '--user-package-configuration-file=nuitka-package.config.yml',
+        '--include-package=nvidia.cuda_runtime', '--include-package=nvidia.cublas',
+        '--include-package=nvidia.cudnn',
+        # O resumo do motor usa importlib.metadata; sem estes metadados a build
+        # funciona, mas exibe versoes desconhecidas em vez das versoes incluidas.
+        '--include-distribution-metadata=faster-whisper',
+        '--include-distribution-metadata=ctranslate2',
+        '--include-distribution-metadata=nvidia-cuda-runtime-cu12',
+        '--include-distribution-metadata=nvidia-cublas-cu12',
+        '--include-distribution-metadata=nvidia-cudnn-cu12',
+        '--output-dir=dist', '--output-filename=baixador-ytdlp.exe', 'main.py'
+    )
+    $nuitkaBundle = Join-Path $PSScriptRoot 'dist\main.dist'
+    $releaseBundle = Join-Path $PSScriptRoot 'dist\baixador-ytdlp'
+    if (-not (Test-Path -LiteralPath $nuitkaBundle -PathType Container)) {
+        throw "O Nuitka terminou sem gerar a pasta $nuitkaBundle"
+    }
+    Move-Item -LiteralPath $nuitkaBundle -Destination $releaseBundle
+    $exe = Join-Path $releaseBundle 'baixador-ytdlp.exe'
+    if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+        throw "O Nuitka terminou sem gerar $exe"
+    }
+} else {
+    Invoke-Python @('-m', 'PyInstaller', 'baixador_ytdlp.spec', '--noconfirm')
+    $exe = Join-Path $PSScriptRoot 'dist\baixador-ytdlp\baixador-ytdlp.exe'
+    if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+        throw "O PyInstaller terminou sem gerar $exe"
+    }
 }
 
 # Falha o build se alguma DLL carregada tardiamente pelo CTranslate2 ficar fora
@@ -100,7 +143,7 @@ $requiredCudaDlls = @(
     'cudnn64_8.dll', 'cudnn_ops_infer64_8.dll', 'cudnn_cnn_infer64_8.dll'
 )
 $missingCudaDlls = foreach ($dll in $requiredCudaDlls) {
-    if (-not (Get-ChildItem -Path (Join-Path $PSScriptRoot 'dist\baixador-ytdlp') -Filter $dll -File -Recurse -ErrorAction SilentlyContinue)) {
+    if (-not (Get-ChildItem -Path (Split-Path -Parent $exe) -Filter $dll -File -Recurse -ErrorAction SilentlyContinue)) {
         $dll
     }
 }
@@ -118,12 +161,6 @@ if ($Installer) {
     if (-not $iscc) {
         throw 'Inno Setup 6 não encontrado. Execute .\build.ps1 -Installer -InstallInnoSetup ou instale-o em https://jrsoftware.org/isdl.php.'
     }
-
-    $versionLine = Select-String -Path 'baixador_ytdlp\config.py' -Pattern '^APP_VERSION\s*=\s*"([^"]+)"' | Select-Object -First 1
-    if (-not $versionLine -or $versionLine.Line -notmatch '"([^"]+)"') {
-        throw 'Não foi possível identificar APP_VERSION em baixador_ytdlp\config.py.'
-    }
-    $appVersion = $Matches[1]
 
     Write-Host '> Gerando instalador' -ForegroundColor Cyan
     & $iscc "/DAppVersion=$appVersion" installer.iss

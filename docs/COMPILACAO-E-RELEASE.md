@@ -1,5 +1,9 @@
 # Compilação e publicação de Releases
 
+> As releases Windows usam Nuitka. A comparação de desempenho e segurança, a
+> rota de contingência com PyInstaller e as pendências de validação estão em
+> [Avaliação do Nuitka](AVALIACAO-NUITKA.md).
+
 [Read this guide in English](BUILD-AND-RELEASE.en.md)
 
 As builds oficiais são geradas pelo GitHub Actions. Um push em `main` valida e
@@ -38,5 +42,8 @@ andamento, os links de download ainda podem retornar arquivo não encontrado.
 
 ## Desenvolvimento local
 
-Os scripts `build.ps1` e `build.cmd` existem apenas como apoio ao desenvolvimento. Para distribuição, use os artefatos produzidos pelo GitHub Actions.
+Os scripts `build.ps1` e `build.cmd` existem apenas como apoio ao desenvolvimento.
+No Windows, `build.ps1` usa Nuitka por padrão; passe `-Packager PyInstaller`
+para a rota de contingência. Para distribuição, use os artefatos produzidos
+pelo GitHub Actions.
 

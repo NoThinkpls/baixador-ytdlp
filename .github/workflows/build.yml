@@ -84,13 +84,48 @@ jobs:
           Write-Host "Versão: $v"
           "version=$v" >> $env:GITHUB_OUTPUT
 
-      - name: Compilar com PyInstaller
-        run: pyinstaller baixador_ytdlp.spec --noconfirm
+      - name: Compilar com Nuitka
+        run: |
+          # O nome do artefato em pull requests inclui o número da execução,
+          # mas os recursos PE aceitam apenas uma versão numérica do app.
+          $resourceVersion = python -c "import ast,pathlib; t=ast.parse(pathlib.Path('baixador_ytdlp/config.py').read_text(encoding='utf-8')); print(next(n.value.value for n in t.body if isinstance(n,ast.Assign) and any(isinstance(x,ast.Name) and x.id=='APP_VERSION' for x in n.targets)))"
+          if ($LASTEXITCODE -ne 0 -or -not $resourceVersion) { throw "Não foi possível ler APP_VERSION" }
+          python -m nuitka `
+            --mode=standalone `
+            --assume-yes-for-downloads `
+            --enable-plugin=pyside6 `
+            --windows-console-mode=disable `
+            --windows-icon-from-ico=assets\icon.ico `
+            --file-version=$resourceVersion `
+            --product-version=$resourceVersion `
+            --file-description='Baixador YT-DLP' `
+            --include-data-dir=assets=assets `
+            --include-data-files=THIRD_PARTY_NOTICES.md=THIRD_PARTY_NOTICES.md `
+            --user-package-configuration-file=nuitka-package.config.yml `
+            --include-package=nvidia.cuda_runtime `
+            --include-package=nvidia.cublas `
+            --include-package=nvidia.cudnn `
+            --include-distribution-metadata=faster-whisper `
+            --include-distribution-metadata=ctranslate2 `
+            --include-distribution-metadata=nvidia-cuda-runtime-cu12 `
+            --include-distribution-metadata=nvidia-cublas-cu12 `
+            --include-distribution-metadata=nvidia-cudnn-cu12 `
+            --output-dir=dist `
+            --output-filename=baixador-ytdlp.exe `
+            main.py
+          if ($LASTEXITCODE -ne 0) { throw "Nuitka falhou com código $LASTEXITCODE" }
+
+          $nuitkaBundle = 'dist\main.dist'
+          $releaseBundle = 'dist\baixador-ytdlp'
+          if (-not (Test-Path -LiteralPath $nuitkaBundle -PathType Container)) {
+            throw "Nuitka não gerou $nuitkaBundle"
+          }
+          Move-Item -LiteralPath $nuitkaBundle -Destination $releaseBundle
 
       - name: Conferir o executável
         run: |
           $exe = 'dist\baixador-ytdlp\baixador-ytdlp.exe'
-          if (-not (Test-Path $exe)) { throw "PyInstaller não gerou $exe" }
+          if (-not (Test-Path $exe)) { throw "Nuitka não gerou $exe" }
           $requiredCudaDlls = @(
             'cudart64_12.dll', 'cublas64_12.dll', 'cublasLt64_12.dll',
             'cudnn64_8.dll', 'cudnn_ops_infer64_8.dll', 'cudnn_cnn_infer64_8.dll'

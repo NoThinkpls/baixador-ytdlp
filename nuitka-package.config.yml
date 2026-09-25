@@ -1,0 +1,30 @@
+---
+# DLLs CUDA são carregadas pelo CTranslate2 em tempo de execução, portanto não
+# aparecem nas dependências estáticas que o Nuitka encontra sozinho. Mantemos a
+# mesma estrutura de diretórios esperada por runtime.py e pelo PyInstaller.
+- module-name: 'nvidia.cuda_runtime'
+  dlls:
+    - from_filenames:
+        relative_path: 'bin'
+        prefixes:
+          - 'cudart64_'
+      dest_path: 'nvidia/cuda_runtime/bin'
+      when: 'win32'
+
+- module-name: 'nvidia.cublas'
+  dlls:
+    - from_filenames:
+        relative_path: 'bin'
+        prefixes:
+          - 'cublas'
+      dest_path: 'nvidia/cublas/bin'
+      when: 'win32'
+
+- module-name: 'nvidia.cudnn'
+  dlls:
+    - from_filenames:
+        relative_path: 'bin'
+        prefixes:
+          - 'cudnn'
+      dest_path: 'nvidia/cudnn/bin'
+      when: 'win32'

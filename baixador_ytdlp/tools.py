@@ -37,19 +37,20 @@ except ImportError:  # pragma: no cover - só ocorre fora das builds oficiais
 
 from .config import APP_NAME, APP_VERSION, BIN_DIR, DATA_DIR, IS_WINDOWS, STATE_PATH, ensure_dirs
 from .diagnostics import get_logger
+from .plataforma import asset_deno, asset_ytdlp, is_macos, nome_binario
 from .runtime import RuntimeInfo, RuntimeManager
 
-YTDLP_EXE = "yt-dlp.exe" if IS_WINDOWS else "yt-dlp"
-FFMPEG_EXE = "ffmpeg.exe" if IS_WINDOWS else "ffmpeg"
-FFPROBE_EXE = "ffprobe.exe" if IS_WINDOWS else "ffprobe"
-YTDLP_ASSET = "yt-dlp.exe" if IS_WINDOWS else ("yt-dlp_macos" if sys.platform == "darwin" else "yt-dlp")
+YTDLP_EXE = nome_binario("yt-dlp")
+FFMPEG_EXE = nome_binario("ffmpeg")
+FFPROBE_EXE = nome_binario("ffprobe")
+YTDLP_ASSET = asset_ytdlp()
 
 # O yt-dlp precisa de um runtime JavaScript para resolver o desafio JS do YouTube.
 # Sem ele, a resposta do player volta UNPLAYABLE e o erro exibido é
 # "The page needs to be reloaded" — que não tem nada a ver com cookies.
 # Versões mínimas aceitas pelo yt-dlp (utils/_jsruntime.py): deno 2.3, bun 1.2.11,
 # node 22, quickjs 2023-12-09. O Deno é um executável único, então é o que baixamos.
-DENO_EXE = "deno.exe" if IS_WINDOWS else "deno"
+DENO_EXE = nome_binario("deno")
 DENO_MIN_VERSION = (2, 3, 0)
 DENO_RELEASES_API = "https://api.github.com/repos/denoland/deno/releases?per_page=30"
 DENO_SUPPORTED_MAJOR = 2
@@ -774,7 +775,7 @@ class ToolManager:
         target = self.bin_dir / FFMPEG_EXE
         current = self.local_ffmpeg_version(target)
 
-        if sys.platform == "darwin":
+        if is_macos(sys.platform):
             self._ensure_macos_ffmpeg(progress, check_now)
             return
 
@@ -840,13 +841,7 @@ class ToolManager:
     @staticmethod
     def _deno_asset_name() -> str:
         """Nome do artefato do Deno para a arquitetura desta máquina."""
-        machine = platform.machine().lower()
-        arch = "aarch64" if machine in ("arm64", "aarch64") else "x86_64"
-        if IS_WINDOWS:
-            return f"deno-{arch}-pc-windows-msvc.zip"
-        if sys.platform == "darwin":
-            return f"deno-{arch}-apple-darwin.zip"
-        return f"deno-{arch}-unknown-linux-gnu.zip"
+        return asset_deno(platform_name=sys.platform, machine=platform.machine())
 
     @staticmethod
     def _version_ok(version: str, minimum: tuple[int, ...]) -> bool:

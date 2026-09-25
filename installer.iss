@@ -5,7 +5,7 @@
 #define AppName "baixador-ytdlp"
 ; A versão pode vir da linha de comando: ISCC /DAppVersion=1.2.3 installer.iss
 #ifndef AppVersion
-#define AppVersion "1.10.1"
+#define AppVersion "1.10.2"
 #endif
 #define AppExe "baixador-ytdlp.exe"
 
@@ -39,8 +39,8 @@ Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortugue
 [Files]
 Source: "dist\{#AppName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-; A build one-dir do PyInstaller guarda as bibliotecas em _internal. Remover a
-; cópia anterior evita DLLs e módulos órfãos após atualizar 1.0.x → 1.1.x.
+; Releases anteriores do PyInstaller guardavam bibliotecas em _internal.
+; Remover a cópia anterior evita módulos órfãos ao migrar para o Nuitka.
 [InstallDelete]
 Type: filesandordirs; Name: "{app}\_internal"
 

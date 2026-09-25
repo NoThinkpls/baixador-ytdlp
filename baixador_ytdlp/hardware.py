@@ -13,6 +13,7 @@ import subprocess
 import sys
 from functools import lru_cache
 
+from .plataforma import is_apple_silicon
 
 @lru_cache(maxsize=1)
 def logical_cores() -> int:
@@ -83,7 +84,7 @@ def apple_performance_cores() -> int:
     aumentar consumo e latência sem ajudar tanto a transcrição. O MLX usa a GPU
     unificada normalmente; este número é para o fallback CTranslate2/NEON.
     """
-    if sys.platform != "darwin" or platform.machine().lower() not in {"arm64", "aarch64"}:
+    if not is_apple_silicon(sys.platform, platform.machine()):
         return 0
     for key in ("hw.perflevel0.physicalcpu", "hw.physicalcpu"):
         try:

@@ -28,7 +28,7 @@ PYPI_INDEX = "https://pypi.org/simple"
 # O faster-whisper roda sobre CTranslate2, sem PyTorch.
 #
 # As versões abaixo são as que funcionam na build atual e NÃO devem ser trocadas
-# sem recompilar o executável: as DLLs de CUDA são embarcadas pelo PyInstaller a
+# sem recompilar o executável: as DLLs de CUDA são embarcadas pelo empacotador a
 # partir do que estiver instalado na máquina de build. Fixar aqui uma versão de
 # cuDNN diferente da que foi embutida faz o carregador procurar nomes que não
 # existem no pacote e cair para CPU em silêncio.
@@ -95,6 +95,40 @@ def _cuda_dll_dirs(root: Path) -> tuple[Path, ...]:
     )
 
 
+def _embedded_roots() -> list[Path]:
+    """Raízes possíveis da distribuição congelada ou do ambiente de desenvolvimento.
+
+    PyInstaller fornece ``_MEIPASS``; Nuitka expõe ``__compiled__.containing_dir``
+    e mantém o executável ao lado das bibliotecas. Ao aceitar ambos, o carregador
+    de CUDA continua sendo uma responsabilidade do aplicativo, não do empacotador.
+    """
+    candidates: list[Path] = []
+    frozen_root = getattr(sys, "_MEIPASS", None)
+    if frozen_root:
+        candidates.append(Path(frozen_root))
+
+    compiled = globals().get("__compiled__")
+    containing_dir = getattr(compiled, "containing_dir", None)
+    if containing_dir:
+        candidates.append(Path(containing_dir))
+
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).resolve().parent)
+    candidates.extend(Path(item) for item in sys.path if item)
+
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            key = str(candidate.resolve())
+        except OSError:
+            key = str(candidate)
+        if key not in seen:
+            seen.add(key)
+            roots.append(candidate)
+    return roots
+
+
 def _add_dll_dirs(folders: tuple[Path, ...] | list[Path]) -> None:
     if not IS_WINDOWS or not hasattr(os, "add_dll_directory"):
         return
@@ -111,14 +145,8 @@ def _add_dll_dirs(folders: tuple[Path, ...] | list[Path]) -> None:
 
 def activate_embedded_cuda() -> None:
     """Mantém acessíveis as DLLs CUDA empacotadas ou presentes no venv atual."""
-    roots: list[Path] = []
-    frozen_root = getattr(sys, "_MEIPASS", None)
-    if frozen_root:
-        roots.append(Path(frozen_root))
-    else:
-        roots.extend(Path(item) for item in sys.path if item)
     folders: list[Path] = []
-    for root in roots:
+    for root in _embedded_roots():
         folders.extend(_cuda_dll_dirs(root))
     _add_dll_dirs(folders)
 
@@ -133,9 +161,7 @@ def embedded_cuda_available() -> bool:
     """
     if not IS_WINDOWS:
         return False
-    roots = ([Path(getattr(sys, "_MEIPASS"))]
-             if getattr(sys, "_MEIPASS", None) else [Path(item) for item in sys.path if item])
-    folders = [folder for root in roots for folder in _cuda_dll_dirs(root) if folder.is_dir()]
+    folders = [folder for root in _embedded_roots() for folder in _cuda_dll_dirs(root) if folder.is_dir()]
     if not folders:
         return False
 
@@ -152,8 +178,7 @@ def prepare_embedded_cuda() -> str | None:
     activate_embedded_cuda()
     if not IS_WINDOWS:
         return None
-    roots = [Path(getattr(sys, "_MEIPASS"))] if getattr(sys, "_MEIPASS", None) else [Path(p) for p in sys.path if p]
-    folders = [folder for root in roots for folder in _cuda_dll_dirs(root) if folder.is_dir()]
+    folders = [folder for root in _embedded_roots() for folder in _cuda_dll_dirs(root) if folder.is_dir()]
     if folders:
         os.environ["PATH"] = os.pathsep.join([*(str(p) for p in folders), os.environ.get("PATH", "")])
     def locate(name: str) -> Path | None:
