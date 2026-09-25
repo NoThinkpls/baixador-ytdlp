@@ -40,6 +40,11 @@ TEMPERATURE_FALLBACK = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
 # divisão curta das legendas já acontece depois, por palavra.
 VAD_MAX_SPEECH_SECONDS = 20.0
 
+_CUDA_ERROR_MARKERS = (
+    "cublas", "cudnn", "cudart", "cuda", "cufft", "curand",
+    "no cuda-capable device", "cuda driver", "out of memory",
+)
+
 MODEL_ORDER = ("tiny", "base", "small", "medium", "large-v3-turbo", "large-v3")
 
 FORMATS = {
@@ -86,6 +91,39 @@ MLX_MODEL_SPECS = {
 
 class TranscriptionCancelled(RuntimeError):
     """Cancelamento solicitado pelo usuário."""
+
+
+def _is_cuda_failure(exc: BaseException) -> bool:
+    """Distingue uma falha real de CUDA de um erro do motor em geral.
+
+    O VAD usa onnxruntime em CPU mesmo quando o Whisper usa a GPU. Portanto,
+    um modelo ONNX ausente não deve descarregar vários gigabytes da GPU nem ser
+    apresentado como erro de CUDA.
+    """
+    if type(exc).__module__.startswith("onnxruntime"):
+        return False
+    if isinstance(exc, (FileNotFoundError, TypeError, ValueError)):
+        return False
+    text = str(exc).casefold()
+    return isinstance(exc, (RuntimeError, OSError)) and any(
+        marker in text for marker in _CUDA_ERROR_MARKERS
+    )
+
+
+def _is_cuda_out_of_memory(exc: BaseException) -> bool:
+    return _is_cuda_failure(exc) and "out of memory" in str(exc).casefold()
+
+
+def friendly_transcription_error(exc: BaseException) -> str:
+    """Torna arquivos internos ausentes acionáveis para quem usa o aplicativo."""
+    text = str(exc)
+    match = re.search(r"silero_(?:encoder|decoder)_v5\.onnx", text, flags=re.IGNORECASE)
+    if match and ("file doesn't exist" in text.casefold() or "no_suchfile" in text.casefold()):
+        return (
+            f"Arquivo interno do motor de transcrição ausente ({match.group(0)}). "
+            "A instalação está incompleta — reinstale a versão mais recente."
+        )
+    return text
 
 
 @dataclass(frozen=True)
@@ -154,6 +192,30 @@ def cached_model_path(model_size: str, *, mlx: bool | None = None) -> Path | Non
         return None
 
 
+def _warm_huggingface_symlink_support(cache: Path, repo: str) -> None:
+    """Resolve antes das threads se este cache pode usar symlinks no Windows."""
+    from huggingface_hub.file_download import are_symlinks_supported
+
+    repo_cache = cache / f"models--{repo.replace('/', '--')}"
+    repo_cache.mkdir(parents=True, exist_ok=True)
+    try:
+        are_symlinks_supported(repo_cache)
+    except OSError:
+        # O hub cai para cópia de arquivos quando symlink não é permitido.
+        pass
+
+
+def _snapshot_download_with_symlink_retry(snapshot_download, **kwargs) -> str:
+    """Repete uma vez o caso transitório de privilégio de symlink do Windows."""
+    try:
+        return snapshot_download(**kwargs)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) != 1314:
+            raise
+        log_event("Hugging Face recusou symlink (WinError 1314); repetindo download em modo cópia")
+        return snapshot_download(**kwargs)
+
+
 def model_cache_size(model_size: str, *, mlx: bool | None = None) -> int:
     use_mlx = preferred_model_backend() if mlx is None else mlx
     repo, _revision = Transcriber._model_spec(model_size, mlx=use_mlx)
@@ -202,6 +264,8 @@ def download_model_snapshot(
             progress(progress_range[1])
         return existing
 
+    _warm_huggingface_symlink_support(cache, repo)
+
     if status:
         status(f"Baixando modelo Whisper {model_size}…")
     low, high = progress_range
@@ -217,7 +281,8 @@ def download_model_snapshot(
 
     def fetch() -> None:
         try:
-            outcome["path"] = snapshot_download(
+            outcome["path"] = _snapshot_download_with_symlink_retry(
+                snapshot_download,
                 repo_id=repo,
                 revision=revision,
                 cache_dir=str(cache),
@@ -350,6 +415,9 @@ class Transcriber:
         self._loaded_model_size: str | None = None
         self._loaded_model_profile: tuple[str, str, str] | None = None
         self._hardware_label_base = self.hardware_label
+        self._cuda_profile = (self.backend, self.device, self.compute_type, self.hardware_label) \
+            if self.device == "cuda" else None
+        self._retry_cuda_after_oom = False
 
     def cancel(self) -> None:
         self.cancel_event.set()
@@ -416,16 +484,32 @@ class Transcriber:
         try:
             self.model = WhisperModel(str(model_path), **kwargs)
         except Exception as exc:
-            if self.device != "cuda":
+            if self.device != "cuda" or not _is_cuda_failure(exc):
                 raise
-            # Driver, wheel CUDA ou cuDNN podem não estar presentes; CPU é melhor que falhar.
-            self.status(f"CUDA indisponível para o Whisper ({exc}). Alternando para CPU int8…")
-            self.device, self.compute_type = "cpu", "int8"
-            self.hardware_label = "CPU — fallback automático (int8)"
-            self.model = WhisperModel(
-                str(model_path), device="cpu", compute_type="int8",
-                cpu_threads=whisper_threads(), num_workers=1,
-            )
+            # OOM costuma ser resolvido pelo perfil de pouca VRAM sem abandonar
+            # a GPU. Demais falhas CUDA deixam o processo em CPU até reiniciar.
+            if _is_cuda_out_of_memory(exc) and self.compute_type != "int8_float16":
+                self.status("GPU sem memória ao carregar o modelo. Tentando modo pouca VRAM…")
+                self.compute_type = "int8_float16"
+                self.hardware_label = self._hardware_label_base + " · int8_float16"
+                try:
+                    self.model = WhisperModel(
+                        str(model_path), device="cuda", compute_type="int8_float16",
+                    )
+                except Exception as retry_exc:
+                    if not _is_cuda_failure(retry_exc):
+                        raise
+                    self._set_cpu_fallback(retry_exc, retry_gpu_next_job=_is_cuda_out_of_memory(retry_exc))
+                    self.model = WhisperModel(
+                        str(model_path), device="cpu", compute_type="int8",
+                        cpu_threads=whisper_threads(), num_workers=1,
+                    )
+            else:
+                self._set_cpu_fallback(exc)
+                self.model = WhisperModel(
+                    str(model_path), device="cpu", compute_type="int8",
+                    cpu_threads=whisper_threads(), num_workers=1,
+                )
         self.progress(15)
         self._loaded_model_size = model_size
         self._loaded_model_profile = (self.backend, self.device, self.compute_type)
@@ -472,15 +556,40 @@ class Transcriber:
             cache_dir=str(cache),
         ))
 
-    def _switch_to_cpu(self, model_size: str, reason: Exception) -> None:
-        """Troca de CUDA para CPU quando uma DLL/driver falha durante o uso."""
-        from faster_whisper import WhisperModel
-
-        self.status(f"CUDA indisponível durante a transcrição ({reason}). Alternando para CPU int8…")
-        self._discard_model()
+    def _set_cpu_fallback(self, reason: BaseException, *, retry_gpu_next_job: bool = False) -> None:
+        """Registra e ativa CPU para uma falha CUDA confirmada."""
+        continuation = (
+            " A GPU será tentada novamente no próximo item."
+            if retry_gpu_next_job else
+            " O servidor continuará em CPU até o aplicativo ser reiniciado."
+        )
+        self.status(
+            f"CUDA indisponível durante a transcrição ({reason}). Alternando para CPU int8…"
+            + continuation
+        )
+        log_event("Fallback CUDA para CPU: %s%s", reason, continuation)
         self.device, self.compute_type = "cpu", "int8"
         self.hardware_label = "CPU — fallback automático (int8)"
         self._hardware_label_base = self.hardware_label
+        self._retry_cuda_after_oom = retry_gpu_next_job
+
+    def _restore_cuda_after_oom(self) -> None:
+        if not self._retry_cuda_after_oom or self._cuda_profile is None:
+            return
+        self._discard_model()
+        self.backend, self.device, self.compute_type, self.hardware_label = self._cuda_profile
+        self._hardware_label_base = self.hardware_label
+        self._retry_cuda_after_oom = False
+        self.status("Tentando a GPU novamente após a falta de memória no item anterior…")
+
+    def _switch_to_cpu(
+        self, model_size: str, reason: BaseException, *, retry_gpu_next_job: bool = False,
+    ) -> None:
+        """Troca de CUDA para CPU quando uma DLL/driver falha durante o uso."""
+        from faster_whisper import WhisperModel
+
+        self._discard_model()
+        self._set_cpu_fallback(reason, retry_gpu_next_job=retry_gpu_next_job)
         model_path = download_model_snapshot(
             model_size,
             mlx=False,
@@ -492,6 +601,26 @@ class Transcriber:
             str(model_path), device="cpu", compute_type="int8",
             cpu_threads=whisper_threads(), num_workers=1,
         )
+        self._loaded_model_size = model_size
+        self._loaded_model_profile = (self.backend, self.device, self.compute_type)
+        self.status(f"Modelo pronto: {self.hardware_label}")
+
+    def _switch_to_low_vram(self, model_size: str, reason: BaseException) -> None:
+        """Tenta a GPU em int8_float16 antes de desistir dela por falta de VRAM."""
+        from faster_whisper import WhisperModel
+
+        self.status(f"GPU sem memória durante a transcrição ({reason}). Tentando modo pouca VRAM…")
+        self._discard_model()
+        self.compute_type = "int8_float16"
+        self.hardware_label = self._hardware_label_base + " · int8_float16"
+        model_path = download_model_snapshot(
+            model_size,
+            mlx=False,
+            status=self.status,
+            progress=self.progress,
+            progress_range=(5, 14),
+        )
+        self.model = WhisperModel(str(model_path), device="cuda", compute_type="int8_float16")
         self._loaded_model_size = model_size
         self._loaded_model_profile = (self.backend, self.device, self.compute_type)
         self.status(f"Modelo pronto: {self.hardware_label}")
@@ -518,6 +647,7 @@ class Transcriber:
 
     def _prepare_model_for(self, opts: TranscriptionOptions) -> None:
         """Mantém o modelo vivo se o próximo item usa a mesma configuração."""
+        self._restore_cuda_after_oom()
         if self.backend == "mlx":
             if self._loaded_model_size != opts.model_size or self._model_path is None:
                 self._prepare_mlx(opts.model_size)
@@ -682,11 +812,29 @@ class Transcriber:
                 if self.backend == "mlx":
                     self._switch_mlx_to_cpu(opts.model_size, exc)
                     raw, info = self._decode(audio, opts, duration)
-                elif self.device == "cuda":
+                elif self.device == "cuda" and _is_cuda_failure(exc):
                     # A carga das DLLs CUDA é preguiçosa; erros como
                     # cublas64_12.dll ausente aparecem ao iterar os segmentos.
-                    self._switch_to_cpu(opts.model_size, exc)
-                    raw, info = self._decode(audio, opts, duration)
+                    if _is_cuda_out_of_memory(exc) and self.compute_type != "int8_float16":
+                        self._switch_to_low_vram(opts.model_size, exc)
+                        try:
+                            raw, info = self._decode(audio, opts, duration)
+                        except Exception as retry_exc:
+                            if not _is_cuda_failure(retry_exc):
+                                raise
+                            self._switch_to_cpu(
+                                opts.model_size,
+                                retry_exc,
+                                retry_gpu_next_job=_is_cuda_out_of_memory(retry_exc),
+                            )
+                            raw, info = self._decode(audio, opts, duration)
+                    else:
+                        self._switch_to_cpu(
+                            opts.model_size,
+                            exc,
+                            retry_gpu_next_job=_is_cuda_out_of_memory(exc),
+                        )
+                        raw, info = self._decode(audio, opts, duration)
                 else:
                     raise
             language = str(getattr(info, "language", "auto"))
@@ -1100,7 +1248,7 @@ def transcription_server_main(toolchain: Toolchain, commands, events) -> None:
             except Exception as exc:  # noqa: BLE001 - precisa voltar à interface
                 report_exception("transcrição persistente", exc)
                 send(int(job_id), "error", {
-                    "message": str(exc), "traceback": traceback.format_exc(),
+                    "message": friendly_transcription_error(exc), "traceback": traceback.format_exc(),
                 })
             else:
                 log_event("Transcrição persistente concluída: %s", opts.output_path)

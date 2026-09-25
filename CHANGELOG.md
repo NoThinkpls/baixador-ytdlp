@@ -3,6 +3,29 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.10.4] - 2026-09-25
+
+### Corrigido
+
+- A distribuição Nuitka inclui todos os dados do `faster-whisper`, incluindo os
+  dois modelos ONNX do VAD; o build agora confere os arquivos reais instalados
+  antes de gerar o instalador.
+- Erros de arquivo, VAD ou ONNX não são mais tratados como indisponibilidade de
+  CUDA. Arquivos internos ausentes orientam a reinstalação em vez de disparar
+  um fallback enganoso para CPU.
+- Download de modelos aquece a detecção de symlinks do Hugging Face e repete o
+  caso transitório `WinError 1314` no Windows.
+- Falta de memória na GPU tenta `int8_float16` antes da CPU; se ainda falhar,
+  a GPU é tentada de novo no próximo item. Outras falhas CUDA passam a informar
+  claramente que a sessão continuará em CPU até reiniciar.
+- Caminhos de recursos, modo portátil, DLLs CUDA e ferramentas embarcadas usam
+  uma única abstração compatível com PyInstaller e Nuitka.
+
+### Adicionado
+
+- Self-test oculto do executável, executado pelo build local e pelo CI: valida
+  dependências, assets do VAD, PyAV, CUDA disponível e um processo `spawn`.
+
 ## [1.10.0] - 2026-09-23
 
 Primeira parte da fase 2.0 do roadmap.

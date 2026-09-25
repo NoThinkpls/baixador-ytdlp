@@ -86,6 +86,8 @@ jobs:
 
       - name: Compilar com Nuitka
         run: |
+          # Evita caminhos 8.3 da cache padrão de apps instalados pelo Windows.
+          $env:NUITKA_CACHE_DIR = Join-Path $env:RUNNER_TEMP 'baixador-ytdlp-nuitka-cache'
           # O nome do artefato em pull requests inclui o número da execução,
           # mas os recursos PE aceitam apenas uma versão numérica do app.
           $resourceVersion = python -c "import ast,pathlib; t=ast.parse(pathlib.Path('baixador_ytdlp/config.py').read_text(encoding='utf-8')); print(next(n.value.value for n in t.body if isinstance(n,ast.Assign) and any(isinstance(x,ast.Name) and x.id=='APP_VERSION' for x in n.targets)))"
@@ -105,9 +107,18 @@ jobs:
             --include-package=nvidia.cuda_runtime `
             --include-package=nvidia.cublas `
             --include-package=nvidia.cudnn `
-            --include-package-data=faster_whisper:assets/silero_encoder_v5.onnx `
+            --include-package-data=faster_whisper `
+            --include-package-data=ctranslate2 `
+            --include-package-data=av `
+            --include-package-data=onnxruntime `
+            --include-package-data=tokenizers `
+            --include-package-data=huggingface_hub `
             --include-distribution-metadata=faster-whisper `
             --include-distribution-metadata=ctranslate2 `
+            --include-distribution-metadata=av `
+            --include-distribution-metadata=onnxruntime `
+            --include-distribution-metadata=tokenizers `
+            --include-distribution-metadata=huggingface-hub `
             --include-distribution-metadata=nvidia-cuda-runtime-cu12 `
             --include-distribution-metadata=nvidia-cublas-cu12 `
             --include-distribution-metadata=nvidia-cudnn-cu12 `
@@ -135,9 +146,24 @@ jobs:
             if (-not (Get-ChildItem -Path 'dist\baixador-ytdlp' -Filter $dll -File -Recurse)) { $dll }
           }
           if ($missingCudaDlls) { throw "DLLs CUDA ausentes: $($missingCudaDlls -join ', ')" }
-          $vadModel = Join-Path (Split-Path -Parent $exe) 'faster_whisper\assets\silero_encoder_v5.onnx'
-          if (-not (Test-Path -LiteralPath $vadModel -PathType Leaf)) {
-            throw "Nuitka não incluiu o modelo VAD obrigatório: $vadModel"
+          $fasterWhisperAssets = python -c "from pathlib import Path; from faster_whisper.utils import get_assets_path; root=Path(get_assets_path()); print('\n'.join(str(path.relative_to(root)) for path in root.rglob('*') if path.is_file() and path.suffix not in {'.py', '.pyc'} and '__pycache__' not in path.parts))"
+          if ($LASTEXITCODE -ne 0) { throw "Não foi possível listar os assets do faster-whisper" }
+          $bundleAssets = Join-Path (Split-Path -Parent $exe) 'faster_whisper\assets'
+          $missingRuntimeFiles = @($fasterWhisperAssets | Where-Object {
+            $_ -and -not (Test-Path -LiteralPath (Join-Path $bundleAssets $_) -PathType Leaf)
+          })
+          if ($missingRuntimeFiles) {
+            throw "Dados do faster-whisper ausentes no bundle: $($missingRuntimeFiles -join ', ')"
+          }
+          $selfTestReport = Join-Path $env:TEMP 'baixador-self-test.json'
+          & $exe '--self-test' $selfTestReport
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $selfTestReport -PathType Leaf)) {
+            $details = if (Test-Path -LiteralPath $selfTestReport -PathType Leaf) {
+              Get-Content -LiteralPath $selfTestReport -Raw
+            } else {
+              'O executável não produziu o relatório do self-test.'
+            }
+            throw "Smoke test do executável falhou: $details"
           }
           $item = Get-Item $exe
           Write-Host "OK: $($item.Name) — $([math]::Round($item.Length / 1MB, 1)) MB"

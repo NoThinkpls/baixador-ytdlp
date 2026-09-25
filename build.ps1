@@ -93,6 +93,13 @@ if (-not $versionLine -or $versionLine.Line -notmatch '"([^"]+)"') {
 }
 $appVersion = $Matches[1]
 
+# O GCC baixado pelo Nuitka não resolve corretamente cabeçalhos internos quando
+# sua cache fica sob ``AppData\Local\Packages`` e recebe um caminho 8.3. Uma
+# cache própria também evita depender da estrutura do host que executa a build.
+$nuitkaCacheBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [System.IO.Path]::GetTempPath() }
+$env:NUITKA_CACHE_DIR = Join-Path $nuitkaCacheBase 'BaixadorYtdlp\nuitka-cache'
+Write-Host "> Cache Nuitka: $env:NUITKA_CACHE_DIR" -ForegroundColor DarkGray
+
 Write-Host "> Compilando com $Packager" -ForegroundColor Cyan
 Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
 if ($Packager -eq 'Nuitka') {
@@ -109,13 +116,23 @@ if ($Packager -eq 'Nuitka') {
         '--user-package-configuration-file=nuitka-package.config.yml',
         '--include-package=nvidia.cuda_runtime', '--include-package=nvidia.cublas',
         '--include-package=nvidia.cudnn',
-        # O VAD do faster-whisper abre este modelo ONNX em tempo de execução.
-        # Ele não é importável como módulo Python e precisa ser declarado como dado.
-        '--include-package-data=faster_whisper:assets/silero_encoder_v5.onnx',
+        # Dados carregados dinamicamente não aparecem na análise de imports do
+        # Nuitka. Incluímos os pacotes do motor por inteiro, como fazia a
+        # coleta do PyInstaller, e validamos os assets do VAD após a build.
+        '--include-package-data=faster_whisper',
+        '--include-package-data=ctranslate2',
+        '--include-package-data=av',
+        '--include-package-data=onnxruntime',
+        '--include-package-data=tokenizers',
+        '--include-package-data=huggingface_hub',
         # O resumo do motor usa importlib.metadata; sem estes metadados a build
         # funciona, mas exibe versoes desconhecidas em vez das versoes incluidas.
         '--include-distribution-metadata=faster-whisper',
         '--include-distribution-metadata=ctranslate2',
+        '--include-distribution-metadata=av',
+        '--include-distribution-metadata=onnxruntime',
+        '--include-distribution-metadata=tokenizers',
+        '--include-distribution-metadata=huggingface-hub',
         '--include-distribution-metadata=nvidia-cuda-runtime-cu12',
         '--include-distribution-metadata=nvidia-cublas-cu12',
         '--include-distribution-metadata=nvidia-cudnn-cu12',
@@ -153,15 +170,28 @@ $missingCudaDlls = foreach ($dll in $requiredCudaDlls) {
 if ($missingCudaDlls) {
     throw "A build não incluiu as DLLs CUDA obrigatórias: $($missingCudaDlls -join ', ')"
 }
-$requiredRuntimeFiles = @('faster_whisper\assets\silero_encoder_v5.onnx')
-$missingRuntimeFiles = foreach ($file in $requiredRuntimeFiles) {
-    if (-not (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $exe) $file) -PathType Leaf)) {
-        $file
-    }
+$fasterWhisperAssets = & $python -c "from pathlib import Path; from faster_whisper.utils import get_assets_path; root=Path(get_assets_path()); print('\n'.join(str(path.relative_to(root)) for path in root.rglob('*') if path.is_file() and path.suffix not in {'.py', '.pyc'} and '__pycache__' not in path.parts))"
+if ($LASTEXITCODE -ne 0) {
+    throw 'Não foi possível listar os assets do faster-whisper instalados para validar a build.'
 }
+$bundleAssets = Join-Path (Split-Path -Parent $exe) 'faster_whisper\assets'
+$missingRuntimeFiles = @($fasterWhisperAssets | Where-Object {
+    $_ -and -not (Test-Path -LiteralPath (Join-Path $bundleAssets $_) -PathType Leaf)
+})
 if ($missingRuntimeFiles) {
-    throw "A build não incluiu os dados obrigatórios do faster-whisper: $($missingRuntimeFiles -join ', ')"
+    throw "A build não incluiu os dados do faster-whisper: $($missingRuntimeFiles -join ', ')"
 }
+$selfTestReport = Join-Path ([System.IO.Path]::GetTempPath()) "baixador-self-test-$([guid]::NewGuid().ToString('N')).json"
+& $exe '--self-test' $selfTestReport
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $selfTestReport -PathType Leaf)) {
+    $details = if (Test-Path -LiteralPath $selfTestReport -PathType Leaf) {
+        Get-Content -LiteralPath $selfTestReport -Raw
+    } else {
+        'O executável não produziu o relatório do self-test.'
+    }
+    throw "Smoke test do executável falhou: $details"
+}
+Write-Host "> Smoke test aprovado: $selfTestReport" -ForegroundColor Green
 Write-Host "> Pronto: $exe" -ForegroundColor Green
 
 if ($Installer) {

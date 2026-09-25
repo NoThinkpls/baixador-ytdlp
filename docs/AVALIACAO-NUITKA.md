@@ -18,6 +18,12 @@ carregadas dinamicamente e mantém a interface sem console. A primeira execuçã
 pode baixar componentes de compilação do Nuitka; isso é confirmado pelo próprio
 comando.
 
+Antes de aceitar a pasta gerada, o build também executa `--self-test`: confere
+os dados instalados do `faster-whisper` (incluindo os dois ONNX do VAD), os
+imports e metadados do motor, a decodificação PyAV, a disponibilidade de CUDA e
+uma carga do VAD por processo `spawn`. Isso bloqueia um pacote incompleto antes
+de ele chegar ao instalador; não substitui a transcrição manual na máquina limpa.
+
 ## Comparação local — 25/09/2026
 
 As duas distribuições foram geradas do mesmo commit, no Windows 11, com
