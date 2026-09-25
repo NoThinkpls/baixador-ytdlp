@@ -35,6 +35,12 @@ class NuitkaBuildTests(unittest.TestCase):
         for distribution in ("faster-whisper", "ctranslate2"):
             self.assertIn(f"--include-distribution-metadata={distribution}", build_script)
 
+    def test_build_inclui_modelo_vad_do_faster_whisper(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        expected = "--include-package-data=faster_whisper:assets/silero_encoder_v5.onnx"
+        for path in (root / "build.ps1", root / ".github" / "workflows" / "build.yml"):
+            self.assertIn(expected, path.read_text(encoding="utf-8"))
+
     def test_nuitka_e_padrao_e_normaliza_layout_do_instalador(self) -> None:
         build_script = (Path(__file__).resolve().parents[1] / "build.ps1").read_text(
             encoding="utf-8"

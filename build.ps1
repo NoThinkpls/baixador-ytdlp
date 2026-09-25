@@ -109,6 +109,9 @@ if ($Packager -eq 'Nuitka') {
         '--user-package-configuration-file=nuitka-package.config.yml',
         '--include-package=nvidia.cuda_runtime', '--include-package=nvidia.cublas',
         '--include-package=nvidia.cudnn',
+        # O VAD do faster-whisper abre este modelo ONNX em tempo de execução.
+        # Ele não é importável como módulo Python e precisa ser declarado como dado.
+        '--include-package-data=faster_whisper:assets/silero_encoder_v5.onnx',
         # O resumo do motor usa importlib.metadata; sem estes metadados a build
         # funciona, mas exibe versoes desconhecidas em vez das versoes incluidas.
         '--include-distribution-metadata=faster-whisper',
@@ -149,6 +152,15 @@ $missingCudaDlls = foreach ($dll in $requiredCudaDlls) {
 }
 if ($missingCudaDlls) {
     throw "A build não incluiu as DLLs CUDA obrigatórias: $($missingCudaDlls -join ', ')"
+}
+$requiredRuntimeFiles = @('faster_whisper\assets\silero_encoder_v5.onnx')
+$missingRuntimeFiles = foreach ($file in $requiredRuntimeFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $exe) $file) -PathType Leaf)) {
+        $file
+    }
+}
+if ($missingRuntimeFiles) {
+    throw "A build não incluiu os dados obrigatórios do faster-whisper: $($missingRuntimeFiles -join ', ')"
 }
 Write-Host "> Pronto: $exe" -ForegroundColor Green
 
