@@ -105,6 +105,7 @@ jobs:
             --include-package=nvidia.cuda_runtime `
             --include-package=nvidia.cublas `
             --include-package=nvidia.cudnn `
+            --include-package-data=faster_whisper:assets/silero_encoder_v5.onnx `
             --include-distribution-metadata=faster-whisper `
             --include-distribution-metadata=ctranslate2 `
             --include-distribution-metadata=nvidia-cuda-runtime-cu12 `
@@ -134,6 +135,10 @@ jobs:
             if (-not (Get-ChildItem -Path 'dist\baixador-ytdlp' -Filter $dll -File -Recurse)) { $dll }
           }
           if ($missingCudaDlls) { throw "DLLs CUDA ausentes: $($missingCudaDlls -join ', ')" }
+          $vadModel = Join-Path (Split-Path -Parent $exe) 'faster_whisper\assets\silero_encoder_v5.onnx'
+          if (-not (Test-Path -LiteralPath $vadModel -PathType Leaf)) {
+            throw "Nuitka não incluiu o modelo VAD obrigatório: $vadModel"
+          }
           $item = Get-Item $exe
           Write-Host "OK: $($item.Name) — $([math]::Round($item.Length / 1MB, 1)) MB"
 
