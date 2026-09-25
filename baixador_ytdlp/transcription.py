@@ -297,7 +297,9 @@ def remove_legacy_model_cache(model_dir: Path = MODEL_DIR) -> int:
 
 
 def _is_apple_silicon() -> bool:
-    return sys.platform == "darwin" and platform.machine().lower() in {"arm64", "aarch64"}
+    from .plataforma import is_apple_silicon
+
+    return is_apple_silicon(sys.platform, platform.machine())
 
 
 def _mlx_available() -> bool:

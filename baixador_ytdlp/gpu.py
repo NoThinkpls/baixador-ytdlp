@@ -7,6 +7,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .plataforma import is_apple_silicon, is_macos
 from .tools import run_hidden
 
 GPU_ENCODER_LABELS = {
@@ -35,7 +36,7 @@ def _cache_key(ffmpeg: Path) -> tuple[str, int, int] | None:
 
 
 def _candidate_encoders() -> tuple[str, ...]:
-    if sys.platform == "darwin":
+    if is_macos(sys.platform):
         return "h264_videotoolbox", "hevc_videotoolbox"
     return (
         "h264_nvenc", "hevc_nvenc", "av1_nvenc",
@@ -120,7 +121,7 @@ class GpuInfo:
 
     @property
     def summary(self) -> str:
-        if sys.platform == "darwin" and not self.section_encoders:
+        if is_macos(sys.platform) and not self.section_encoders:
             return "Apple Silicon detectado — conversão acelerada indisponível neste FFmpeg."
         if not self.section_encoders:
             if self.name:
@@ -154,9 +155,9 @@ def detect(
     camadas e não deve aguardar vários testes sintéticos antes de começar.
     """
     info = GpuInfo()
-    if sys.platform == "darwin":
+    if is_macos(sys.platform):
         machine = platform.machine().lower()
-        info.name = "Apple Silicon" if machine in ("arm64", "aarch64") else "Mac"
+        info.name = "Apple Silicon" if is_apple_silicon(sys.platform, machine) else "Mac"
         if ffmpeg and Path(ffmpeg).exists():
             try:
                 enc = run_hidden([str(ffmpeg), "-hide_banner", "-encoders"], timeout=30).stdout

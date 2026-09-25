@@ -1,5 +1,9 @@
 # Build and release
 
+> Windows releases use Nuitka. The performance and security comparison, the
+> PyInstaller fallback, and outstanding validation are documented in the
+> Portuguese [Nuitka assessment](AVALIACAO-NUITKA.md).
+
 [Leia em português](COMPILACAO-E-RELEASE.md)
 
 Official builds are produced by GitHub Actions. A push to `main` validates and builds Windows, macOS, and Linux. Only if every platform passes does the workflow create the `vX.Y.Z` tag matching `APP_VERSION` and publish the release. A manually pushed tag remains compatible with the same validation flow.
@@ -30,5 +34,7 @@ Do not create the tag or release manually in the normal workflow. The automation
 
 ## Local development
 
-`build.ps1` and `build.cmd` are development helpers only. Use the artifacts produced by GitHub Actions for distribution.
+`build.ps1` and `build.cmd` are development helpers only. On Windows,
+`build.ps1` defaults to Nuitka; use `-Packager PyInstaller` for the fallback
+route. Use the artifacts produced by GitHub Actions for distribution.
 

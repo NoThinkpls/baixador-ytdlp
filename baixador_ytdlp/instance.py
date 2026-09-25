@@ -22,6 +22,7 @@ from PySide6.QtCore import QLockFile, QObject, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 from .config import APP_ID, DATA_DIR
+from .plataforma import is_linux
 
 MAX_PAYLOAD_BYTES = 64 * 1024
 
@@ -30,7 +31,7 @@ def server_name() -> str:
     user = re.sub(r"[^A-Za-z0-9_.-]", "_", getpass.getuser())
     name = f"{APP_ID}-{user}"
     runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "")
-    if sys.platform.startswith("linux") and runtime_dir and Path(runtime_dir).is_dir():
+    if is_linux(sys.platform) and runtime_dir and Path(runtime_dir).is_dir():
         return str(Path(runtime_dir) / f"{name}.sock")
     return name
 

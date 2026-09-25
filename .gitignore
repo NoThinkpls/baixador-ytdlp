@@ -13,6 +13,8 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.nuitka-cache/
+.pip-cache/
 
 # Saída do Inno Setup
 Output/
