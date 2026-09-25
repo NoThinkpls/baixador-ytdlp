@@ -19,6 +19,23 @@ MACOS = "macos"
 LINUX = "linux"
 
 
+def execucao_empacotada() -> bool:
+    """Indica se o app está dentro de uma distribuição PyInstaller ou Nuitka.
+
+    PyInstaller expõe ``sys.frozen``. Nuitka usa o global ``__compiled__`` em
+    cada módulo compilado. Concentrar essa diferença aqui evita que detalhes do
+    empacotador vazem para caminhos, recursos e ferramentas embarcadas.
+    """
+    return bool(getattr(sys, "frozen", False) or globals().get("__compiled__"))
+
+
+def pasta_do_executavel() -> Path:
+    """Retorna a raiz da distribuição ou a raiz do projeto em desenvolvimento."""
+    if execucao_empacotada():
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[1]
+
+
 def sistema(platform_name: str | None = None) -> str:
     """Normaliza o identificador do Python para uma das plataformas suportadas."""
     name = platform_name if platform_name is not None else sys.platform

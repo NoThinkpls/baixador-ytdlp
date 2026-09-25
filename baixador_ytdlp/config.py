@@ -3,17 +3,16 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import time
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 from .hardware import default_fragments, default_parallel_downloads
-from .plataforma import is_macos, is_windows, pasta_dados_usuario
+from .plataforma import is_macos, is_windows, pasta_dados_usuario, pasta_do_executavel
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.10.3"
+APP_VERSION = "1.10.4"
 IS_WINDOWS = is_windows()
 
 
@@ -47,9 +46,8 @@ def _portable_root() -> Path | None:
     quebra a assinatura, some ao atualizar e falha quando o Gatekeeper executa
     o app de um volume somente leitura (App Translocation).
     """
-    executable_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) \
-        else Path(__file__).resolve().parents[1]
-    bundle = _app_bundle(executable_dir) if is_macos(sys.platform) else None
+    executable_dir = pasta_do_executavel()
+    bundle = _app_bundle(executable_dir) if is_macos() else None
     markers = [executable_dir / "portable.txt"]
     if bundle is not None:
         markers.append(bundle.parent / "portable.txt")

@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Callable
 
 from .config import IS_WINDOWS, RUNTIME_DIR, ensure_dirs
+from .plataforma import pasta_do_executavel
 
 ProgressCB = Callable[[str, int], None]
 PYPI_INDEX = "https://pypi.org/simple"
@@ -98,22 +99,16 @@ def _cuda_dll_dirs(root: Path) -> tuple[Path, ...]:
 def _embedded_roots() -> list[Path]:
     """Raízes possíveis da distribuição congelada ou do ambiente de desenvolvimento.
 
-    PyInstaller fornece ``_MEIPASS``; Nuitka expõe ``__compiled__.containing_dir``
-    e mantém o executável ao lado das bibliotecas. Ao aceitar ambos, o carregador
-    de CUDA continua sendo uma responsabilidade do aplicativo, não do empacotador.
+    PyInstaller fornece ``_MEIPASS``; no Nuitka as bibliotecas ficam ao lado do
+    executável. Ao aceitar ambos, o carregador de CUDA continua sendo uma
+    responsabilidade do aplicativo, não do empacotador.
     """
     candidates: list[Path] = []
     frozen_root = getattr(sys, "_MEIPASS", None)
     if frozen_root:
         candidates.append(Path(frozen_root))
 
-    compiled = globals().get("__compiled__")
-    containing_dir = getattr(compiled, "containing_dir", None)
-    if containing_dir:
-        candidates.append(Path(containing_dir))
-
-    if getattr(sys, "frozen", False):
-        candidates.append(Path(sys.executable).resolve().parent)
+    candidates.append(pasta_do_executavel())
     candidates.extend(Path(item) for item in sys.path if item)
 
     roots: list[Path] = []

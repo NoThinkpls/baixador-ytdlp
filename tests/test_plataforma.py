@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from baixador_ytdlp.plataforma import (
     asset_deno,
     asset_ytdlp,
     is_apple_silicon,
     nome_binario,
+    pasta_do_executavel,
     pasta_dados_usuario,
     sistema,
 )
@@ -53,6 +55,13 @@ class PlataformaTests(unittest.TestCase):
         self.assertTrue(is_apple_silicon("darwin", "aarch64"))
         self.assertFalse(is_apple_silicon("darwin", "x86_64"))
         self.assertFalse(is_apple_silicon("linux", "arm64"))
+
+    def test_pasta_do_executavel_usa_o_proprio_executavel_empacotado(self) -> None:
+        from baixador_ytdlp import plataforma
+
+        with patch.object(plataforma.sys, "executable", "C:/Apps/Baixador/baixador-ytdlp.exe"), \
+                patch.object(plataforma.sys, "frozen", True, create=True):
+            self.assertEqual(pasta_do_executavel(), Path("C:/Apps/Baixador"))
 
 
 if __name__ == "__main__":

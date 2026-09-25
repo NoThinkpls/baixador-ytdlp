@@ -37,7 +37,7 @@ except ImportError:  # pragma: no cover - só ocorre fora das builds oficiais
 
 from .config import APP_NAME, APP_VERSION, BIN_DIR, DATA_DIR, IS_WINDOWS, STATE_PATH, ensure_dirs
 from .diagnostics import get_logger
-from .plataforma import asset_deno, asset_ytdlp, is_macos, nome_binario
+from .plataforma import asset_deno, asset_ytdlp, is_macos, nome_binario, pasta_do_executavel
 from .runtime import RuntimeInfo, RuntimeManager
 
 YTDLP_EXE = nome_binario("yt-dlp")
@@ -317,11 +317,9 @@ class ToolManager:
         # Um binário que já vem na aplicação congelada tem precedência sobre o
         # PATH do sistema, mas nunca é alterado em lugar: atualizações vão para
         # a pasta de dados do usuário.
-        frozen_root = getattr(sys, "_MEIPASS", None)
-        if frozen_root:
-            bundled = Path(frozen_root) / "bin" / name
-            if bundled.is_file():
-                return bundled
+        bundled = pasta_do_executavel() / "bin" / name
+        if bundled.is_file():
+            return bundled
         found = shutil.which(name) if self.allow_system_tools else None
         return Path(found) if found else local
 

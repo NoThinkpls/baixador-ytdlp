@@ -109,9 +109,8 @@ class WindowSettingsTests(unittest.TestCase):
             executable.parent.mkdir(parents=True)
             executable.write_bytes(b"")
             (root / "portable.txt").write_text("x", encoding="utf-8")
-            with patch.object(config.sys, "platform", "darwin"), \
-                    patch.object(config.sys, "executable", str(executable)), \
-                    patch.object(config.sys, "frozen", True, create=True):
+            with patch("baixador_ytdlp.config.is_macos", return_value=True), \
+                    patch("baixador_ytdlp.config.pasta_do_executavel", return_value=executable.parent):
                 portable = config._portable_root()
         self.assertEqual(portable, root / f"{config.APP_ID}-data")
 
