@@ -59,9 +59,10 @@ class PlataformaTests(unittest.TestCase):
     def test_pasta_do_executavel_usa_o_proprio_executavel_empacotado(self) -> None:
         from baixador_ytdlp import plataforma
 
-        with patch.object(plataforma.sys, "executable", "C:/Apps/Baixador/baixador-ytdlp.exe"), \
+        executavel = Path.cwd() / "Apps" / "Baixador" / "baixador-ytdlp"
+        with patch.object(plataforma.sys, "executable", str(executavel)), \
                 patch.object(plataforma.sys, "frozen", True, create=True):
-            self.assertEqual(pasta_do_executavel(), Path("C:/Apps/Baixador"))
+            self.assertEqual(pasta_do_executavel(), executavel.parent)
 
 
 if __name__ == "__main__":
