@@ -11,10 +11,20 @@ import traceback
 import wave
 from pathlib import Path
 
+# Um argumento continua útil para a execução manual. No CI, porém, usamos a
+# variável de ambiente: alguns binários GUI não preservam argumentos de linha
+# de comando ao serem iniciados pelo shell do runner.
+_SELF_TEST_ENV = "BAIXADOR_YTDLP_SELF_TEST_REPORT"
+_SELF_TEST_REQUESTED = sys.argv[1:2] == ["--self-test"] or bool(os.environ.get(_SELF_TEST_ENV))
+_SELF_TEST_REPORT = (
+    sys.argv[2] if sys.argv[1:2] == ["--self-test"] and len(sys.argv) == 3
+    else os.environ.get(_SELF_TEST_ENV)
+)
+
 # Persistir o primeiro marco do autoteste permite diferenciar uma queda no
 # bootstrap nativo do executável de uma falha em uma de suas dependências.
-if sys.argv[1:2] == ["--self-test"] and len(sys.argv) == 3:
-    Path(sys.argv[2]).write_text(
+if _SELF_TEST_REPORT:
+    Path(_SELF_TEST_REPORT).write_text(
         json.dumps({"ok": False, "stage": "bootstrap"}), encoding="utf-8"
     )
 
@@ -140,10 +150,10 @@ def _run_self_test(report_path: Path) -> int:
 
 
 def main() -> int:
-    if sys.argv[1:2] == ["--self-test"]:
-        if len(sys.argv) != 3:
+    if _SELF_TEST_REQUESTED:
+        if not _SELF_TEST_REPORT:
             return 2
-        return _run_self_test(Path(sys.argv[2]))
+        return _run_self_test(Path(_SELF_TEST_REPORT))
 
     # O autoteste não precisa carregar configuração, diagnósticos, Qt nem a
     # árvore da interface. Isso o mantém útil para detectar problemas do
@@ -248,10 +258,10 @@ if __name__ == "__main__":
     # interprete esse argumento interno como um processo ``spawn``. O filho
     # criado pelo autoteste não recebe ``--self-test`` e continua passando
     # pelo fluxo abaixo.
-    if sys.argv[1:2] == ["--self-test"]:
-        if len(sys.argv) != 3:
+    if _SELF_TEST_REQUESTED:
+        if not _SELF_TEST_REPORT:
             raise SystemExit(2)
-        raise SystemExit(_run_self_test(Path(sys.argv[2])))
+        raise SystemExit(_run_self_test(Path(_SELF_TEST_REPORT)))
 
     # Obrigatório para que o modo spawn no Windows execute somente o alvo do
     # processo auxiliar, sem abrir uma segunda janela Qt.

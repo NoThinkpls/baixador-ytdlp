@@ -156,14 +156,17 @@ jobs:
             throw "Dados do faster-whisper ausentes no bundle: $($missingRuntimeFiles -join ', ')"
           }
           $selfTestReport = Join-Path $env:TEMP 'baixador-self-test.json'
-          & $exe '--self-test' $selfTestReport
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $selfTestReport -PathType Leaf)) {
+          $env:BAIXADOR_YTDLP_SELF_TEST_REPORT = $selfTestReport
+          & $exe
+          $selfTestExitCode = $LASTEXITCODE
+          Remove-Item Env:\BAIXADOR_YTDLP_SELF_TEST_REPORT -ErrorAction SilentlyContinue
+          if ($selfTestExitCode -ne 0 -or -not (Test-Path -LiteralPath $selfTestReport -PathType Leaf)) {
             $details = if (Test-Path -LiteralPath $selfTestReport -PathType Leaf) {
               Get-Content -LiteralPath $selfTestReport -Raw
             } else {
               'O executável não produziu o relatório do self-test.'
             }
-            throw "Smoke test do executável falhou: $details"
+            throw "Smoke test do executável falhou (código $selfTestExitCode): $details"
           }
           $item = Get-Item $exe
           Write-Host "OK: $($item.Name) — $([math]::Round($item.Length / 1MB, 1)) MB"

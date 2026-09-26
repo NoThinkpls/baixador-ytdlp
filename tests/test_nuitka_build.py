@@ -47,7 +47,11 @@ class NuitkaBuildTests(unittest.TestCase):
         for path in (root / "build.ps1", root / ".github" / "workflows" / "build.yml"):
             content = path.read_text(encoding="utf-8")
             self.assertIn("get_assets_path", content)
-            self.assertIn("--self-test", content)
+            self.assertIn("BAIXADOR_YTDLP_SELF_TEST_REPORT", content)
+            self.assertIn("selfTestExitCode", content)
+        entrypoint = (root / "main.py").read_text(encoding="utf-8")
+        self.assertIn("--self-test", entrypoint)
+        self.assertIn("BAIXADOR_YTDLP_SELF_TEST_REPORT", entrypoint)
 
     def test_nuitka_e_padrao_e_normaliza_layout_do_instalador(self) -> None:
         build_script = (Path(__file__).resolve().parents[1] / "build.ps1").read_text(
