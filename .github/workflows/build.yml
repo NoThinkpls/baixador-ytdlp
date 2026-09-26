@@ -157,8 +157,11 @@ jobs:
           }
           $selfTestReport = Join-Path $env:TEMP 'baixador-self-test.json'
           $env:BAIXADOR_YTDLP_SELF_TEST_REPORT = $selfTestReport
-          & $exe
-          $selfTestExitCode = $LASTEXITCODE
+          # Aplicações Windows sem console retornam imediatamente ao PowerShell
+          # quando chamadas com ``&``. Esperamos pelo processo real antes de
+          # verificar o relatório do autoteste.
+          $selfTestProcess = Start-Process -FilePath $exe -PassThru -Wait
+          $selfTestExitCode = $selfTestProcess.ExitCode
           Remove-Item Env:\BAIXADOR_YTDLP_SELF_TEST_REPORT -ErrorAction SilentlyContinue
           if ($selfTestExitCode -ne 0 -or -not (Test-Path -LiteralPath $selfTestReport -PathType Leaf)) {
             $details = if (Test-Path -LiteralPath $selfTestReport -PathType Leaf) {

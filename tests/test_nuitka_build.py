@@ -49,6 +49,7 @@ class NuitkaBuildTests(unittest.TestCase):
             self.assertIn("get_assets_path", content)
             self.assertIn("BAIXADOR_YTDLP_SELF_TEST_REPORT", content)
             self.assertIn("selfTestExitCode", content)
+            self.assertIn("Start-Process -FilePath $exe -PassThru -Wait", content)
         entrypoint = (root / "main.py").read_text(encoding="utf-8")
         self.assertIn("--self-test", entrypoint)
         self.assertIn("BAIXADOR_YTDLP_SELF_TEST_REPORT", entrypoint)

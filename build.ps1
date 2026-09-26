@@ -183,8 +183,10 @@ if ($missingRuntimeFiles) {
 }
 $selfTestReport = Join-Path ([System.IO.Path]::GetTempPath()) "baixador-self-test-$([guid]::NewGuid().ToString('N')).json"
 $env:BAIXADOR_YTDLP_SELF_TEST_REPORT = $selfTestReport
-& $exe
-$selfTestExitCode = $LASTEXITCODE
+# Aplicações Windows sem console retornam imediatamente ao PowerShell quando
+# chamadas com ``&``. Start-Process -Wait mede o término real do autoteste.
+$selfTestProcess = Start-Process -FilePath $exe -PassThru -Wait
+$selfTestExitCode = $selfTestProcess.ExitCode
 Remove-Item Env:\BAIXADOR_YTDLP_SELF_TEST_REPORT -ErrorAction SilentlyContinue
 if ($selfTestExitCode -ne 0 -or -not (Test-Path -LiteralPath $selfTestReport -PathType Leaf)) {
     $details = if (Test-Path -LiteralPath $selfTestReport -PathType Leaf) {
