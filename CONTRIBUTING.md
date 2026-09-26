@@ -1,7 +1,29 @@
 # Como contribuir
 
-Use Python 3.12. Crie um ambiente virtual e instale as dependências da sua
-plataforma junto de `requirements-build.txt`. No Linux:
+Obrigado por melhorar o Baixador YT-DLP. Buscamos mudanças pequenas, testáveis e
+compatíveis com Windows, macOS e Linux.
+
+## Antes de começar
+
+- Consulte as [issues abertas](../../issues) antes de iniciar uma funcionalidade.
+- Nunca inclua cookies, tokens, proxies com credenciais, links privados, modelos
+  Whisper ou logs pessoais no repositório.
+- Para vulnerabilidades, use o fluxo privado descrito em [SECURITY.md](SECURITY.md).
+
+## Preparar o ambiente
+
+Use Python 3.12. Os arquivos `requirements*.txt` descrevem as dependências; os
+arquivos `.lock` com hashes são a fonte de instalação reproduzível do CI.
+
+No Windows:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --require-hashes -r requirements-windows.lock -r requirements-build.lock
+```
+
+No Linux:
 
 ```bash
 python -m venv .venv
@@ -9,33 +31,43 @@ python -m venv .venv
 python -m pip install --require-hashes -r requirements-linux.lock -r requirements-build-linux.lock
 ```
 
+No macOS Apple Silicon, use os locks equivalentes `requirements-macos.lock` e
+`requirements-build-macos.lock`.
+
+## Validar uma mudança
+
 Antes de abrir um pull request, execute:
 
 ```bash
 python -m ruff check .
 QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v
-python scripts/sync_version.py   # após mudar APP_VERSION
 ```
 
-## Dependências
+No PowerShell, defina `QT_QPA_PLATFORM=offscreen` antes do comando de testes.
+Quando mudar `APP_VERSION`, execute também `python scripts/sync_version.py`.
 
-Os `requirements*.txt` são as **entradas**; o CI instala somente os `.lock`,
-com hashes. Ao mudar uma versão, rode `scripts/update_locks.sh` (requer `uv`) e
-commite os locks junto — o job `locks-in-sync` falha se eles divergirem.
-CTranslate2 e os pacotes NVIDIA sobem sempre juntos (cuDNN 8 ↔ CTranslate2 4.4).
+Inclua testes para correções e funcionalidades novas. Se a alteração tocar
+empacotamento, caminhos, recursos ou subprocessos, descreva o impacto em cada
+plataforma no PR.
 
-## Assinatura das releases
+## Dependências e releases
 
-1. `python scripts/release_signing.py generate` — gera o par Ed25519.
-2. Guarde a chave privada no segredo `RELEASE_SIGNING_KEY` do *environment*
-   `release` (Settings → Environments), com **Required reviewers**.
-3. Cole a chave pública em `RELEASE_PUBLIC_KEYS` (`baixador_ytdlp/updater.py`).
-   A partir da versão que trouxer a chave, o atualizador recusa releases sem
-   `SHA256SUMS.txt.sig` válido — publique antes uma versão já assinada.
+Depois de editar requirements, rode `scripts/update_locks.sh` (requer `uv`) e
+commite os locks gerados. O job `locks-in-sync` recusa divergências. Atualizações
+de CTranslate2 e CUDA/cuDNN devem ser planejadas em conjunto.
 
-Não inclua cookies, tokens, proxies com credenciais, logs pessoais ou modelos
-Whisper no commit. Para vulnerabilidades, não abra issue pública: siga o
-[SECURITY.md](SECURITY.md).
+Releases oficiais saem do GitHub Actions após a validação dos três sistemas.
+Consulte [Compilação e releases](docs/COMPILACAO-E-RELEASE.md); não crie tags ou
+releases manualmente no fluxo normal.
 
-Commits seguem Conventional Commits (`fix:`, `feat:`, `docs:`, `test:`). Uma
-release é criada somente por uma tag `vX.Y.Z` que corresponda a `APP_VERSION`.
+## Padrões de colaboração
+
+- Use commits no formato Conventional Commits, como `fix:`, `feat:`, `docs:` e
+  `test:`.
+- Mantenha cada PR focado em um problema.
+- Explique o comportamento anterior, o novo comportamento e como ele foi
+  validado.
+- Atualize a documentação visível ao usuário sempre que a experiência mudar.
+
+O [modelo de pull request](.github/PULL_REQUEST_TEMPLATE.md) reúne esse
+checklist ao abrir uma contribuição.

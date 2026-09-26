@@ -1,49 +1,78 @@
-# Baixador YT-DLP
+<p align="center">
+  <img src="assets/icon.png" width="96" alt="Baixador YT-DLP icon">
+</p>
 
-[Leia em português](README.md)
+<h1 align="center">Baixador YT-DLP</h1>
 
-Download video and audio, transcribe media locally, and edit files in an Apple + Discord inspired interface for Windows, macOS on Apple Silicon, and Linux.
+<p align="center">
+  Download media, transcribe audio locally, and edit video files in one desktop app for Windows, macOS on Apple Silicon, and Linux.
+</p>
 
-## Download
+<p align="center">
+  <a href="README.md">Leia em português</a> ·
+  <a href="https://github.com/NoThinkpls/baixador-ytdlp/releases/latest">Get the latest release</a> ·
+  <a href="docs/README.md">Documentation</a>
+</p>
 
-| Platform | Recommended package | Download |
+<p align="center">
+  <a href="https://github.com/NoThinkpls/baixador-ytdlp/releases/latest"><img src="https://img.shields.io/github/v/release/NoThinkpls/baixador-ytdlp?display_name=tag&label=release" alt="Latest release"></a>
+  <a href="https://github.com/NoThinkpls/baixador-ytdlp/actions/workflows/build.yml"><img src="https://github.com/NoThinkpls/baixador-ytdlp/actions/workflows/build.yml/badge.svg?branch=main" alt="Build"></a>
+  <a href="https://github.com/NoThinkpls/baixador-ytdlp/actions/workflows/security.yml"><img src="https://github.com/NoThinkpls/baixador-ytdlp/actions/workflows/security.yml/badge.svg?branch=main" alt="Security"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="MIT License"></a>
+</p>
+
+## Download for your platform
+
+| Platform | Recommended option | Download |
 | --- | --- | --- |
-| Windows 10/11 | Installer, with shortcut and in-app updates | [Download installer](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-setup.exe) |
-| Windows 10/11 | Portable ZIP, no installation required | [Download portable edition](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-portable-windows.zip) |
-| macOS 14+ on M1/M2/M3/M4 | DMG installer | [Download macOS installer](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-macos-arm64.dmg) |
-| macOS 14+ on M1/M2/M3/M4 | Portable ZIP | [Download macOS portable edition](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-macos-arm64.zip) |
-| Ubuntu 22.04+/Debian 12+ x86_64 | `.deb` package | [Download `.deb`](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-linux-amd64.deb) |
-| Linux x86_64 | Portable archive | [Download portable edition](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-portable-linux-x86_64.tar.gz) |
+| Windows 10/11 | Installer with shortcut and in-app updates | [Download installer](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-setup.exe) |
+| Windows 10/11 | Run without installing | [Portable edition](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-portable-windows.zip) |
+| macOS on M1/M2/M3/M4 | Drag the DMG app to Applications | [Download for macOS](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-macos-arm64.dmg) |
+| macOS on M1/M2/M3/M4 | Run without installing | [Portable edition](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-macos-arm64.zip) |
+| Ubuntu 22.04+/Debian 12+ x86_64 | System-integrated package | [Download `.deb`](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-linux-amd64.deb) |
+| Linux x86_64 | Run without installing | [Portable edition](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-portable-linux-x86_64.tar.gz) |
 
-The links use stable aliases for the latest approved release. If a version was just published, wait for the **Publish release** GitHub Actions job to finish before downloading it.
+These links use stable aliases for the latest approved release. Verify the SHA-256 checksums shipped with the installers when you need integrity proof.
 
-## What it does
+## What you can do
 
-- Downloads video, audio, playlists, and clips with format and quality choices.
-- Previews metadata, estimated output name, formats, audio languages, and available subtitles before starting.
-- Queues work, resumes partial downloads, retries temporary errors, and accepts a batch of pasted URLs.
-- Creates local captions with faster-whisper in SRT, WebVTT, ASS, karaoke ASS, TXT, or JSON; it can translate speech into English.
-- Keeps the transcription process alive between queued media files, reusing an already loaded Whisper model when the model and GPU memory profile are unchanged.
-- Can send a completed download to the caption queue and embed the resulting subtitles as a selectable media track without re-encoding.
-- Provides local FFmpeg tools for trimming, audio extraction, remuxing, compression, vertical video, and subtitle embedding.
-- Offers an optional nightly yt-dlp channel, model manager, diagnostics export with sensitive data redacted, taskbar progress, tray notifications, and optional background operation.
-- Uses CUDA with compatible NVIDIA GPUs, MLX on Apple Silicon, and a safe CPU/int8 fallback. Video conversion can use NVENC, AMD AMF, or VideoToolbox when available.
+- **Download with control.** Videos, audio, playlists, and clips, with a preview of formats, languages, estimated size, and final filename.
+- **Transcribe on your computer.** SRT, VTT, ASS, karaoke, TXT, and JSON captions with Whisper, including optional English translation and context.
+- **Edit without leaving the app.** Trim, extract audio, fit a size limit, make vertical video, remux, and embed subtitles with real progress.
+- **Use the available hardware.** CUDA for NVIDIA, MLX on Apple Silicon, NVENC/AMF/VideoToolbox when supported, and a safe CPU fallback.
+- **Work through a queue.** Paste many links, resume partial downloads, retry transient failures, and keep tasks working in the background.
+- **Keep data under your control.** Diagnostics redact sensitive data; cookies are not sent by the app and transcription runs locally.
 
-## Interface language
+## Quick start
 
-Open **Settings → Appearance → Interface language**, choose **English**, and restart the app. The setting is applied at the next startup so downloads, conversions, and captioning jobs are never interrupted.
+1. Download the recommended package for your platform and open the app.
+2. Paste a link, inspect the available options, and choose a format and folder.
+3. To create captions, open **Transcription**, choose a model, and add media to the queue. The first use of a model may download it to your user profile.
+
+See the [usage guide](docs/USAGE-GUIDE.en.md) for playlists, sign-in-required sites, the `baixador://` protocol, media tools, and troubleshooting.
+
+## Platforms and security
+
+| System | Architecture | Transcription | Video acceleration |
+| --- | --- | --- | --- |
+| Windows 10/11 | x86_64 | NVIDIA CUDA or CPU/int8 | NVENC and AMD AMF |
+| macOS 14+ | Apple Silicon | MLX or CPU | VideoToolbox |
+| Ubuntu/Debian | x86_64 | CPU/int8 | Depends on the available FFmpeg |
+
+Official releases are built and checked on all three systems before publication. They include SHA-256 checksums, dependency inventories (SBOM), and provenance attestation. Details are in [Platforms and security](docs/PLATFORMS-AND-SECURITY.en.md).
 
 ## Documentation
 
-- [Usage guide](docs/USAGE-GUIDE.en.md)
-- [Platforms, performance, and security](docs/PLATFORMS-AND-SECURITY.en.md)
-- [Build and release](docs/BUILD-AND-RELEASE.en.md)
-- [Portuguese documentation](README.md#documentação)
+- [Documentation hub](docs/README.md)
+- [Usage guide](docs/USAGE-GUIDE.en.md) · [Guia de uso](docs/GUIA-DE-USO.md)
+- [Platforms and security](docs/PLATFORMS-AND-SECURITY.en.md) · [Plataformas e segurança](docs/PLATAFORMAS-E-SEGURANCA.md)
+- [Build and releases](docs/BUILD-AND-RELEASE.en.md) · [Build e releases](docs/COMPILACAO-E-RELEASE.md)
 - [Changelog](CHANGELOG.md)
-- [Security policy](SECURITY.md)
-- [Contributing](CONTRIBUTING.md)
+
+## Community and development
+
+Found a problem? Open an [issue](https://github.com/NoThinkpls/baixador-ytdlp/issues/new/choose) without including cookies, tokens, or private links. To contribute, read the [contribution guide](CONTRIBUTING.md) and [security policy](SECURITY.md).
 
 ## License and responsible use
 
-Baixador YT-DLP uses [yt-dlp](https://github.com/yt-dlp/), [FFmpeg](https://ffmpeg.org/), and their respective licenses. Download only content you have the right to access and use. This repository is licensed under the [MIT License](LICENSE).
-
+The code is released under the [MIT License](LICENSE). The app uses [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [FFmpeg](https://ffmpeg.org/); their licenses and notices are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Download only content that you have the right to access and use.

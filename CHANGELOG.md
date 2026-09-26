@@ -3,7 +3,7 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
-## [1.10.4] - 2026-09-25
+## [1.10.4] - 2026-09-26
 
 ### Corrigido
 
