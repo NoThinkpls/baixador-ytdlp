@@ -182,14 +182,17 @@ if ($missingRuntimeFiles) {
     throw "A build não incluiu os dados do faster-whisper: $($missingRuntimeFiles -join ', ')"
 }
 $selfTestReport = Join-Path ([System.IO.Path]::GetTempPath()) "baixador-self-test-$([guid]::NewGuid().ToString('N')).json"
-& $exe '--self-test' $selfTestReport
-if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $selfTestReport -PathType Leaf)) {
+$env:BAIXADOR_YTDLP_SELF_TEST_REPORT = $selfTestReport
+& $exe
+$selfTestExitCode = $LASTEXITCODE
+Remove-Item Env:\BAIXADOR_YTDLP_SELF_TEST_REPORT -ErrorAction SilentlyContinue
+if ($selfTestExitCode -ne 0 -or -not (Test-Path -LiteralPath $selfTestReport -PathType Leaf)) {
     $details = if (Test-Path -LiteralPath $selfTestReport -PathType Leaf) {
         Get-Content -LiteralPath $selfTestReport -Raw
     } else {
         'O executável não produziu o relatório do self-test.'
     }
-    throw "Smoke test do executável falhou: $details"
+    throw "Smoke test do executável falhou (código $selfTestExitCode): $details"
 }
 Write-Host "> Smoke test aprovado: $selfTestReport" -ForegroundColor Green
 Write-Host "> Pronto: $exe" -ForegroundColor Green
