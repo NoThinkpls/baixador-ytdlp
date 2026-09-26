@@ -26,6 +26,34 @@ formato Keep a Changelog.
 - Self-test oculto do executável, executado pelo build local e pelo CI: valida
   dependências, assets do VAD, PyAV, CUDA disponível e um processo `spawn`.
 
+## [1.10.3] - 2026-09-25
+
+### Corrigido
+
+- A distribuição Windows passou a incluir o modelo ONNX do VAD usado pelo
+  `faster-whisper`, evitando uma falha de arquivo ausente durante transcrições.
+
+## [1.10.2] - 2026-09-25
+
+### Alterado
+
+- A release do Windows migrou para Nuitka; PyInstaller foi mantido nos builds
+  de macOS e Linux e como contingência local.
+- Caminhos de executáveis, dados do usuário, modo portátil e ferramentas
+  embarcadas passaram a usar uma camada única de plataforma.
+
+### Adicionado
+
+- Configuração de pacote do Nuitka e validações para o layout distribuído.
+
+## [1.10.1] - 2026-09-23
+
+### Adicionado
+
+- Reuso do processo e do modelo Whisper entre itens compatíveis da fila de
+  transcrição, reduzindo a espera entre mídias.
+- Interface em inglês, selecionável nas configurações sem interromper tarefas.
+
 ## [1.10.0] - 2026-09-23
 
 Primeira parte da fase 2.0 do roadmap.

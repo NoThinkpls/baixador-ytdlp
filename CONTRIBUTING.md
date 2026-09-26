@@ -20,7 +20,7 @@ No Windows:
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install --require-hashes -r requirements-windows.lock -r requirements-build.lock
+python -m pip install --require-hashes -r requirements-windows.lock -r requirements-build-windows.lock
 ```
 
 No Linux:
@@ -55,6 +55,12 @@ plataforma no PR.
 Depois de editar requirements, rode `scripts/update_locks.sh` (requer `uv`) e
 commite os locks gerados. O job `locks-in-sync` recusa divergências. Atualizações
 de CTranslate2 e CUDA/cuDNN devem ser planejadas em conjunto.
+
+Os arquivos `.lock` não são específicos de um empacotador: eles fixam, com
+hashes, todas as dependências verificadas do CI por plataforma. Nuitka é o
+padrão no Windows; PyInstaller permanece necessário para macOS e Linux e como
+rota de contingência local no Windows. Por isso ambos constam das dependências
+de build e seus locks devem ser mantidos no repositório.
 
 Releases oficiais saem do GitHub Actions após a validação dos três sistemas.
 Consulte [Compilação e releases](docs/COMPILACAO-E-RELEASE.md); não crie tags ou
