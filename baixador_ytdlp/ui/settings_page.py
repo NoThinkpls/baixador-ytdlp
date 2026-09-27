@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget
 
 from ..config import APP_VERSION, Settings
 from ..cookies import EXPORT_INSTRUCTIONS, cookie_age_days, import_cookie_file
@@ -75,9 +75,23 @@ class SettingsPage(QWidget):
         outer.addWidget(PageHeader(
             "Configurações", "Tudo fica salvo nesta máquina, no seu perfil de usuário.", self))
 
-        self.page = ScrollColumn(self, spacing=10)
-        outer.addWidget(self.page, 1)
+        # Uma área por assunto mantém as opções acessíveis sem uma rolagem de dezenas
+        # de linhas. Cada área guarda sua posição de rolagem ao trocar de assunto.
+        navigation = QHBoxLayout()
+        navigation.setSpacing(12)
+        navigation.addWidget(Headline("Área", self))
+        self.category_select = Select(self)
+        self.category_select.setAccessibleName("Área das configurações")
+        self.category_select.setMinimumWidth(260)
+        navigation.addWidget(self.category_select, 1)
+        outer.addLayout(navigation)
+        self.category_description = Muted("", self)
+        outer.addWidget(self.category_description)
+        self.pages = QStackedWidget(self)
+        outer.addWidget(self.pages, 1)
+        self.category_select.currentIndexChanged.connect(self._show_category)
 
+        self._category("Arquivos e formato", "Destino, nome e formato dos downloads.")
         self._section("Downloads")
         self._folder_row()
         self._switch_row("Perguntar a pasta em cada download",
@@ -92,6 +106,8 @@ class SettingsPage(QWidget):
         self._switch_row("Priorizar compatibilidade (H.264)",
                          "Escolhe H.264/AAC em vez do melhor codec. Roda em qualquer TV, "
                          "mas com qualidade um pouco menor no mesmo tamanho.", "prefer_h264")
+        self._category("Fila e conexão", "Concorrência, rede e retomada das tarefas.")
+        self._section("Fila e conexão")
         self._spin_row("Fragmentos simultâneos",
                        f"Acelera o download de cada vídeo. Para os {usable_cores()} núcleos "
                        f"desta máquina, {default_fragments()} é o equilíbrio calculado; acima "
@@ -123,6 +139,7 @@ class SettingsPage(QWidget):
                        "A cada nova tentativa a espera aumenta um pouco, para não sobrecarregar o site.",
                        "auto_retry_delay", 1, 60)
 
+        self._category("Conteúdo", "Capas, legendas e trechos patrocinados.")
         self._section("Conteúdo extra")
         self._switch_row("Embutir capa", "Usa a thumbnail como capa do arquivo.",
                          "embed_thumbnail")
@@ -145,6 +162,7 @@ class SettingsPage(QWidget):
                          "Usa o SponsorBlock para cortar patrocínio e autopromoção.",
                          "sponsorblock")
 
+        self._category("Acesso", "Cookies e ajustes para conteúdo restrito.")
         self._section("Acesso a conteúdo restrito")
         self._cookies_file_row()
         self._combo_row("Cookies do navegador",
@@ -157,10 +175,14 @@ class SettingsPage(QWidget):
                        "Ex.: youtube:player_client=default,web_safari",
                        "extractor_args", "vazio")
 
+        self._category("GPU e conversão", "Placa detectada e opções de conversão.")
         self._section("GPU e conversão")
         self._gpu_row()
         self._switch_row("Converter após baixar (GPU)",
                          "Reencoda o arquivo final usando a GPU.", "transcode_enabled")
+        self._section("Ajustes da conversão")
+        self.conversion_label = self._section_label
+        self.conversion_group = self._group
         self.codec_combo = Select(self)
         self.codec_combo.setMinimumWidth(230)
         self.codec_row = SettingRow("Codec da conversão",
@@ -177,6 +199,7 @@ class SettingsPage(QWidget):
                          "Depois de validar a conversão, move o original para a Lixeira.",
                          "transcode_replace")
 
+        self._category("Interface", "Aparência, comportamento e atalhos.")
         self._section("Aparência")
         self._combo_row("Tema", "Claro, escuro ou o que o sistema estiver usando.",
                         THEMES, "theme", on_change=self._apply_theme)
@@ -218,6 +241,7 @@ class SettingsPage(QWidget):
         )
         self._add_row(shortcuts)
 
+        self._category("Aplicativo", "Histórico, componentes e atualizações.")
         self._section("Histórico")
         self._switch_row("Guardar o que foi baixado",
                          "Alimenta a página Histórico. Fica só na sua máquina.",
@@ -249,14 +273,37 @@ class SettingsPage(QWidget):
             "allow_system_tools",
         )
         self.page.add_stretch()
+        self._show_category(0)
+        self._toggle_conversion(self.cfg.transcode_enabled)
+
+    def _category(self, title: str, description: str) -> None:
+        if self.pages.count():
+            self.page.add_stretch()
+        self.page = ScrollColumn(self, spacing=10)
+        self.pages.addWidget(self.page)
+        self.category_select.addItem(title, userData=description)
+        self._group = None
+
+    def _show_category(self, index: int) -> None:
+        if index < 0 or index >= self.pages.count():
+            return
+        self.pages.setCurrentIndex(index)
+        self.category_description.setText(self.category_select.itemData(index))
+
+    def _toggle_conversion(self, enabled: bool) -> None:
+        self.conversion_label.setVisible(enabled)
+        self.conversion_group.setVisible(enabled)
 
     # ---------------------------------------------------------- construtores
     def _section(self, title: str) -> None:
         """Abre um novo bloco agrupado; as linhas seguintes entram nele."""
         label = SectionLabel(title, self)
         label.setContentsMargins(4, 14, 0, 2)
+        label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.page.add(label)
+        self._section_label = label
         self._group = InsetGroup(self)
+        self._group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.page.add(self._group)
 
     def _add_row(self, row: QWidget) -> QWidget:
@@ -283,6 +330,8 @@ class SettingsPage(QWidget):
         switch = Switch(self)
         switch.setChecked(bool(getattr(self.cfg, key)))
         switch.checkedChanged.connect(lambda v, k=key: self._set(k, bool(v)))
+        if key == "transcode_enabled":
+            switch.checkedChanged.connect(self._toggle_conversion)
         self._add_row(SettingRow(title, subtitle, switch, self))
 
     def _combo_row(self, title: str, subtitle: str, items, key: str, on_change=None) -> None:
