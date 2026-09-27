@@ -7,20 +7,22 @@ cartão flutuante por opção, que empilhava dezenas de retângulos na tela.
 from __future__ import annotations
 
 import re
+import unicodedata
 
 import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QPainter, QPen
+from PySide6.QtWidgets import (QAbstractButton, QFileDialog, QGridLayout, QHBoxLayout,
+                               QLabel, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
 from ..config import APP_VERSION, Settings
 from ..cookies import EXPORT_INSTRUCTIONS, cookie_age_days, import_cookie_file
 from ..filename_preview import render_filename_preview
 from ..gpu import GPU_ENCODER_LABELS, GpuInfo
 from ..hardware import default_fragments, default_parallel_downloads, usable_cores
-from . import theme
+from . import icons, theme
 from .components import (Button, Headline, InsetGroup, Muted, PageHeader, PrimaryButton,
                          ScrollColumn, SectionLabel, Select, SettingRow, Stepper, Switch,
                          TextField)
@@ -42,6 +44,57 @@ PRESETS = [("p1 — mais rápido", "p1"), ("p4 — equilibrado", "p4"),
            ("p5 — recomendado", "p5"), ("p7 — mais lento e melhor", "p7")]
 
 
+def _search_key(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value.casefold())
+    return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
+class CategoryCard(QAbstractButton):
+    """Cartão de navegação com título e resumo, sem lógica de configuração."""
+
+    def __init__(self, title: str, icon_name: str, parent=None):
+        super().__init__(parent)
+        self.setObjectName("settingsCategoryCard")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAccessibleName(title)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMinimumHeight(76)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 10, 16, 10)
+        layout.setSpacing(12)
+        self.icon_label = QLabel(self)
+        self.icon_label.setObjectName("settingsCategoryIcon")
+        self.icon_label.setFixedSize(36, 36)
+        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.icon_label)
+        labels = QVBoxLayout()
+        labels.setSpacing(3)
+        labels.addWidget(Headline(title, self))
+        self.summary = Muted("", self)
+        self.summary.setWordWrap(False)
+        self.summary.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        labels.addWidget(self.summary)
+        layout.addLayout(labels, 1)
+        arrow = QLabel(self)
+        arrow.setPixmap(icons.pixmap("chevron-right", theme.color("text_tertiary"), 16))
+        layout.addWidget(arrow)
+        self.icon_name = icon_name
+        self.refresh_icon()
+
+    def refresh_icon(self) -> None:
+        self.icon_label.setPixmap(icons.pixmap(self.icon_name, theme.color("accent_text"), 19))
+
+    def paintEvent(self, _event):  # noqa: N802 - assinatura do Qt
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = "surface_active" if self.isDown() else (
+            "surface_hover" if self.underMouse() or self.hasFocus() else "surface")
+        painter.setBrush(theme.qcolor(color))
+        painter.setPen(QPen(theme.qcolor("accent" if self.hasFocus() else "border"), 1))
+        painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), theme.RADIUS_CARD,
+                                theme.RADIUS_CARD)
+
+
 class SettingsPage(QWidget):
     update_requested = Signal()
     ytdlp_channel_changed = Signal(str)
@@ -58,6 +111,7 @@ class SettingsPage(QWidget):
         self.cfg = cfg
         self.gpu = GpuInfo()
         self._gpu_requested = False
+        self._gpu_detected = False
         # settings.json é reescrito no máximo uma vez a cada 400 ms, mesmo que o
         # usuário arraste um contador de ponta a ponta.
         self._save_timer = QTimer(self)
@@ -71,32 +125,43 @@ class SettingsPage(QWidget):
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
         outer.setContentsMargins(28, 20, 28, 16)
-        outer.setSpacing(16)
-        outer.addWidget(PageHeader(
-            "Configurações", "Tudo fica salvo nesta máquina, no seu perfil de usuário.", self))
-
-        # Uma área por assunto mantém as opções acessíveis sem uma rolagem de dezenas
-        # de linhas. Cada área guarda sua posição de rolagem ao trocar de assunto.
-        navigation = QHBoxLayout()
-        navigation.setSpacing(12)
-        navigation.addWidget(Headline("Área", self))
-        self.category_select = Select(self)
-        self.category_select.setAccessibleName("Área das configurações")
-        self.category_select.setMinimumWidth(260)
-        navigation.addWidget(self.category_select, 1)
-        outer.addLayout(navigation)
-        self.category_description = Muted("", self)
-        outer.addWidget(self.category_description)
+        outer.setSpacing(0)
         self.pages = QStackedWidget(self)
-        outer.addWidget(self.pages, 1)
-        self.category_select.currentIndexChanged.connect(self._show_category)
+        outer.addWidget(self.pages)
+        self._categories: list[tuple[str, str, CategoryCard, ScrollColumn]] = []
+        self._search_rows: list[tuple[int, str, str, QWidget]] = []
 
-        self._category("Arquivos e formato", "Destino, nome e formato dos downloads.")
-        self._section("Downloads")
+        self.landing = ScrollColumn(self, spacing=18)
+        self.pages.addWidget(self.landing)
+        self.landing.add(PageHeader(
+            "Configurações", "Tudo fica salvo nesta máquina, no seu perfil de usuário.", self))
+        self.search_edit = TextField("Buscar uma opção — ex.: proxy, legendas, tema", self)
+        self.search_edit.setObjectName("settingsSearch")
+        self.search_edit.setAccessibleName("Buscar nas configurações")
+        self.search_edit.setMaximumWidth(480)
+        self.search_edit.textChanged.connect(self._filter_settings)
+        self.landing.add(self.search_edit)
+        self.results = QWidget(self)
+        self.results_layout = QVBoxLayout(self.results)
+        self.results_layout.setContentsMargins(0, 0, 0, 0)
+        self.results_layout.setSpacing(8)
+        self.results.hide()
+        self.landing.add(self.results)
+        self.cards_host = QWidget(self)
+        self.cards_layout = QGridLayout(self.cards_host)
+        self.cards_layout.setContentsMargins(0, 0, 0, 0)
+        self.cards_layout.setHorizontalSpacing(10)
+        self.cards_layout.setVerticalSpacing(10)
+        self.landing.add(self.cards_host)
+        self.landing.add_stretch()
+
+        self._category("Downloads", "O que acontece com cada arquivo que você baixa.", "download")
+        self._section("Onde salvar")
         self._folder_row()
         self._switch_row("Perguntar a pasta em cada download",
                          "Deixa a opção “Escolher a pasta” já ligada na página Baixar.",
                          "ask_output_dir")
+        self._section("Arquivo")
         self._filename_template_row()
         self._combo_row("Formato padrão do vídeo",
                         "Container usado quando você não muda nada na página Baixar.",
@@ -106,8 +171,16 @@ class SettingsPage(QWidget):
         self._switch_row("Priorizar compatibilidade (H.264)",
                          "Escolhe H.264/AAC em vez do melhor codec. Roda em qualquer TV, "
                          "mas com qualidade um pouco menor no mesmo tamanho.", "prefer_h264")
-        self._category("Fila e conexão", "Concorrência, rede e retomada das tarefas.")
-        self._section("Fila e conexão")
+        self._section("Fila")
+        self._switch_row("Evitar baixar a mesma mídia novamente",
+                         "Guarda os IDs concluídos por pasta. Um item repetido é ignorado.",
+                         "archive_enabled")
+        self._switch_row("Retomar a fila ao reabrir",
+                         "Itens interrompidos voltam como pendentes e continuam os arquivos .part.",
+                         "resume_queue")
+
+        self._category("Rede e desempenho", "Velocidade, limites e falhas de conexão.", "tools")
+        self._section("Velocidade")
         self._spin_row("Fragmentos simultâneos",
                        f"Acelera o download de cada vídeo. Para os {usable_cores()} núcleos "
                        f"desta máquina, {default_fragments()} é o equilíbrio calculado; acima "
@@ -119,18 +192,12 @@ class SettingsPage(QWidget):
                        "max_parallel_downloads", 1, 6)
         self._line_row("Limite de banda", "Ex.: 5M para 5 MB/s. Vazio = sem limite.",
                        "limit_rate", "sem limite")
+        self._section("Quando a conexão falhar")
         self._line_row(
             "Proxy",
             "Opcional. Ex.: http://127.0.0.1:8080. Credenciais são ocultadas nos logs.",
             "proxy", "sem proxy",
         )
-        self._switch_row("Evitar baixar a mesma mídia novamente",
-                         "Guarda os IDs concluídos por pasta. Um item repetido é ignorado "
-                         "sem gastar banda; desligue temporariamente para refazer outro formato.",
-                         "archive_enabled")
-        self._switch_row("Retomar a fila ao reabrir",
-                         "Itens interrompidos voltam como pendentes. Os arquivos .part são "
-                         "continuados do ponto onde o yt-dlp parou.", "resume_queue")
         self._spin_row("Retentativas automáticas",
                        "Para quedas de rede, limite temporário do site e respostas 5xx. "
                        "Erros de link, conta ou conteúdo removido não são repetidos.",
@@ -139,8 +206,8 @@ class SettingsPage(QWidget):
                        "A cada nova tentativa a espera aumenta um pouco, para não sobrecarregar o site.",
                        "auto_retry_delay", 1, 60)
 
-        self._category("Conteúdo", "Capas, legendas e trechos patrocinados.")
-        self._section("Conteúdo extra")
+        self._category("Legendas e extras", "Capas, metadados e legendas.", "captions")
+        self._section("Extras do arquivo")
         self._switch_row("Embutir capa", "Usa a thumbnail como capa do arquivo.",
                          "embed_thumbnail")
         self._switch_row("Embutir metadados",
@@ -151,6 +218,7 @@ class SettingsPage(QWidget):
                          "Em downloads de áudio, cria uma pasta por canal/artista antes do nome "
                          "definido acima. Capa, metadados e capítulos usam as opções deste bloco.",
                          "organize_audio_by_uploader")
+        self._section("Legendas e cortes")
         self._switch_row("Baixar legendas", "Inclui legendas manuais e automáticas.",
                          "write_subs")
         self._switch_row("Embutir as legendas no vídeo",
@@ -162,7 +230,7 @@ class SettingsPage(QWidget):
                          "Usa o SponsorBlock para cortar patrocínio e autopromoção.",
                          "sponsorblock")
 
-        self._category("Acesso", "Cookies e ajustes para conteúdo restrito.")
+        self._category("Contas e cookies", "Acesso a conteúdo restrito.", "link")
         self._section("Acesso a conteúdo restrito")
         self._cookies_file_row()
         self._combo_row("Cookies do navegador",
@@ -170,16 +238,16 @@ class SettingsPage(QWidget):
                         "apenas com Firefox e derivados — os navegadores Chromium criptografam "
                         "os cookies de um jeito que nenhum programa externo consegue abrir.",
                         BROWSERS, "cookies_browser")
-        self._line_row("Ajustes do extrator (avançado)",
-                       "Repassado ao yt-dlp como --extractor-args. Vazio na dúvida. "
-                       "Ex.: youtube:player_client=default,web_safari",
-                       "extractor_args", "vazio")
-
-        self._category("GPU e conversão", "Placa detectada e opções de conversão.")
-        self._section("GPU e conversão")
+        self._category("Conversão por GPU", "Muda codec e tamanho, sem melhorar a fonte.", "chip")
+        self._section("Placa de vídeo")
         self._gpu_row()
+        self._section("Conversão")
         self._switch_row("Converter após baixar (GPU)",
-                         "Reencoda o arquivo final usando a GPU.", "transcode_enabled")
+                         "Aplica a conversão ao arquivo final de cada download.", "transcode_enabled")
+        self.conversion_hint = Muted(
+            "Desligada: os arquivos ficam exatamente como vieram do site.", self)
+        self.conversion_hint.setContentsMargins(16, 0, 0, 0)
+        self.page.add(self.conversion_hint)
         self._section("Ajustes da conversão")
         self.conversion_label = self._section_label
         self.conversion_group = self._group
@@ -199,7 +267,7 @@ class SettingsPage(QWidget):
                          "Depois de validar a conversão, move o original para a Lixeira.",
                          "transcode_replace")
 
-        self._category("Interface", "Aparência, comportamento e atalhos.")
+        self._category("Aparência e notificações", "Visual e avisos do aplicativo.", "settings")
         self._section("Aparência")
         self._combo_row("Tema", "Claro, escuro ou o que o sistema estiver usando.",
                         THEMES, "theme", on_change=self._apply_theme)
@@ -241,14 +309,7 @@ class SettingsPage(QWidget):
         )
         self._add_row(shortcuts)
 
-        self._category("Aplicativo", "Histórico, componentes e atualizações.")
-        self._section("Histórico")
-        self._switch_row("Guardar o que foi baixado",
-                         "Alimenta a página Histórico. Fica só na sua máquina.",
-                         "history_enabled")
-        self._spin_row("Itens guardados", "Os mais antigos são descartados.",
-                       "history_limit", 20, 1000)
-
+        self._category("Atualizações e sobre", "Componentes e novas versões.", "update")
         self._section("Componentes e atualizações")
         self._dependencies_row()
         self._app_update_row()
@@ -266,31 +327,152 @@ class SettingsPage(QWidget):
             "ytdlp_channel",
             on_change=self._ytdlp_channel_changed,
         )
+        self._category("Avançado", "Extrator, histórico e ferramentas.", "tools")
+        self._section("Extrator e ferramentas")
+        self._line_row("Ajustes do extrator (avançado)",
+                       "Repassado ao yt-dlp como --extractor-args. Vazio na dúvida. "
+                       "Ex.: youtube:player_client=default,web_safari",
+                       "extractor_args", "vazio")
         self._switch_row(
             "Usar ferramentas instaladas no sistema",
             "Permite procurar yt-dlp e FFmpeg no PATH quando a cópia verificada do app não existe. "
             "Mantenha desligado para maior segurança.",
             "allow_system_tools",
         )
+        self._section("Histórico")
+        self._switch_row("Guardar o que foi baixado",
+                         "Alimenta a página Histórico. Fica só na sua máquina.",
+                         "history_enabled")
+        self._spin_row("Itens guardados", "Os mais antigos são descartados.",
+                       "history_limit", 20, 1000)
         self.page.add_stretch()
-        self._show_category(0)
+        self._layout_cards()
+        self.pages.setCurrentWidget(self.landing)
+        self._refresh_summaries()
         self._toggle_conversion(self.cfg.transcode_enabled)
 
-    def _category(self, title: str, description: str) -> None:
-        if self.pages.count():
+    def _category(self, title: str, description: str, icon_name: str) -> None:
+        if self._categories:
             self.page.add_stretch()
-        self.page = ScrollColumn(self, spacing=10)
-        self.pages.addWidget(self.page)
-        self.category_select.addItem(title, userData=description)
+        index = len(self._categories)
+        card = CategoryCard(title, icon_name, self.cards_host)
+        card.clicked.connect(lambda _checked=False, i=index: self._show_category(i))
+        detail = QWidget(self)
+        layout = QVBoxLayout(detail)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        breadcrumb = QHBoxLayout()
+        breadcrumb.setSpacing(8)
+        back = Button("Configurações", "chevron-left", "ghost", detail)
+        back.setAccessibleName("Voltar para Configurações")
+        back.clicked.connect(self._show_landing)
+        breadcrumb.addWidget(back)
+        breadcrumb.addWidget(Muted("›", detail))
+        breadcrumb.addWidget(Headline(title, detail), 1)
+        layout.addLayout(breadcrumb)
+        layout.addWidget(Muted(description, detail))
+        self.page = ScrollColumn(detail, spacing=10)
+        layout.addWidget(self.page, 1)
+        self.pages.addWidget(detail)
+        self._categories.append((title, description, card, self.page))
         self._group = None
 
-    def _show_category(self, index: int) -> None:
-        if index < 0 or index >= self.pages.count():
+    def _show_landing(self) -> None:
+        self._refresh_summaries()
+        self.pages.setCurrentWidget(self.landing)
+
+    def _show_category(self, index: int, row: QWidget | None = None) -> None:
+        if index < 0 or index >= len(self._categories):
             return
-        self.pages.setCurrentIndex(index)
-        self.category_description.setText(self.category_select.itemData(index))
+        self.pages.setCurrentIndex(index + 1)
+        if row is not None:
+            if (self.conversion_group.isAncestorOf(row) and
+                    not self.cfg.transcode_enabled):
+                row = next(candidate for category, title, _subtitle, candidate in self._search_rows
+                           if category == index and title == "Converter após baixar (GPU)")
+            scroll = self._categories[index][3]
+            QTimer.singleShot(0, lambda: scroll.ensureWidgetVisible(row, 0, 24))
+
+    def _layout_cards(self) -> None:
+        # O viewport pode manter a largura antiga até o próximo ciclo do Qt.
+        # A largura da página já foi atualizada neste resizeEvent.
+        width = self.width() - 56
+        columns = 2 if width >= 720 else 1
+        rows = (len(self._categories) + columns - 1) // columns
+        self.cards_host.setFixedHeight(rows * 76 + (rows - 1) * 10)
+        self.cards_host.setMaximumWidth(max(320, width - 24))
+        while self.cards_layout.count():
+            self.cards_layout.takeAt(0)
+        order = (0, 2, 4, 5, 1, 3, 6, 7)
+        for position, index in enumerate(order):
+            card = self._categories[index][2]
+            self.cards_layout.addWidget(card, position // columns, position % columns)
+        for column in range(2):
+            self.cards_layout.setColumnStretch(column, 1 if column < columns else 0)
+        self.cards_layout.invalidate()
+        self.cards_host.updateGeometry()
+        self.cards_layout.activate()
+        self.landing.column.invalidate()
+        self.landing.column.activate()
+
+    def resizeEvent(self, event):  # noqa: N802 - assinatura do Qt
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self._layout_cards)
+
+    def _refresh_summaries(self) -> None:
+        cfg = self.cfg
+        name = Path(cfg.download_dir).name or cfg.download_dir
+        subtitles = (
+            f"{cfg.container.upper()} · {name} · "
+            f"{'sem repetidos' if cfg.archive_enabled else 'repetidos permitidos'}",
+            f"Até {cfg.max_parallel_downloads} downloads · "
+            f"{'sem limite de banda' if not cfg.limit_rate else 'limite ' + cfg.limit_rate}",
+            "Capa e metadados · " + ("legendas ligadas" if cfg.write_subs else "legendas desligadas"),
+            "Sem cookies" if not cfg.cookies_file and not cfg.cookies_browser else
+            ("Arquivo cookies.txt" if cfg.cookies_file else f"Navegador {cfg.cookies_browser}"),
+            ("Ligada" if cfg.transcode_enabled else "Desligada") + " · " +
+            ("GPU disponível" if self.gpu.encoders else
+             ("sem encoder disponível" if self._gpu_detected else "detecção pendente")),
+            {"auto": "Seguir o sistema", "light": "Claro", "dark": "Escuro"}.get(cfg.theme, cfg.theme)
+            + " · " + ("notificações ligadas" if cfg.tray_notifications else "notificações desligadas"),
+            f"Versão {APP_VERSION} · yt-dlp {'nightly' if cfg.ytdlp_channel == 'nightly' else 'estável'}",
+            "Extrator, histórico e ferramentas",
+        )
+        for (_title, _desc, card, _scroll), summary in zip(self._categories, subtitles):
+            card.summary.setText(summary)
+            card.refresh_icon()
+
+    def _filter_settings(self, query: str) -> None:
+        while self.results_layout.count():
+            item = self.results_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        terms = _search_key(query).split()
+        self.results.setVisible(bool(terms))
+        self.cards_host.setVisible(not terms)
+        if not terms:
+            return
+        title_matches = [(index, title, row) for index, title, _subtitle, row in self._search_rows
+                         if all(term in _search_key(title) for term in terms)]
+        matches = title_matches or [
+            (index, title, row) for index, title, subtitle, row in self._search_rows
+            if all(term in _search_key(f"{title} {subtitle} {self._categories[index][0]}")
+                   for term in terms)
+        ]
+        for index, title, row in matches:
+            category = self._categories[index][0]
+            hint = " · ative a conversão" if (
+                self.conversion_group.isAncestorOf(row) and not self.cfg.transcode_enabled) else ""
+            button = Button(f"{title}{hint}  ›  {category}", "search", "secondary", self.results)
+            button.setAccessibleName(f"Abrir {title} em {category}")
+            button.clicked.connect(lambda _checked=False, i=index, target=row:
+                                   self._show_category(i, target))
+            self.results_layout.addWidget(button)
+        if not matches:
+            self.results_layout.addWidget(Muted("Nenhuma opção encontrada.", self.results))
 
     def _toggle_conversion(self, enabled: bool) -> None:
+        self.conversion_hint.setVisible(not enabled)
         self.conversion_label.setVisible(enabled)
         self.conversion_group.setVisible(enabled)
 
@@ -309,11 +491,18 @@ class SettingsPage(QWidget):
     def _add_row(self, row: QWidget) -> QWidget:
         if self._group is None:
             self._section("Geral")
+        title = row.property("settingsTitle") or getattr(getattr(row, "title", None), "text", lambda: "")()
+        subtitle = row.property("settingsSubtitle") or getattr(
+            getattr(row, "subtitle", None), "text", lambda: "")()
+        if title:
+            self._search_rows.append((len(self._categories) - 1, title, subtitle, row))
         return self._group.add_row(row)
 
     def _custom_row(self, title: str, subtitle: str = "") -> tuple[QWidget, QVBoxLayout]:
         """Linha alta: título, explicação e conteúdo livre embaixo."""
         row = QWidget(self._group)
+        row.setProperty("settingsTitle", title)
+        row.setProperty("settingsSubtitle", subtitle)
         column = QVBoxLayout(row)
         column.setContentsMargins(16, 12, 16, 14)
         column.setSpacing(8)
@@ -393,34 +582,17 @@ class SettingsPage(QWidget):
         self.ytdlp_channel_changed.emit(str(channel))
 
     def _filename_template_row(self) -> None:
-        row, column = self._custom_row(
-            "Nome do arquivo",
-            "Modelo do yt-dlp. A prévia usa dados de exemplo e não acessa a rede.",
-        )
-        self.filename_template_edit = TextField("%(title)s.%(ext)s", row)
+        self.filename_template_edit = TextField("%(title)s.%(ext)s", self)
+        self.filename_template_edit.setMinimumWidth(240)
         self.filename_template_edit.setText(self.cfg.filename_template)
         self.filename_template_edit.textChanged.connect(self._refresh_template_preview)
         self.filename_template_edit.editingFinished.connect(
             lambda: self._set("filename_template", self.filename_template_edit.text().strip())
         )
-        column.addWidget(self.filename_template_edit)
-
-        tokens = QHBoxLayout()
-        tokens.setSpacing(6)
-        for label, value in (
-            ("Título", "%(title)s"), ("Canal", "%(uploader)s"),
-            ("Data", "%(upload_date)s"), ("ID", "%(id)s"),
-            ("Resolução", "%(height)sp"),
-        ):
-            button = Button(label, "plus", "ghost", row)
-            button.setToolTip(f"Inserir {value}")
-            button.clicked.connect(lambda _checked=False, token=value: self._insert_template_token(token))
-            tokens.addWidget(button)
-        tokens.addStretch(1)
-        column.addLayout(tokens)
-        self.filename_template_preview = Muted("", row)
+        row = SettingRow("Nome do arquivo", "Prévia do nome do arquivo", self.filename_template_edit, self)
+        # A prévia acompanha o campo sem abrir uma seção alta de botões.
+        self.filename_template_preview = row.subtitle
         self.filename_template_preview.setAccessibleName("Prévia do nome do arquivo")
-        column.addWidget(self.filename_template_preview)
         self._refresh_template_preview()
         self._add_row(row)
 
@@ -440,9 +612,18 @@ class SettingsPage(QWidget):
             "Placa detectada",
             "Downloads normais são rede e cópia de arquivo. A GPU entra em recortes exatos "
             "e na conversão após baixar; nesses casos o vídeo precisa ser reencodado.")
+        line = QHBoxLayout()
         self.gpu_label = Muted("A detecção será feita ao abrir Configurações.", row)
-        column.addWidget(self.gpu_label)
+        line.addWidget(self.gpu_label, 1)
+        detect = Button("Detectar de novo", "refresh", "secondary", row)
+        detect.clicked.connect(self._detect_gpu_again)
+        line.addWidget(detect)
+        column.addLayout(line)
         self._add_row(row)
+
+    def _detect_gpu_again(self) -> None:
+        self.gpu_label.setText("Detectando a GPU…")
+        self.gpu_detection_requested.emit()
 
     def _dependencies_row(self) -> None:
         row, column = self._custom_row(
@@ -620,6 +801,7 @@ class SettingsPage(QWidget):
     # --------------------------------------------------------------- estado
     def _apply_theme(self, value: str) -> None:
         theme.set_mode(value)
+        self._refresh_summaries()
         self.theme_changed.emit(value)
 
     def _apply_language(self, value: str) -> None:
@@ -627,6 +809,8 @@ class SettingsPage(QWidget):
 
     def set_gpu(self, gpu: GpuInfo) -> None:
         self.gpu = gpu
+        self._gpu_detected = True
+        self._refresh_summaries()
         self.gpu_label.setText(gpu.summary)
         self.codec_combo.clear()
         for codec in gpu.encoders:
