@@ -306,9 +306,9 @@ class TranscriptionPage(QWidget):
         self.start_btn.setMinimumHeight(42)
         self.pause_btn = Button("Pausar", "pause", "secondary", bar)
         self.pause_btn.setMinimumHeight(42)
-        self.cancel_btn = Button("Cancelar", "stop", "ghost", bar)
+        self.cancel_btn = Button("Cancelar", "stop", "secondary", bar)
         self.cancel_btn.setMinimumHeight(42)
-        self.open_btn = Button("Abrir pasta", "folder", "secondary", bar)
+        self.open_btn = Button("Abrir pasta", "folder", "ghost", bar)
         self.open_btn.setMinimumHeight(42)
 
         self.start_btn.clicked.connect(self.start)
@@ -317,6 +317,8 @@ class TranscriptionPage(QWidget):
         self.open_btn.clicked.connect(self.open_output_folder)
         self.pause_btn.setEnabled(False)
         self.cancel_btn.setEnabled(False)
+        self.pause_btn.hide()
+        self.cancel_btn.hide()
 
         row.addWidget(self.start_btn)
         row.addWidget(self.pause_btn)
@@ -492,8 +494,11 @@ class TranscriptionPage(QWidget):
         self.taskbar_progress.emit(0.0)
         self.progress_label.setText("Iniciando…")
         self.start_btn.setEnabled(True)
+        self.start_btn.setText("Adicionar à fila")
         self.pause_btn.setEnabled(True)
         self.cancel_btn.setEnabled(True)
+        self.pause_btn.show()
+        self.cancel_btn.show()
         if self.worker is None:
             worker = PersistentTranscriptionWorker(self.toolchain, self)
             self.worker = worker
@@ -628,9 +633,12 @@ class TranscriptionPage(QWidget):
 
     def _finish_controls(self) -> None:
         self.start_btn.setEnabled(True)
+        self.start_btn.setText("Iniciar transcrição")
         self.pause_btn.setEnabled(False)
         self.pause_btn.setText("Pausar")
         self.cancel_btn.setEnabled(False)
+        self.pause_btn.hide()
+        self.cancel_btn.hide()
         self._paused = False
         self.taskbar_progress.emit(-1.0)
 
