@@ -3,6 +3,19 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.10.8] - 2026-09-27
+
+### Corrigido
+
+- Recortar trecho agora reencoda o intervalo com FFmpeg, começando no quadro
+  selecionado e encerrando na duração solicitada, mesmo fora dos quadros-chave.
+- Intervalos cujo fim não vem depois do início são rejeitados antes de processar.
+
+### Alterado
+
+- Na aba Legendar, pausar e cancelar aparecem durante a execução. O botão
+  principal passa a indicar que adiciona outra mídia à fila.
+
 ## [1.10.7] - 2026-09-27
 
 ### Alterado

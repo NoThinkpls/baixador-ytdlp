@@ -21,8 +21,8 @@ SUBTITLE_FILTER = "Legendas (*.srt *.vtt *.ass);;Todos os arquivos (*.*)"
 
 OPERATIONS = {
     "trim": {
-        "title": "Recortar trecho", "icon": "cut", "tag": "Sem perda",
-        "summary": "Escolha o início e o fim sem recomprimir o vídeo.",
+        "title": "Recortar trecho", "icon": "cut", "tag": "Corte preciso",
+        "summary": "Crie um novo vídeo apenas com o intervalo escolhido.",
         "action": "Recortar",
     },
     "audio": {
@@ -232,8 +232,8 @@ class MediaToolsPage(QWidget):
         times_row.addWidget(self.end_edit)
         times_row.addStretch(1)
         self.trim_row = SettingRow(
-            "Início e fim", "Use mm:ss ou hh:mm:ss. O corte sem recompressão pode cair "
-            "no quadro-chave mais próximo.", times, group)
+            "Início e fim", "Use mm:ss ou hh:mm:ss. O vídeo será recodificado para "
+            "começar e terminar nos pontos escolhidos.", times, group)
         group.add_row(self.trim_row)
 
         self.subtitle_edit = TextField("Arquivo .srt, .vtt ou .ass", group)

@@ -41,7 +41,7 @@ os ajustes de conversão aparecem quando o recurso está ativo.
 - Transcrição local com modelos até Large v3 Turbo, tradução para inglês, vocabulário de contexto e legendas SRT, VTT, ASS, karaoke, TXT e JSON; no Apple Silicon ela usa MLX na GPU integrada. A fila reutiliza o processo e o modelo já carregado entre mídias compatíveis.
 - Fluxo **Baixar e legendar**: ao concluir o download, o arquivo pode entrar automaticamente na fila do Whisper e receber uma faixa de legenda sem reencodificação.
 - Conversão por GPU com NVIDIA NVENC, AMD AMF ou VideoToolbox no Apple Silicon.
-- Ferramentas locais com progresso real para recortar, extrair áudio, compactar, criar Shorts e adicionar legendas ao vídeo.
+- Ferramentas locais com progresso real para recortar com precisão via FFmpeg, extrair áudio, compactar, criar Shorts e adicionar legendas ao vídeo. O recorte reencoda o trecho para começar no ponto escolhido, mesmo entre quadros-chave.
 - Gerenciador de modelos Whisper, notificações pela bandeja do sistema e opção de continuar tarefas em segundo plano.
 - Atualização opcional no Windows, conferida por SHA-256 antes de abrir o instalador.
 - Componentes de runtime só são instalados quando o fornecedor publica um SHA-256 válido; a conexão TLS nunca desliga a validação de certificado.

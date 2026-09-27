@@ -121,7 +121,9 @@ class SecurityRegressionTests(unittest.TestCase):
                 source, root / "out.mkv", "trim", start="3", end="5"
             ), tools)
         self.assertLess(command.index("-ss"), command.index("-i"))
-        self.assertLess(command.index("-to"), command.index("-i"))
+        self.assertEqual(command[command.index("-t") + 1], "2.000000")
+        self.assertGreater(command.index("-t"), command.index("-i"))
+        self.assertNotIn("copy", command)
 
     def test_mp4_transcode_drops_incompatible_extra_streams(self) -> None:
         tools = Toolchain(Path("yt-dlp"), Path("ffmpeg"), Path("ffprobe"), Path("."))

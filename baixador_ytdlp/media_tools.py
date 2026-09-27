@@ -97,7 +97,11 @@ def operation_duration(options: MediaToolOptions, toolchain: Toolchain) -> float
     if options.operation != "trim":
         return total
     start = time_seconds(options.start) if options.start else 0.0
+    if total and start >= total:
+        raise MediaToolError("O início do trecho precisa estar dentro da duração do arquivo.")
     end = time_seconds(options.end) if options.end else total
+    if total:
+        end = min(end, total)
     return max(0.0, end - start)
 
 
@@ -157,14 +161,20 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain) -> list[str]:
     command = [str(toolchain.ffmpeg), "-hide_banner", "-n"]
     if options.operation == "trim" and options.start:
         command += ["-ss", options.start]
-    if options.operation == "trim" and options.end:
-        # Junto de -ss, antes da entrada, -to continua sendo o instante final
-        # absoluto. Depois de -i ele virava duração e criava um trecho maior.
-        command += ["-to", options.end]
     command += ["-i", str(options.source)]
 
     if options.operation == "trim":
-        command += ["-map", "0", "-c", "copy"]
+        # Buscar antes da entrada é rápido; ao reencodar, o FFmpeg decodifica
+        # desde o quadro-chave anterior e descarta os quadros antes de -ss.
+        # Stream copy deixava esses quadros no arquivo e podia congelar o começo.
+        if options.end:
+            length = time_seconds(options.end) - time_seconds(options.start)
+            command += ["-t", f"{length:.6f}"]
+        command += [
+            "-map", "0:v:0?", "-map", "0:a?", "-map_chapters", "-1",
+            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+            "-c:a", "aac", "-b:a", "192k",
+        ]
     elif options.operation == "audio":
         command += ["-vn", "-c:a", "libmp3lame", "-q:a", "2"]
     elif options.operation == "remux":
@@ -235,6 +245,8 @@ def _validate_time_range(start: str, end: str) -> None:
     for value in (start, end):
         if value and not TIME_RE.match(value):
             raise MediaToolError("Use mm:ss ou hh:mm:ss para definir o trecho.")
+    if end and time_seconds(end) <= time_seconds(start):
+        raise MediaToolError("O fim do trecho precisa ser posterior ao início.")
 
 
 def _escape_filter_path(path: Path | None) -> str:
