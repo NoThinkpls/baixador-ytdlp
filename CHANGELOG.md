@@ -3,6 +3,16 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.10.6] - 2026-09-27
+
+### Alterado
+
+- Configurações divididas em sete áreas selecionáveis, com descrições curtas e
+  posição de rolagem preservada durante a navegação.
+- Ajustes de codec, preset, qualidade e substituição aparecem apenas quando
+  a conversão após baixar está ligada.
+- A interface parte integralmente do código da versão 1.10.4.
+
 ## [1.10.4] - 2026-09-25
 
 ### Corrigido

@@ -23,6 +23,10 @@ Baixe vídeos e áudios, transcreva localmente e faça ajustes de mídia em uma 
 
 Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no [GitHub Actions](../../actions) terminar antes de baixar: é ela que anexa os arquivos à Release.
 
+As Configurações estão organizadas em sete áreas: arquivos, fila e conexão,
+conteúdo, acesso, GPU e conversão, interface e aplicativo. Selecione uma área no
+menu superior; as opções de conversão aparecem ao ativar o recurso.
+
 ## O que o aplicativo oferece
 
 - Download de vídeo, áudio, playlists e trechos com escolha de qualidade e formato. Recortes exatos mostram o andamento e tentam NVENC, AMF ou VideoToolbox diretamente; NVIDIA e Apple também usam decodificação por hardware quando a mídia aceita. Se o decoder não for compatível, a codificação continua na GPU; só então há fallback seguro para CPU.
