@@ -291,6 +291,21 @@ def stylesheet() -> str:
         border: 1px solid {p.border};
         border-radius: {RADIUS_CARD}px;
     }}
+    #settingsCategoryCard {{
+        background-color: {p.surface};
+        border: 1px solid {p.border};
+        border-radius: {RADIUS_CARD}px;
+        text-align: left;
+    }}
+    #settingsCategoryCard:hover, #settingsCategoryCard:focus {{
+        background-color: {p.surface_hover};
+        border-color: {p.accent};
+    }}
+    #settingsCategoryCard:pressed {{ background-color: {p.surface_active}; }}
+    QLabel#settingsCategoryIcon {{
+        background-color: {p.accent_soft};
+        border-radius: 9px;
+    }}
     #analysisStat {{
         background-color: {'rgba(255,255,255,0.035)' if dark else '#F7F8FB'};
         border: 1px solid {p.separator};

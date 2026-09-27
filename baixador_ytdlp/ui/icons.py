@@ -75,6 +75,7 @@ _BODY: dict[str, str] = {
             '<path d="M13.8 10.2a3.6 3.6 0 0 0-5.4-.4l-2.6 2.6a3.6 3.6 0 0 0 5.1 5.1L12.3 16"/>',
     "chevron-down": '<path d="m6.5 9.5 5.5 5.5 5.5-5.5"/>',
     "chevron-right": '<path d="m9.5 6.5 5.5 5.5-5.5 5.5"/>',
+    "chevron-left": '<path d="m14.5 6.5-5.5 5.5 5.5 5.5"/>',
     "sidebar-collapse": '<rect x="4" y="4" width="16" height="16" rx="3"/>'
                         '<path d="M9 4v16M13.5 9.2 10.7 12l2.8 2.8"/>',
     "sidebar-expand": '<rect x="4" y="4" width="16" height="16" rx="3"/>'

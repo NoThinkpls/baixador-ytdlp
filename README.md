@@ -23,9 +23,9 @@ Baixe vídeos e áudios, transcreva localmente e faça ajustes de mídia em uma 
 
 Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no [GitHub Actions](../../actions) terminar antes de baixar: é ela que anexa os arquivos à Release.
 
-As Configurações estão organizadas em sete áreas: arquivos, fila e conexão,
-conteúdo, acesso, GPU e conversão, interface e aplicativo. Selecione uma área no
-menu superior; as opções de conversão aparecem ao ativar o recurso.
+Configurações abre em oito cartões por assunto, com resumo das escolhas atuais.
+A busca localiza uma opção pelo nome e abre diretamente a página correspondente;
+os ajustes de conversão aparecem quando o recurso está ativo.
 
 ## O que o aplicativo oferece
 

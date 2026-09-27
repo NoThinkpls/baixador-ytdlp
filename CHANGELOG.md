@@ -3,6 +3,18 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.10.7] - 2026-09-27
+
+### Alterado
+
+- Configurações agora abre em oito cartões com resumos dos valores atuais; cada
+  assunto tem sua própria página, com retorno claro para a visão geral.
+- Busca direta pelas opções, inclusive sem acentos, que abre a opção na seção
+  correspondente. A grade passa para uma coluna em janelas mais estreitas.
+- Download, rede, extras, cookies, GPU, aparência, atualizações e opções
+  avançadas seguem a organização da referência visual fornecida.
+- O modelo do nome do arquivo mostra uma prévia compacta na mesma linha.
+
 ## [1.10.6] - 2026-09-27
 
 ### Alterado
