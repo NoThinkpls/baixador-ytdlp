@@ -78,6 +78,18 @@ class HomeAnalysisTests(unittest.TestCase):
         page.set_url("https://example.com/watch?v=B")
         self.assertTrue(page.filename_row.isHidden())
 
+    def test_capitulo_preenche_intervalo_editavel(self) -> None:
+        page = self.page
+        info = _info(self.url_a)
+        info.chapters = [{"title": "Introdução", "start_time": 90.0, "end_time": 240.0}]
+        page._on_info(info)
+        page.trim_check.setChecked(True)
+        page.chapter_combo.setCurrentIndex(1)
+        self.assertEqual(page.start_edit.text(), "01:30")
+        self.assertEqual(page.end_edit.text(), "04:00")
+        page.end_edit.setText("04:10")
+        self.assertEqual(page.end_edit.text(), "04:10")
+
 
 if __name__ == "__main__":
     unittest.main()
