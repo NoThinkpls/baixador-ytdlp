@@ -144,7 +144,9 @@ class DownloadProgressTests(unittest.TestCase):
         handled = runner._apply_ffmpeg_progress("out_time_us=1245000000", progress)
 
         self.assertTrue(handled)
-        self.assertAlmostEqual(progress.percent, 50.0)
+        # Seletor padrão (bv*+ba): o vídeo ocupa os primeiros 85% da barra e a
+        # passada do áudio o restante, para a barra não voltar a zero.
+        self.assertAlmostEqual(progress.percent, 42.5)
 
 
 if __name__ == "__main__":

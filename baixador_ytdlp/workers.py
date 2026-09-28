@@ -16,7 +16,7 @@ from .config import Settings
 from .diagnostics import get_logger, log_event, report_exception
 from .downloader import (DownloadOptions, DownloadRunner, Progress, Transcoder,
                          is_retryable_error)
-from .gpu import GpuInfo, detect
+from .gpu import GpuInfo, detect, forget_negative_cache
 from .media_tools import (MediaToolError, MediaToolOptions, build_command,
                           operation_duration, preferred_video_encoder, time_seconds)
 from .processes import attach_pid_to_kill_job, popen_isolated, release_job, terminate_process_tree
@@ -491,6 +491,7 @@ class GpuWorker(QThread):
 
     def run(self) -> None:
         try:
+            forget_negative_cache()
             info = detect(self.ffmpeg)
         except Exception as exc:  # noqa: BLE001 - detecção nunca deve derrubar o app
             get_logger().warning("Detecção de GPU indisponível: %s", exc)
