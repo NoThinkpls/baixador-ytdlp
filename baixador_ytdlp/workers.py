@@ -17,7 +17,8 @@ from .diagnostics import get_logger, log_event, report_exception
 from .downloader import (DownloadOptions, DownloadRunner, Progress, Transcoder,
                          is_retryable_error)
 from .gpu import GpuInfo, detect
-from .media_tools import MediaToolError, MediaToolOptions, build_command, operation_duration, time_seconds
+from .media_tools import (MediaToolError, MediaToolOptions, build_command,
+                          operation_duration, preferred_video_encoder, time_seconds)
 from .processes import attach_pid_to_kill_job, popen_isolated, release_job, terminate_process_tree
 from .probe import playlist_entries, probe
 from .security import validate_media_url
@@ -143,41 +144,50 @@ class MediaToolWorker(QThread):
         try:
             if self._cancelled.is_set():
                 raise MediaToolError("Operação cancelada.")
-            command = build_command(self.options, self.tc)
             duration = operation_duration(self.options, self.tc)
             self.options.destination.parent.mkdir(parents=True, exist_ok=True)
-            self.progress.emit("Processando com FFmpeg…")
-            self._process = popen_isolated(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            if self._cancelled.is_set():
-                terminate_process_tree(self._process)
-            output_tail: list[str] = []
-            assert self._process.stdout is not None
-            for raw_line in self._process.stdout:
-                line = raw_line.strip()
-                if line:
-                    output_tail.append(line)
-                    del output_tail[:-80]
-                if duration and line.startswith("out_time="):
-                    elapsed = time_seconds(line.partition("=")[2])
-                    percent = max(0, min(99, round(elapsed * 100 / duration)))
-                    self.progress_value.emit(percent)
-                    self.progress.emit(f"Processando com FFmpeg… {percent}%")
-                if self._cancelled.is_set() and self._process.poll() is None:
-                    terminate_process_tree(self._process)
-            self._process.wait()
-            if self._cancelled.is_set():
-                raise MediaToolError("Operação cancelada.")
-            if self._process.returncode:
-                raise MediaToolError(
-                    output_tail[-1] if output_tail else "O FFmpeg encerrou com erro."
+            if self.options.destination.exists():
+                raise MediaToolError("O arquivo de saída já existe. Escolha outro nome.")
+            video_operations = {"trim", "compress", "shorts", "burn", "target_size"}
+            encoder = (preferred_video_encoder(self.tc)
+                       if self.options.operation in video_operations else "")
+            for selected in ([encoder, ""] if encoder else [""]):
+                command = build_command(self.options, self.tc, video_encoder=selected)
+                label = "GPU" if selected else "CPU"
+                self.progress.emit(f"Processando com FFmpeg na {label}…")
+                self._process = popen_isolated(
+                    command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, encoding="utf-8", errors="replace",
                 )
+                if self._cancelled.is_set():
+                    terminate_process_tree(self._process)
+                output_tail: list[str] = []
+                assert self._process.stdout is not None
+                for raw_line in self._process.stdout:
+                    line = raw_line.strip()
+                    if line:
+                        output_tail.append(line)
+                        del output_tail[:-80]
+                    if duration and line.startswith("out_time="):
+                        elapsed = time_seconds(line.partition("=")[2])
+                        percent = max(0, min(99, round(elapsed * 100 / duration)))
+                        self.progress_value.emit(percent)
+                        self.progress.emit(f"Processando na {label}… {percent}%")
+                    if self._cancelled.is_set() and self._process.poll() is None:
+                        terminate_process_tree(self._process)
+                self._process.wait()
+                if self._cancelled.is_set():
+                    raise MediaToolError("Operação cancelada.")
+                if self._process.returncode == 0:
+                    break
+                if not selected:
+                    raise MediaToolError(output_tail[-1] if output_tail else "O FFmpeg encerrou com erro.")
+                # FFmpeg pode deixar uma saída parcial. -n impediria a tentativa
+                # seguinte; só removemos o arquivo criado por esta tentativa.
+                if self.options.destination.is_file():
+                    self.options.destination.unlink()
+                self.progress_value.emit(0)
+                self.progress.emit("GPU indisponível para esta mídia; tentando na CPU…")
             if not self.options.destination.is_file():
                 raise MediaToolError("O FFmpeg terminou sem gerar o arquivo esperado.")
             self.progress_value.emit(100)

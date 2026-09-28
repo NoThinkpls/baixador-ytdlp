@@ -53,6 +53,7 @@ class DownloadOptions:
     transcribe_after: bool = False   # envia os arquivos concluídos para o Whisper
     embed_transcription: bool = False # incorpora a legenda como faixa, sem reencodar
     playlist_items: str = ""         # ex.: "1-3,7" — vazio = playlist inteira
+    repeat_index: int = 0          # sufixo (2), (3)… em repetição confirmada
 
 
 @dataclass
@@ -96,6 +97,11 @@ def is_retryable_error(message: str) -> bool:
 def _output_template(opts: DownloadOptions, cfg: Settings) -> str:
     """Escolhe a nomenclatura final sem alterar a preferência base do usuário."""
     template = cfg.filename_template
+    if opts.repeat_index >= 2:
+        marker = ".%(ext)s"
+        suffix = f" ({opts.repeat_index})"
+        template = (template.replace(marker, suffix + marker, 1)
+                    if marker in template else template + suffix)
     if opts.audio_only and cfg.organize_audio_by_uploader:
         # O próprio yt-dlp sanitiza o nome em cada sistema. A pasta vem antes do
         # template salvo, portanto o usuário ainda controla título, data e ID.
@@ -203,8 +209,8 @@ def build_args(
         args += ["--limit-rate", cfg.limit_rate]
     if cfg.proxy:
         args += ["--proxy", cfg.proxy]
-    if cfg.archive_enabled:
-        args += ["--download-archive", str(Path(opts.output_dir) / ".ytdl-archive.txt")]
+    # O histórico de IDs do yt-dlp não verifica se o arquivo ainda existe.
+    # Um download solicitado de novo deve sempre chegar ao servidor.
 
     # ``--`` encerra as opções. Mesmo uma entrada malformada iniciada por hífen
     # nunca poderá virar --exec/--batch-file para o yt-dlp.
