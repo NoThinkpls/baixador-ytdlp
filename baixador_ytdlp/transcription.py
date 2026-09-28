@@ -1167,6 +1167,9 @@ def transcription_server_main(toolchain: Toolchain, commands, events) -> None:
     active_job: list[int | None] = [None]
     pending_cancellations: set[int] = set()
     pending_pauses: dict[int, bool] = {}
+    # Protege a troca de item ativo: sem ela, um cancelamento que chegasse entre
+    # "active_job = X" e "cancel_event.clear()" era apagado e o item seguia.
+    state_lock = threading.Lock()
 
     def send(job_id: int, kind: str, value=None) -> None:
         try:
@@ -1188,19 +1191,21 @@ def transcription_server_main(toolchain: Toolchain, commands, events) -> None:
             kind = command[0]
             target = command[1] if len(command) > 1 else None
             if kind == "cancel":
-                if target == active_job[0]:
-                    cancel_event.set()
-                elif isinstance(target, int):
-                    pending_cancellations.add(target)
+                with state_lock:
+                    if target == active_job[0]:
+                        cancel_event.set()
+                    elif isinstance(target, int):
+                        pending_cancellations.add(target)
             elif kind == "pause":
                 paused = bool(command[2])
-                if target == active_job[0]:
-                    if paused:
-                        pause_event.set()
-                    else:
-                        pause_event.clear()
-                elif isinstance(target, int):
-                    pending_pauses[target] = paused
+                with state_lock:
+                    if target == active_job[0]:
+                        if paused:
+                            pause_event.set()
+                        else:
+                            pause_event.clear()
+                    elif isinstance(target, int):
+                        pending_pauses[target] = paused
             elif kind == "shutdown":
                 stop_event.set()
                 cancel_event.set()
@@ -1221,14 +1226,15 @@ def transcription_server_main(toolchain: Toolchain, commands, events) -> None:
             if not command or command[0] == "shutdown":
                 break
             _kind, job_id, opts = command
-            active_job[0] = int(job_id)
-            cancel_event.clear()
-            pause_event.clear()
-            if int(job_id) in pending_cancellations:
-                pending_cancellations.discard(int(job_id))
-                cancel_event.set()
-            if pending_pauses.pop(int(job_id), False):
-                pause_event.set()
+            with state_lock:
+                cancel_event.clear()
+                pause_event.clear()
+                active_job[0] = int(job_id)
+                if int(job_id) in pending_cancellations:
+                    pending_cancellations.discard(int(job_id))
+                    cancel_event.set()
+                if pending_pauses.pop(int(job_id), False):
+                    pause_event.set()
             try:
                 if transcriber is None:
                     transcriber = Transcriber(
