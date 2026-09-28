@@ -32,6 +32,7 @@ AUDIO_FORMATS = [("MP3", "mp3"), ("M4A / AAC", "m4a"), ("Opus", "opus"),
 TIME_RE = re.compile(r"^(?:\d{1,2}:)?(?:[0-5]?\d:)?[0-5]?\d(?:\.\d+)?$")
 URL_LIST_RE = re.compile(r'https?://[^\s<>"\']+')
 MAX_BATCH_URLS = 500
+CAPTION_EMBED_PROFILE = "__caption_embed__"
 
 
 def _is_playlist_url(url: str) -> bool:
@@ -656,6 +657,7 @@ class HomePage(QWidget):
         self.profile_combo.blockSignals(True)
         self.profile_combo.clear()
         self.profile_combo.addItem("Sem perfil salvo", userData="")
+        self.profile_combo.addItem("Baixar + legendar + incorporar", userData=CAPTION_EMBED_PROFILE)
         for profile in self.cfg.download_profiles:
             name = str(profile.get("name") or "").strip()
             if name:
@@ -663,7 +665,7 @@ class HomePage(QWidget):
         if selected_name:
             self._select_data(self.profile_combo, selected_name)
         self.profile_combo.blockSignals(False)
-        self.delete_profile_btn.setEnabled(bool(selected_name))
+        self.delete_profile_btn.setEnabled(bool(selected_name and selected_name != CAPTION_EMBED_PROFILE))
 
     def _save_profile(self) -> None:
         name, accepted = QInputDialog.getText(
@@ -690,7 +692,7 @@ class HomePage(QWidget):
 
     def _delete_profile(self) -> None:
         name = str(self.profile_combo.currentData() or "")
-        if not name:
+        if not name or name == CAPTION_EMBED_PROFILE:
             return
         self.cfg.download_profiles = [
             item for item in self.cfg.download_profiles
@@ -707,8 +709,13 @@ class HomePage(QWidget):
 
     def _apply_profile(self, _index: int) -> None:
         name = str(self.profile_combo.currentData() or "")
-        self.delete_profile_btn.setEnabled(bool(name))
+        self.delete_profile_btn.setEnabled(bool(name and name != CAPTION_EMBED_PROFILE))
         if not name:
+            return
+        if name == CAPTION_EMBED_PROFILE:
+            self.audio_switch.setChecked(False)
+            self.transcribe_switch.setChecked(True)
+            self.embed_transcription_switch.setChecked(True)
             return
         profile = next(
             (item for item in self.cfg.download_profiles if item.get("name") == name),
