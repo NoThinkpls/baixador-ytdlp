@@ -607,8 +607,8 @@ class SettingsPage(QWidget):
     def _gpu_row(self) -> None:
         row, column = self._custom_row(
             "Placa detectada",
-            "Downloads normais são rede e cópia de arquivo. A GPU entra em recortes exatos "
-            "e na conversão após baixar; nesses casos o vídeo precisa ser reencodado.")
+            "Downloads e trechos usam yt-dlp/FFmpeg sem aceleração forçada. A GPU pode ser "
+            "usada na conversão após baixar e nas ferramentas locais de vídeo.")
         line = QHBoxLayout()
         self.gpu_label = Muted("A detecção será feita ao abrir Configurações.", row)
         line.addWidget(self.gpu_label, 1)
