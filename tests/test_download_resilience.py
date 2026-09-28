@@ -180,6 +180,47 @@ class QueuePageTests(unittest.TestCase):
             self.assertFalse(page.empty.isHidden())
             page.deleteLater()
 
+    def test_pause_and_resume_persist_pending_item(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            page = QueuePage(Settings())
+            page._state = QueueState(Path(temporary) / "queue.json")
+            options = DownloadOptions("https://example.invalid/video", temporary)
+            self.assertTrue(page._add(options))
+            job_id = next(iter(page.jobs))
+
+            page.pause(job_id)
+
+            self.assertTrue(page.jobs[job_id].paused)
+            self.assertNotIn(job_id, page.pending)
+            self.assertTrue(page._state.load_entries()[0][1])
+            with patch.object(page, "_pump"):
+                page.resume(job_id)
+            self.assertFalse(page.jobs[job_id].paused)
+            self.assertIn(job_id, page.pending)
+            self.assertFalse(page._state.load_entries()[0][1])
+            page.deleteLater()
+
+    def test_pause_active_worker_waits_for_cancel_before_resuming(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            page = QueuePage(Settings())
+            page._state = QueueState(Path(temporary) / "queue.json")
+            self.assertTrue(page._add(DownloadOptions("https://example.invalid/video", temporary)))
+            job_id = next(iter(page.jobs))
+            page.pending.remove(job_id)
+            job = page.jobs[job_id]
+            job.active = True
+            job.worker = Mock()
+
+            page.pause(job_id)
+            job.worker.cancel.assert_called_once()
+            self.assertTrue(job.pause_requested)
+            self.assertNotIn(job_id, page.pending)
+            page._on_failed(job_id, "Cancelado")
+            self.assertTrue(job.paused)
+            self.assertFalse(job.active)
+            self.assertTrue(page._state.load_entries()[0][1])
+            page.deleteLater()
+
     def test_confirmed_duplicate_can_be_added_and_restored(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             page = QueuePage(Settings())
