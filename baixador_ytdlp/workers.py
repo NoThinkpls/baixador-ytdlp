@@ -731,6 +731,25 @@ class PersistentTranscriptionWorker(QThread):
         else:
             self.finished_ok.emit(str(value))
 
+    def _dispatch_event(self, event) -> None:
+        try:
+            job_id, kind, value = event
+        except (TypeError, ValueError):
+            get_logger().warning("Evento inválido do servidor de transcrição: %r", event)
+            return
+        with self._state_lock:
+            active = self._active_job
+        if job_id != active:
+            return
+        if kind == "status":
+            self.status.emit(str(value))
+        elif kind == "progress":
+            self.progress.emit(max(0, min(100, int(value))))
+        elif kind in {"finished", "cancelled", "error"}:
+            self._terminal(kind, value)
+        else:
+            get_logger().warning("Evento desconhecido do servidor de transcrição: %r", event)
+
     def run(self) -> None:
         process = None
         kill_job = 0
@@ -757,23 +776,16 @@ class PersistentTranscriptionWorker(QThread):
                     continue
                 except (EOFError, OSError):
                     break
+                self._dispatch_event(event)
+            # O processo pode ter enviado o "finished" e saído antes da próxima
+            # leitura. Sem drenar, esse evento se perdia e o item virava
+            # "encerrou inesperadamente".
+            while True:
                 try:
-                    job_id, kind, value = event
-                except (TypeError, ValueError):
-                    get_logger().warning("Evento inválido do servidor de transcrição: %r", event)
-                    continue
-                with self._state_lock:
-                    active = self._active_job
-                if job_id != active:
-                    continue
-                if kind == "status":
-                    self.status.emit(str(value))
-                elif kind == "progress":
-                    self.progress.emit(max(0, min(100, int(value))))
-                elif kind in {"finished", "cancelled", "error"}:
-                    self._terminal(kind, value)
-                else:
-                    get_logger().warning("Evento desconhecido do servidor de transcrição: %r", event)
+                    event = self._events.get(timeout=0.05)
+                except (queue.Empty, EOFError, OSError):
+                    break
+                self._dispatch_event(event)
 
             with self._state_lock:
                 was_busy = self._busy
