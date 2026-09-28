@@ -26,35 +26,26 @@ nova · **H** manutenção.
 - [ ] Testar remover `cudnn_adv64_9.dll` (282 MB, não usado pelo Whisper) para
       reduzir o instalador. Só depois de o item acima passar.
 
-## Rodada 2 — próxima
+## Rodada 2 — concluída (também na v1.10.11)
 
-- [ ] **A4** `workers.DownloadWorker`: falha no transcode depois de download bem
-      sucedido marca o job como erro. Deve concluir com aviso e manter o original.
-- [ ] **A5** `transcription.transcription_server_main`: `active_job` é definido
-      antes de limpar `cancel_event` (cancelamento perdido). Inverter a ordem.
-      `PersistentTranscriptionWorker` não drena eventos após o processo sair.
-- [ ] **A6** `main_window._shortcut_cancel`: Esc cancela transcrição e
-      ferramenta sem confirmar. Confirmar como a Fila faz.
-- [ ] **A7** Banner de atualização: "Agora não" grava `update_dismissed_version`
-      e pula a versão para sempre → separar "Lembrar depois" / "Pular esta
-      versão"; mostrar tamanho e notas (`body` da release, hoje ignorado em
-      `ReleaseInfo`); nova checagem periódica com o app aberto na bandeja.
-- [ ] **A8** Ativar assinatura Ed25519 do `SHA256SUMS` (`RELEASE_PUBLIC_KEYS`
-      vazio hoje). Gratuita; `scripts/release_signing.py` já existe; assinar no
-      build local.
-- [ ] **U1** Toasts empilham no topo central e cobrem cabeçalho/link/Analisar.
-      Agrupar ("3 downloads falharam"), mover para baixo à direita, limitar.
-- [ ] **U2** Em 800 px o campo de link vira "Cole o lin…". Link em largura total;
-      botões quebram de linha ou viram ícone.
-- [ ] **U3** Página Baixar: "Saída" domina antes da análise. Ordem: link → card
-      da mídia + qualidade → saída recolhida. Linhas dependentes desabilitadas
-      (Formato do áudio, Incorporar legenda) devem sumir ou explicar a dependência.
-- [ ] **U4** Fila: mais novo no topo mas processamento FIFO; concluídos/falhos não
-      saem um a um; barra vazia no erro; "Limpar concluídos" visível com fila
-      vazia; faltam "Pausar tudo" e "Tentar de novo as falhas"; card sem tipo,
-      formato e destino.
-- [ ] **U6** Instalador abre o assistente completo; avaliar `/SILENT` com
-      progresso e reabertura automática.
+| Item | Commit | Resumo |
+|---|---|---|
+| A4, U4 | `29b321a` | Conversão com falha conclui com aviso e mantém o original. Fila FIFO, tipo/formato/pasta no cartão, remover item finalizado, barra some no erro, "Limpar finalizados" só habilitado com o que limpar, "Tentar de novo as falhas". `tests/test_queue_actions.py`. |
+| A5 | `32b07b5` | Trava única para troca de item e cancelar/pausar no servidor Whisper; worker drena eventos após o processo sair. `tests/test_transcription_server.py`. |
+| A6 | `c94e9ee` | Esc pede confirmação em Legendar e Ferramentas. |
+| A7 | `d7f02f6` | Banner com tamanho, Novidades, "Lembrar depois" x "Pular versão", checagem a cada 3 h, botões em 2ª linha quando estreito. |
+| U2 | `7054caf` | Link em largura total abaixo de 900 px. |
+| U1 | `8fe6f88` | Toasts agrupados com contador, canto inferior direito acima do rodapé e do banner, máx. 3. `tests/test_toasts.py`. |
+| U3 | `21047fe` | Página Baixar esconde opções que não valem no modo atual. |
+| U6 | `b7b044f` | Instalador com `/SILENT` (progresso visível) e reabertura via `[Run] Check: WizardSilent`. |
+| A8 | `b4e64be` | `scripts/prepare_release.py` + chave privada em arquivo. |
+
+### Pendências manuais da rodada 2
+
+- [ ] A8: `python scripts\release_signing.py generate`, backup da chave, colar a
+      pública em `RELEASE_PUBLIC_KEYS` e publicar essa versão.
+- [ ] U6: conferir no Windows que a atualização pelo app mostra só o progresso
+      e reabre o aplicativo (o `.iss` não foi compilado aqui).
 
 ## Rodada 3
 
