@@ -803,13 +803,17 @@ class LogView(QPlainTextEdit):
 # ============================================================== avisos
 
 class Toast(QFrame):
-    """Aviso flutuante no canto superior direito.
+    """Aviso flutuante no canto inferior direito, acima das barras de ação.
 
-    Empilha até quatro mensagens, some sozinho e nunca bloqueia a janela — no
-    lugar do balão do Fluent, que trazia a paleta e os ícones da Microsoft.
+    Empilha até três mensagens, some sozinho e nunca bloqueia a janela. Avisos
+    iguais (mesmo tipo e título) viram um só com contador, em vez de uma pilha
+    de cartões repetidos cobrindo a página.
     """
 
-    MAX_VISIBLE = 4
+    MAX_VISIBLE = 3
+    # Altura das barras de ação fixas no rodapé das páginas (Baixar, Iniciar
+    # transcrição…): o aviso flutua acima delas, nunca sobre o botão principal.
+    FOOTER_CLEARANCE = 92
     WIDTH = 372
     MARGIN = 18
     GAP = 10
@@ -840,9 +844,14 @@ class Toast(QFrame):
 
         texts = QVBoxLayout()
         texts.setSpacing(2)
-        texts.addWidget(Headline(title, self, wrap=True))
-        if message:
-            texts.addWidget(Muted(message, self))
+        self._key = (kind, title)
+        self._title = title
+        self._count = 1
+        self.title_label = Headline(title, self, wrap=True)
+        self.message_label = Muted(message, self)
+        self.message_label.setVisible(bool(message))
+        texts.addWidget(self.title_label)
+        texts.addWidget(self.message_label)
         layout.addLayout(texts, 1)
 
         close = IconButton("close", "Fechar", self, size=26, icon_size=14)
@@ -857,7 +866,32 @@ class Toast(QFrame):
 
         self._closing = False
         parent.installEventFilter(self)
-        QTimer.singleShot(max(1200, duration), self.dismiss)
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self.dismiss)
+        self._timer.start(max(1200, duration))
+
+    def _fit_height(self) -> None:
+        """Altura exata para a largura fixa.
+
+        ``adjustSize`` usa o sizeHint dos rótulos com quebra de linha, calculado
+        para uma largura estimada, e deixava folga depois de o texto mudar.
+        """
+        layout = self.layout()
+        height = layout.heightForWidth(self.WIDTH) if layout.hasHeightForWidth() else -1
+        if height <= 0:
+            self.adjustSize()
+            return
+        self.resize(self.WIDTH, height)
+
+    def repeat(self, message: str, duration: int) -> None:
+        """Soma uma ocorrência igual: atualiza contador e texto e reinicia o prazo."""
+        self._count += 1
+        self.title_label.setText(f"{self._title} ({self._count})")
+        if message:
+            self.message_label.setText(message)
+            self.message_label.show()
+        self._timer.start(max(1200, duration))
 
     # ---------------------------------------------------------- ciclo de vida
     @classmethod
@@ -875,6 +909,11 @@ class Toast(QFrame):
             return None
         stack = cls._stack(parent)
         alive = [item for item in stack if not item._closing]
+        same = next((item for item in alive if item._key == (kind, title)), None)
+        if same is not None:
+            same.repeat(message, duration)
+            cls._relayout(parent)
+            return same
         for old in alive[:max(0, len(alive) - cls.MAX_VISIBLE + 1)]:
             old.dismiss()
         toast = cls(kind, title, message, parent, duration)
@@ -907,23 +946,25 @@ class Toast(QFrame):
 
     @classmethod
     def _relayout(cls, parent: QWidget) -> None:
-        """Empilha no alto e ao centro do painel de conteúdo.
+        """Empilha de baixo para cima no canto inferior direito.
 
-        O canto superior direito parecia o lugar óbvio, mas é justamente onde
-        ficam as ações do cabeçalho ("Limpar concluídos", "Limpar tudo"): um
-        aviso ali tapa o botão que a pessoa acabou de procurar. Centralizado, o
-        aviso flutua sobre área vazia em todas as páginas.
+        No alto e ao centro o aviso cobria o título, o campo de link e o botão
+        Analisar. Embaixo à direita ele fica acima das barras de ação e do aviso
+        de atualização, sobre a parte rolável da página.
         """
-        left = theme.SIDEBAR_WIDTH + max(
-            0, (parent.width() - theme.SIDEBAR_WIDTH - cls.WIDTH) // 2)
-        top = theme.TITLEBAR_HEIGHT + cls.MARGIN
-        for toast in list(cls._stack(parent)):
+        bottom = parent.height() - cls.MARGIN - cls.FOOTER_CLEARANCE
+        banner = parent.findChild(QWidget, "appUpdateBanner")
+        if banner is not None and banner.isVisible():
+            bottom -= banner.height()
+        left = max(0, parent.width() - cls.WIDTH - cls.MARGIN - 12)
+        for toast in reversed(cls._stack(parent)):
             if toast._closing:
                 continue
-            toast.adjustSize()
-            toast.move(left, top)
+            toast._fit_height()
+            bottom -= toast.height()
+            toast.move(left, max(theme.TITLEBAR_HEIGHT + cls.MARGIN, bottom))
             toast.raise_()
-            top += toast.height() + cls.GAP
+            bottom -= cls.GAP
 
     def dismiss(self) -> None:
         if self._closing:
