@@ -87,10 +87,18 @@ def _run_self_test(report_path: Path) -> int:
         checkpoint("import_faster_whisper_vad")
         from faster_whisper.vad import get_vad_model
         checkpoint("import_runtime")
-        from baixador_ytdlp.runtime import activate_embedded_cuda
+        from baixador_ytdlp import runtime
 
-        checkpoint("activate_embedded_cuda")
-        activate_embedded_cuda()
+        # Carrega exatamente as DLLs que o processo de transcrição usa. Antes o
+        # autoteste só registrava as pastas, e uma build com cuDNN incompatível
+        # passava: a falha só aparecia ao transcrever, como fallback para CPU.
+        checkpoint("prepare_embedded_cuda")
+        cuda_problem = runtime.prepare_embedded_cuda()
+        report["cudnn_expected_major"] = runtime.required_cudnn_major()
+        if cuda_problem:
+            report["cuda_problem"] = cuda_problem
+            if runtime._has_nvidia_driver():
+                raise RuntimeError(f"Runtime CUDA inválido nesta build: {cuda_problem}")
         report["versions"] = {
             distribution: importlib.metadata.version(distribution)
             for distribution in (
@@ -111,6 +119,14 @@ def _run_self_test(report_path: Path) -> int:
         except Exception as exc:  # uma máquina sem driver deve continuar válida
             report["cuda_devices"] = 0
             report["cuda_probe_error"] = f"{type(exc).__name__}: {exc}"
+
+        if not cuda_problem:
+            checkpoint("cudnn_smoke")
+            version, cudnn_error = runtime.cudnn_smoke_test(
+                create_handle=bool(report.get("cuda_devices")))
+            report["cudnn_version"] = version
+            if cudnn_error:
+                raise RuntimeError(cudnn_error)
 
         checkpoint("decode_audio")
         with tempfile.TemporaryDirectory(prefix="baixador-self-test-") as temporary:

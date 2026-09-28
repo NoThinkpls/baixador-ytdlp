@@ -35,7 +35,7 @@ jobs:
           # Locks com hashes: exatamente os mesmos pacotes em toda build.
           pip install --require-hashes -r requirements-windows.lock -r requirements-build-windows.lock
           # Sem PyTorch: o motor de transcrição é o CTranslate2, com runtime
-          # CUDA (cuBLAS/cuDNN 8) incluído no instalador.
+          # CUDA (cuBLAS/cuDNN 9) incluído no instalador.
 
       - name: Executar testes de diagnóstico
         run: |
@@ -140,7 +140,8 @@ jobs:
           if (-not (Test-Path $exe)) { throw "Nuitka não gerou $exe" }
           $requiredCudaDlls = @(
             'cudart64_12.dll', 'cublas64_12.dll', 'cublasLt64_12.dll',
-            'cudnn64_8.dll', 'cudnn_ops_infer64_8.dll', 'cudnn_cnn_infer64_8.dll'
+            'cudnn64_9.dll', 'cudnn_graph64_9.dll', 'cudnn_ops64_9.dll', 'cudnn_cnn64_9.dll',
+            'cudnn_engines_precompiled64_9.dll', 'cudnn_heuristic64_9.dll'
           )
           $missingCudaDlls = foreach ($dll in $requiredCudaDlls) {
             if (-not (Get-ChildItem -Path 'dist\baixador-ytdlp' -Filter $dll -File -Recurse)) { $dll }

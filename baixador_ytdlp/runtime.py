@@ -28,16 +28,17 @@ PYPI_INDEX = "https://pypi.org/simple"
 
 # O faster-whisper roda sobre CTranslate2, sem PyTorch.
 #
-# As versões abaixo são as que funcionam na build atual e NÃO devem ser trocadas
-# sem recompilar o executável: as DLLs de CUDA são embarcadas pelo empacotador a
-# partir do que estiver instalado na máquina de build. Fixar aqui uma versão de
-# cuDNN diferente da que foi embutida faz o carregador procurar nomes que não
-# existem no pacote e cair para CPU em silêncio.
-PACKAGES = ("faster-whisper==1.1.1", "ctranslate2==4.4.0")
+# Estas versões espelham ``requirements.txt`` e ``requirements-windows.lock``
+# (tests/test_cuda_stack.py garante isso). As DLLs CUDA são embarcadas a partir
+# do que está instalado na máquina de build. Desde a 4.5 o CTranslate2 usa
+# cuDNN 9: embutir cuDNN 8 com ele fazia a transcrição cair para CPU sem aviso.
+# O wheel do CTranslate2 4.8.2 traz o cudnn64_9.dll 9.10.2.21; as
+# sub-bibliotecas vêm do pacote NVIDIA e precisam ser da mesma versão.
+PACKAGES = ("faster-whisper==1.1.1", "ctranslate2==4.8.2")
 CUDA_PACKAGES = (
-    "nvidia-cuda-runtime-cu12==12.4.127",
-    "nvidia-cublas-cu12==12.4.5.8",
-    "nvidia-cudnn-cu12==8.9.7.29",
+    "nvidia-cuda-runtime-cu12==12.8.90",
+    "nvidia-cublas-cu12==12.8.4.1",
+    "nvidia-cudnn-cu12==9.10.2.21",
 )
 
 
@@ -57,17 +58,51 @@ _CUDA_DLL_PATHS: set[str] = set()
 # A ordem importa: cada DLL precisa das anteriores já carregadas no processo.
 _CUDA_CORE_DLLS = ("cudart64_12.dll", "cublasLt64_12.dll", "cublas64_12.dll")
 
-# O nome das bibliotecas do cuDNN muda entre as versões maiores, e o que vale é o
-# que foi de fato embutido no executável — não uma versão escolhida aqui. Cada
-# variante lista as auxiliares primeiro e a principal por último; a detecção usa
-# a principal para decidir qual conjunto existe.
-_CUDNN_VARIANTS = (
-    ("cudnn_graph64_9.dll", "cudnn_engines_precompiled64_9.dll",
-     "cudnn_engines_runtime_compiled64_9.dll", "cudnn_heuristic64_9.dll",
-     "cudnn_ops64_9.dll", "cudnn64_9.dll"),
-    ("cudnn_ops_infer64_8.dll", "cudnn_cnn_infer64_8.dll",
-     "cudnn_adv_infer64_8.dll", "cudnn64_8.dll"),
-)
+# O nome das bibliotecas do cuDNN muda entre as versões maiores. Cada variante
+# lista (obrigatórias, opcionais) na ordem de carregamento: a principal vem por
+# último, depois das sub-bibliotecas de que ela depende. As opcionais só são
+# usadas por outros tipos de modelo (RNN/atenção) ou por engines compiladas em
+# tempo de execução; o Whisper não precisa delas.
+_CUDNN_VARIANTS: dict[int, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    9: (
+        ("cudnn_graph64_9.dll", "cudnn_ops64_9.dll", "cudnn_cnn64_9.dll",
+         "cudnn_engines_precompiled64_9.dll", "cudnn_heuristic64_9.dll", "cudnn64_9.dll"),
+        ("cudnn_engines_runtime_compiled64_9.dll", "cudnn_adv64_9.dll"),
+    ),
+    8: (
+        ("cudnn_ops_infer64_8.dll", "cudnn_cnn_infer64_8.dll", "cudnn64_8.dll"),
+        ("cudnn_adv_infer64_8.dll",),
+    ),
+}
+
+
+def required_cudnn_major(ct2_version: str | None = None) -> int:
+    """Versão maior do cuDNN que o CTranslate2 instalado exige.
+
+    O CTranslate2 4.5 trocou o cuDNN 8 pelo 9 sem manter compatibilidade. Ler o
+    metadado evita importar o pacote (e carregar DLLs) no processo da interface.
+    """
+    if ct2_version is None:
+        try:
+            ct2_version = importlib.metadata.version("ctranslate2")
+        except importlib.metadata.PackageNotFoundError:
+            return 9
+    try:
+        major, minor = (int(part) for part in ct2_version.split(".")[:2])
+    except ValueError:
+        return 9
+    return 9 if (major, minor) >= (4, 5) else 8
+
+
+def missing_cudnn_files(folders: list[Path] | tuple[Path, ...], major: int) -> list[str]:
+    """DLLs obrigatórias do cuDNN ``major`` que não estão em nenhuma pasta."""
+    required, _optional = _CUDNN_VARIANTS[major]
+    return [name for name in required if not any((folder / name).is_file() for folder in folders)]
+
+
+def cudnn_version_major(version: int) -> int:
+    """Converte ``cudnnGetVersion()`` (8907 ou 91002) na versão maior."""
+    return version // 10000 if version >= 90000 else version // 1000
 
 
 @dataclass(frozen=True)
@@ -163,9 +198,10 @@ def embedded_cuda_available() -> bool:
     def exists(name: str) -> bool:
         return any((folder / name).is_file() for folder in folders)
 
-    return all(exists(name) for name in _CUDA_CORE_DLLS) and any(
-        exists(variant[-1]) for variant in _CUDNN_VARIANTS
-    )
+    # Só a variante que o CTranslate2 instalado usa conta. Aceitar qualquer
+    # cuDNN mostrava "CUDA" na interface enquanto a transcrição caía para CPU.
+    return (all(exists(name) for name in _CUDA_CORE_DLLS)
+            and not missing_cudnn_files(folders, required_cudnn_major()))
 
 
 def prepare_embedded_cuda() -> str | None:
@@ -197,19 +233,48 @@ def prepare_embedded_cuda() -> str | None:
         if error := load(locate(name), name):
             return error
 
-    # Usa a variante de cuDNN que existe no pacote, seja qual for a versão maior.
-    for variant in _CUDNN_VARIANTS:
-        principal = variant[-1]
-        if locate(principal) is None:
-            continue
-        for name in variant:                 # auxiliares ausentes são normais
-            path = locate(name)
-            if path is not None and (error := load(path, name)):
-                return error
-        return None
+    major = required_cudnn_major()
+    missing_cudnn = missing_cudnn_files(folders, major)
+    if missing_cudnn:
+        other = 8 if major == 9 else 9
+        wrong = "" if missing_cudnn_files(folders, other) else (
+            f" A build embutiu cuDNN {other}, que esta versão do CTranslate2 não aceita.")
+        return (f"cuDNN {major} ausente ou incompleto no executável "
+                f"({', '.join(missing_cudnn)}).{wrong} Reinstale a versão mais recente.")
+    required, optional = _CUDNN_VARIANTS[major]
+    for name in required:
+        if error := load(locate(name), name):
+            return error
+    for name in optional:
+        path = locate(name)
+        if path is not None:
+            load(path, name)  # falha aqui não afeta o Whisper
+    return None
 
-    esperadas = " ou ".join(v[-1] for v in _CUDNN_VARIANTS)
-    return f"cuDNN ausente no executável (procurei {esperadas})"
+
+def cudnn_smoke_test(create_handle: bool = False) -> tuple[int, str]:
+    """Confere o cuDNN já carregado: versão e, com GPU, a criação de um handle.
+
+    Usado pelo autoteste da build. Devolve ``(versão, erro)``; erro vazio = ok.
+    """
+    if not IS_WINDOWS:
+        return 0, ""
+    major = required_cudnn_major()
+    try:
+        library = ctypes.WinDLL(f"cudnn64_{major}.dll")
+        library.cudnnGetVersion.restype = ctypes.c_size_t
+        version = int(library.cudnnGetVersion())
+    except (OSError, AttributeError) as exc:
+        return 0, f"cudnn64_{major}.dll não pôde ser aberto: {exc}"
+    if cudnn_version_major(version) != major:
+        return version, f"cuDNN {version} carregado, mas o CTranslate2 exige a versão {major}"
+    if create_handle:
+        handle = ctypes.c_void_p()
+        status = library.cudnnCreate(ctypes.byref(handle))
+        if status != 0:
+            return version, f"cudnnCreate falhou (status {status})"
+        library.cudnnDestroy(handle)
+    return version, ""
 
 
 def activate_runtime(runtime_dir: Path = RUNTIME_DIR) -> None:

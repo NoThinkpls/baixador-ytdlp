@@ -5,17 +5,14 @@ updates:
     schedule:
       interval: weekly
     ignore:
-      # CTranslate2 >= 4.5 exige cuDNN 9; o instalador embute cuDNN 8. Subir um
-      # sem o outro faz a transcrição cair para CPU sem nenhum teste acusar
-      # (o CI não tem GPU). A migração deve ser feita de propósito, em conjunto.
+      # O wheel do CTranslate2 traz o cudnn64_9.dll de uma versão exata; o
+      # pacote nvidia-cudnn-cu12 precisa ser dessa mesma versão. Nenhuma das
+      # peças sobe sozinha: a troca é manual e validada com o autoteste da
+      # build numa máquina com GPU NVIDIA (ver CONTRIBUTING.md).
       - dependency-name: ctranslate2
-        versions: [">=4.5"]
       - dependency-name: nvidia-cudnn-cu12
-        versions: [">=9"]
       - dependency-name: nvidia-cublas-cu12
-        versions: [">=12.5"]
       - dependency-name: nvidia-cuda-runtime-cu12
-        versions: [">=12.5"]
     groups:
       whisper-cuda:
         patterns: ["ctranslate2", "faster-whisper", "nvidia-*"]

@@ -22,7 +22,11 @@ python scripts/sync_version.py   # após mudar APP_VERSION
 Os `requirements*.txt` são as **entradas**; o CI instala somente os `.lock`,
 com hashes. Ao mudar uma versão, rode `scripts/update_locks.sh` (requer `uv`) e
 commite os locks junto — o job `locks-in-sync` falha se eles divergirem.
-CTranslate2 e os pacotes NVIDIA sobem sempre juntos (cuDNN 8 ↔ CTranslate2 4.4).
+CTranslate2 e os pacotes NVIDIA sobem sempre juntos. O CTranslate2 ≥ 4.5 usa
+cuDNN 9 e o wheel dele traz o `cudnn64_9.dll` de uma versão exata (4.8.2 →
+9.10.2.21); `nvidia-cudnn-cu12` precisa ser essa mesma versão. Depois de trocar,
+rode o build numa máquina com GPU NVIDIA: o autoteste carrega o cuDNN e cria um
+handle, e falha se o conjunto não casar. `tests/test_cuda_stack.py` confere os pins.
 
 ## Assinatura das releases
 
