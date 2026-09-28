@@ -63,7 +63,8 @@ class EncoderCacheTests(unittest.TestCase):
             ffmpeg.write_bytes(b"x")
             gpu._ENCODER_CACHE.clear()
             gpu.forget_negative_cache()
-            with patch.object(gpu, "_encoder_probe", return_value=(False, "sem GPU")) as probe:
+            with patch.object(gpu, "_candidate_encoders", return_value=("h264_nvenc",)), \
+                    patch.object(gpu, "_encoder_probe", return_value=(False, "sem GPU")) as probe:
                 gpu._usable_encoders(ffmpeg, " V....D h264_nvenc NVIDIA NVENC")
                 gpu._usable_encoders(ffmpeg, " V....D h264_nvenc NVIDIA NVENC")
                 self.assertEqual(probe.call_count, 1)
