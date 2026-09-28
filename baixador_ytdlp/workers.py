@@ -18,7 +18,8 @@ from .downloader import (DownloadOptions, DownloadRunner, Progress, Transcoder,
                          is_retryable_error)
 from .gpu import GpuInfo, detect, forget_negative_cache
 from .media_tools import (MediaToolError, MediaToolOptions, build_command,
-                          operation_duration, preferred_video_encoder, time_seconds)
+                          operation_duration, preferred_video_encoder, time_seconds,
+                          uses_gpu)
 from .processes import attach_pid_to_kill_job, popen_isolated, release_job, terminate_process_tree
 from .probe import playlist_entries, probe
 from .security import validate_media_url
@@ -148,9 +149,7 @@ class MediaToolWorker(QThread):
             self.options.destination.parent.mkdir(parents=True, exist_ok=True)
             if self.options.destination.exists():
                 raise MediaToolError("O arquivo de saída já existe. Escolha outro nome.")
-            video_operations = {"trim", "compress", "shorts", "burn", "target_size"}
-            encoder = (preferred_video_encoder(self.tc)
-                       if self.options.operation in video_operations else "")
+            encoder = preferred_video_encoder(self.tc) if uses_gpu(self.options) else ""
             for selected in ([encoder, ""] if encoder else [""]):
                 command = build_command(self.options, self.tc, video_encoder=selected)
                 label = "GPU" if selected else "CPU"

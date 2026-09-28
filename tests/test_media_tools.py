@@ -29,6 +29,10 @@ class MediaToolsTests(unittest.TestCase):
                         command = build_command(options, tc, video_encoder="h264_nvenc")
                 else:
                     command = build_command(options, tc, video_encoder="h264_nvenc")
+                if operation == "target_size":
+                    # Caber em um limite fica no x264: mais qualidade por byte.
+                    self.assertEqual(command[command.index("-c:v") + 1], "libx264")
+                    continue
                 self.assertEqual(command[command.index("-c:v") + 1], "h264_nvenc")
                 self.assertNotIn("-crf", command)
             copy = build_command(MediaToolOptions(source, root / "copy.mkv", "remux"),
@@ -118,3 +122,32 @@ class MediaToolsTests(unittest.TestCase):
             with self.assertRaisesRegex(MediaToolError, "dentro da duração"):
                 operation_duration(MediaToolOptions(
                     source, root / "fora.mkv", "trim", "10", "12"), tc)
+
+
+class FastTrimTests(unittest.TestCase):
+    def test_corte_rapido_copia_sem_reencodar_e_sem_gpu(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        from baixador_ytdlp.media_tools import MediaToolOptions, build_command, uses_gpu
+        from baixador_ytdlp.tools import Toolchain
+
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "a.mp4"
+            source.write_bytes(b"x")
+            options = MediaToolOptions(source, Path(folder) / "b.mkv", "trim",
+                                       start="00:00:10", end="00:00:20", fast_trim=True)
+            toolchain = Toolchain(Path("yt-dlp"), Path("ffmpeg"), Path("ffprobe"), Path(folder))
+            command = build_command(options, toolchain, video_encoder="h264_nvenc")
+        self.assertFalse(uses_gpu(options))
+        self.assertIn("copy", command)
+        self.assertNotIn("libx264", command)
+        self.assertNotIn("h264_nvenc", command)
+
+    def test_tamanho_alvo_fica_na_cpu(self) -> None:
+        from pathlib import Path
+
+        from baixador_ytdlp.media_tools import MediaToolOptions, uses_gpu
+
+        self.assertFalse(uses_gpu(MediaToolOptions(Path("a"), Path("b"), "target_size")))
+        self.assertTrue(uses_gpu(MediaToolOptions(Path("a"), Path("b"), "compress")))
