@@ -375,13 +375,17 @@ def friendly_error(detail: str) -> str:
                 "não é problema de cookies. Vá em Configurações → Dependências → Verificar "
                 "agora para instalá-lo.")
 
-    if "sign in to confirm" in low or "not a bot" in low:
+    # Idade vem antes do robô: a mensagem do YouTube para vídeo com restrição de
+    # idade também começa com "Sign in to confirm".
+    if any(marker in low for marker in (
+            "confirm your age", "age-restricted", "age restricted",
+            "inappropriate for some users")):
+        return "Vídeo com restrição de idade. É preciso fornecer cookies de uma conta logada."
+
+    if "not a bot" in low or "sign in to confirm" in low:
         return ("O YouTube pediu confirmação de que você não é um robô. É preciso fornecer "
                 "cookies de uma conta logada: em Configurações, aponte um arquivo cookies.txt "
                 "exportado por uma janela anônima, ou selecione o Firefox.")
-
-    if "age" in low and ("restrict" in low or "confirm" in low):
-        return "Vídeo com restrição de idade. É preciso fornecer cookies de uma conta logada."
 
     if "private" in low or "members-only" in low or "join this channel" in low:
         return "Vídeo privado ou exclusivo para membros. Só com cookies de uma conta com acesso."
@@ -389,12 +393,21 @@ def friendly_error(detail: str) -> str:
     if "unsupported url" in low:
         return "Esse site não é suportado pelo yt-dlp."
 
-    if "unavailable" in low or "removed" in low or "terminated" in low:
-        return "O vídeo está indisponível, foi removido ou o canal foi encerrado."
+    # Antes de "unavailable": a mensagem de bloqueio regional começa com
+    # "Video unavailable" e virava "removido".
+    if ("geo" in low and "restrict" in low) or "in your country" in low:
+        return "Vídeo bloqueado na sua região. Um proxy em outro país resolveria."
+
+    if "live event will begin" in low:
+        return "A transmissão ainda não começou. Tente novamente quando o evento estiver ao vivo."
 
     if "http error 429" in low or "too many requests" in low:
         return ("O YouTube limitou as requisições deste IP. Espere alguns minutos antes de "
                 "tentar de novo, ou configure um proxy.")
+
+    if ("temporarily unavailable" in low or "service unavailable" in low
+            or any(f"http error {code}" in low for code in (500, 502, 503, 504))):
+        return "O site está instável ou fora do ar agora. Tente novamente em alguns minutos."
 
     if "http error 403" in low:
         return ("O site recusou o acesso (HTTP 403). Verifique os componentes em "
@@ -404,11 +417,8 @@ def friendly_error(detail: str) -> str:
     if "requested format is not available" in low:
         return "O formato escolhido não existe para este vídeo. Selecione Automático e tente novamente."
 
-    if "live event will begin" in low:
-        return "A transmissão ainda não começou. Tente novamente quando o evento estiver ao vivo."
-
-    if "geo" in low and "restrict" in low:
-        return "Vídeo bloqueado na sua região. Um proxy em outro país resolveria."
+    if "unavailable" in low or "has been removed" in low or "terminated" in low:
+        return "O vídeo está indisponível, foi removido ou o canal foi encerrado."
 
     if "urlopen error" in low or "getaddrinfo" in low or "connection" in low:
         return "Sem conexão com a internet, ou a rede bloqueou o acesso."
