@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import shutil
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -41,7 +44,12 @@ class ToolCheckTests(unittest.TestCase):
         """"Verificar agora" consulta a origem, mas preserva o binário atual."""
         with tempfile.TemporaryDirectory() as tmp:
             manager = ToolManager(bin_dir=Path(tmp))
-            (Path(tmp) / "yt-dlp").touch()
+            bundle = Path(tmp) / "yt-dlp"
+            bundle.mkdir()
+            executable = bundle / "yt-dlp.exe"
+            executable.write_bytes(b"current")
+            manager.state["ytdlp_files"] = {
+                "yt-dlp.exe": hashlib.sha256(b"current").hexdigest()}
             manager.local_ytdlp_version = Mock(return_value="2026.09.01")
             manager._latest_ytdlp = Mock(return_value=("2026.09.01", "https://example.invalid/yt-dlp", {}))
             manager._download = Mock(side_effect=AssertionError("não deveria baixar"))
@@ -53,6 +61,32 @@ class ToolCheckTests(unittest.TestCase):
             manager._latest_ytdlp.assert_called_once()
             manager._download.assert_not_called()
             self.assertIn("já está atualizado", progress.call_args.args[0])
+
+    @unittest.skipUnless(sys.platform.startswith("win"), "Artefato onedir é específico do Windows")
+    def test_windows_ytdlp_extracts_verified_folder_and_detects_tampering(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive = root / "source.zip"
+            with zipfile.ZipFile(archive, "w") as output:
+                output.writestr("yt-dlp.exe", b"binary")
+                output.writestr("_internal/library.dll", b"library")
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            manager = ToolManager(bin_dir=root / "bin")
+            manager.local_ytdlp_version = Mock(return_value="")
+            manager._latest_ytdlp = Mock(return_value=(
+                "2026.09.01", "https://example.invalid/yt-dlp_win.zip",
+                {"yt-dlp_win.zip": digest}))
+            manager._download = Mock(side_effect=lambda _url, path, *_: shutil.copyfile(archive, path))
+            manager._save_state = Mock()
+
+            manager.ensure_ytdlp(Mock())
+
+            executable = root / "bin" / "yt-dlp" / "yt-dlp.exe"
+            self.assertTrue(executable.is_file())
+            self.assertTrue((executable.parent / "_internal" / "library.dll").is_file())
+            self.assertTrue(manager._ytdlp_bundle_ok())
+            (executable.parent / "_internal" / "library.dll").write_bytes(b"tampered")
+            self.assertFalse(manager._ytdlp_bundle_ok())
 
     def test_manual_ffmpeg_check_does_not_redownload_current_build(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
