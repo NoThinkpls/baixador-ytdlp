@@ -425,6 +425,9 @@ class MediaToolsPage(QWidget):
             self.worker.cancel()
             self.status.setText("Cancelando…")
 
+    def has_active_work(self) -> bool:
+        return bool(self.worker and self.worker.isRunning())
+
     def cancel_current(self) -> None:
         self._cancel()
 

@@ -49,6 +49,13 @@ class MainWindow(AppShell):
         self._app_update_check: AppUpdateCheckWorker | None = None
         self._app_update_download: AppUpdateDownloadWorker | None = None
         self._available_update: ReleaseInfo | None = None
+        # Instalador já baixado e validado. Com "on_exit" ele só é aberto quando
+        # a pessoa fecha o app; com "now" a janela fecha em seguida para instalar.
+        self._downloaded_installer: Path | None = None
+        self._install_mode = "now"
+        self._update_interruption_confirmed = False
+        self._launch_installer_on_close = False
+        self._skip_close_prompt = False
         self.taskbar = TaskbarProgress()
         self._icon_path = icon_path
         self._download_taskbar_progress: float | None = None
@@ -395,6 +402,7 @@ class MainWindow(AppShell):
         self.update_banner.dismissed.connect(self._dismiss_app_update)
         # A tela aparece imediatamente; a consulta de rede começa depois, em thread própria.
         QTimer.singleShot(700, self._check_app_update)
+        QTimer.singleShot(5000, self._cleanup_old_installers)
 
     def _save_sidebar_state(self, collapsed: bool) -> None:
         self.cfg.sidebar_collapsed = bool(collapsed)
@@ -476,15 +484,44 @@ class MainWindow(AppShell):
                         parent=self, duration=7000)
 
     def _dismiss_app_update(self) -> None:
+        if self._downloaded_installer is not None:
+            # Já está agendada para o fechamento: só esconde o aviso.
+            self.update_banner.hide()
+            return
         if self._available_update:
             self.cfg.update_dismissed_version = self._available_update.version
             self.cfg.save()
         self.update_banner.hide()
 
+    def _active_work(self) -> list[str]:
+        """Descrição curta do que seria interrompido se o app fechasse agora."""
+        active = []
+        if self.queue.has_pending_work():
+            active.append("downloads")
+        if self.transcription.has_active_work():
+            active.append("legendas")
+        if self.media_tools.has_active_work():
+            active.append("ferramentas")
+        return active
+
     def _download_app_update(self) -> None:
+        if self._downloaded_installer is not None:
+            # Já baixado com "instalar ao fechar"; o botão agora instala.
+            if self._confirm_install_now():
+                self._install_now()
+            return
         release = self._available_update or self.update_banner.release
         if not release or (self._app_update_download and self._app_update_download.isRunning()):
             return
+        self._install_mode = "now"
+        self._update_interruption_confirmed = False
+        active = self._active_work()
+        if active:
+            choice = self._ask_update_timing(active)
+            if choice is None:
+                return
+            self._install_mode = choice
+            self._update_interruption_confirmed = choice == "now"
         worker = AppUpdateDownloadWorker(release, self)
         self._app_update_download = worker
         worker.progress.connect(self.update_banner.show_download_progress)
@@ -498,18 +535,104 @@ class MainWindow(AppShell):
         if self._app_update_download is worker:
             self._app_update_download = None
 
-    def _on_app_update_ready(self, installer: str) -> None:
-        try:
-            AppUpdater.launch_installer(Path(installer))
-        except Exception as exc:  # noqa: BLE001
-            self._on_app_update_download_failed(str(exc))
-            return
-        self.update_banner.details.setText(
-            "Atualização validada. O instalador foi aberto; fechando o aplicativo…"
+    def _ask_update_timing(self, active: list[str]) -> str | None:
+        """Pergunta se a atualização interrompe o trabalho agora ou espera o fechamento."""
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Tarefas em andamento")
+        dialog.setIcon(QMessageBox.Icon.Question)
+        dialog.setText(f"Há {', '.join(active)} em andamento.")
+        dialog.setInformativeText(
+            "A atualização fecha o aplicativo. Você pode instalar quando fechar, sem "
+            "interromper nada, ou agora: os downloads são pausados e continuam na próxima "
+            "abertura; transcrições e ferramentas em andamento são interrompidas."
         )
-        Toast.success("Atualização pronta", "O instalador validado foi aberto.",
-                      parent=self, duration=4000)
-        QTimer.singleShot(900, QApplication.quit)
+        later = dialog.addButton("Instalar ao fechar", QMessageBox.ButtonRole.AcceptRole)
+        now = dialog.addButton("Atualizar agora", QMessageBox.ButtonRole.DestructiveRole)
+        dialog.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
+        dialog.setDefaultButton(later)
+        dialog.exec()
+        clicked = dialog.clickedButton()
+        if clicked is later:
+            return "on_exit"
+        if clicked is now:
+            return "now"
+        return None
+
+    def _confirm_install_now(self) -> bool:
+        active = self._active_work()
+        if not active:
+            return True
+        answer = QMessageBox.question(
+            self,
+            "Instalar agora?",
+            f"Há {', '.join(active)} em andamento. Instalar agora pausa os downloads e "
+            "interrompe transcrições e ferramentas. Continuar?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def _on_app_update_ready(self, installer: str) -> None:
+        path = Path(installer)
+        if not path.is_file():
+            self._on_app_update_download_failed("O instalador validado não foi encontrado.")
+            return
+        self._downloaded_installer = path
+        # Algo pode ter começado enquanto o instalador baixava.
+        if (self._install_mode == "now" and not self._update_interruption_confirmed
+                and self._active_work() and not self._confirm_install_now()):
+            self._install_mode = "on_exit"
+        if self._install_mode == "on_exit":
+            self._launch_installer_on_close = True
+            self.update_banner.show_ready_on_exit()
+            Toast.success("Atualização pronta",
+                          "Ela será instalada quando você fechar o aplicativo.",
+                          parent=self, duration=5000)
+            return
+        self._install_now()
+
+    def _install_now(self) -> None:
+        """Fecha pelo caminho normal (salvando fila e ajustes) e abre o instalador.
+
+        Antes o instalador abria primeiro e o app chamava ``quit``: a fila não
+        era salva de forma ordenada e, com “Fechar para a bandeja” ligado, a
+        janela só se escondia e o app continuava rodando durante a instalação.
+        """
+        self.update_banner.details.setText("Atualização validada. Fechando para instalar…")
+        self._launch_installer_on_close = True
+        self._skip_close_prompt = True
+        self._quitting = True
+        QTimer.singleShot(0, self.close)
+
+    def _launch_pending_installer(self) -> bool:
+        installer = self._downloaded_installer
+        if not self._launch_installer_on_close or installer is None:
+            return True
+        try:
+            AppUpdater.launch_installer(installer)
+        except Exception as exc:  # noqa: BLE001
+            # O app já salvou tudo e está fechando: um toast não seria visto.
+            release = self._available_update
+            QMessageBox.warning(
+                self, "Atualização não instalada",
+                f"{exc}\n\nBaixe a nova versão manualmente"
+                + (f" em {release.page_url}" if release else " pela página de releases") + ".",
+            )
+            return False
+        return True
+
+    def _cleanup_old_installers(self) -> None:
+        """Remove instaladores de sessões anteriores (centenas de MB cada)."""
+        from ..config import UPDATE_DIR
+
+        try:
+            for leftover in UPDATE_DIR.glob("*.exe"):
+                try:
+                    leftover.unlink()
+                except OSError:
+                    pass  # ainda aberto pelo instalador que acabou de rodar
+        except OSError:
+            pass
 
     def _on_app_update_download_failed(self, message: str) -> None:
         self.update_banner.show_error(message)
@@ -861,19 +984,27 @@ class MainWindow(AppShell):
                     4500,
                 )
             return
-        if self.queue.has_pending_work():
+        active = [] if self._skip_close_prompt else self._active_work()
+        if active:
             dialog = QMessageBox(self)
-            dialog.setWindowTitle("Downloads em andamento")
+            dialog.setWindowTitle("Tarefas em andamento")
             dialog.setIcon(QMessageBox.Icon.Warning)
-            dialog.setText("Há downloads ativos ou aguardando na fila.")
-            dialog.setInformativeText(
-                "Ao sair, os processos serão pausados e os arquivos .part poderão ser "
-                "retomados na próxima abertura."
-            )
-            leave = dialog.addButton("Pausar e sair", QMessageBox.ButtonRole.DestructiveRole)
+            dialog.setText(f"Há {', '.join(active)} em andamento ou aguardando.")
+            details = []
+            if "downloads" in active:
+                details.append("Os downloads serão pausados e os arquivos .part poderão ser "
+                               "retomados na próxima abertura.")
+            if "legendas" in active or "ferramentas" in active:
+                details.append("Transcrições e processamentos em andamento serão interrompidos.")
+            if self._launch_installer_on_close:
+                details.append("A atualização será instalada em seguida.")
+            dialog.setInformativeText(" ".join(details))
+            leave = dialog.addButton("Sair mesmo assim" if "downloads" not in active
+                                     else "Pausar e sair", QMessageBox.ButtonRole.DestructiveRole)
             dialog.addButton("Continuar no aplicativo", QMessageBox.ButtonRole.RejectRole)
             dialog.exec()
             if dialog.clickedButton() is not leave:
+                self._quitting = False
                 event.ignore()
                 return
         self._taskbar_completion_timer.stop()
@@ -890,5 +1021,9 @@ class MainWindow(AppShell):
             self.cfg.window_rect = [normal.x(), normal.y(), normal.width(), normal.height()]
         self.cfg.window_maximized = self.isMaximized()
         self.cfg.save()
+        # Estado já salvo e processos parados: agora o instalador pode substituir
+        # os arquivos sem esbarrar no aplicativo aberto.
+        if self._launch_installer_on_close and self._launch_pending_installer():
+            QTimer.singleShot(0, QApplication.quit)
         super().closeEvent(event)
 
