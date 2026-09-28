@@ -8,7 +8,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileDialog, QHBoxLayout,
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QBoxLayout, QFileDialog,
+                               QHBoxLayout,
                                QHeaderView, QInputDialog, QLabel, QPlainTextEdit, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
@@ -113,7 +114,7 @@ class HomePage(QWidget):
 
     def _link_card(self) -> Card:
         """Bloco de entrada: é o primeiro gesto da tela, então ganha destaque."""
-        card = Card(self, padding=(16, 16, 16, 16), spacing=10, horizontal=True)
+        card = Card(self, padding=(16, 16, 16, 16), spacing=10)
 
         self.url_edit = TextField("Cole o link do vídeo ou da playlist", card)
         self.url_edit.setClearButtonEnabled(True)
@@ -140,12 +141,35 @@ class HomePage(QWidget):
         self.analyze_btn.setMinimumHeight(42)
         self.analyze_btn.clicked.connect(self.analyze)
 
-        card.body.addWidget(self.url_edit, 1)
-        card.body.addWidget(self.paste_btn)
-        card.body.addWidget(self.import_list_btn)
-        card.body.addWidget(self.batch_btn)
-        card.body.addWidget(self.analyze_btn)
+        # O link é o campo principal: em janelas estreitas os botões descem para
+        # a linha de baixo em vez de espremê-lo até "Cole o lin…".
+        row = QWidget(card)
+        self._link_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight, row)
+        self._link_layout.setContentsMargins(0, 0, 0, 0)
+        self._link_layout.setSpacing(10)
+        self._link_actions = QWidget(row)
+        actions = QHBoxLayout(self._link_actions)
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(10)
+        for button in (self.paste_btn, self.import_list_btn, self.batch_btn, self.analyze_btn):
+            button.setParent(self._link_actions)
+            actions.addWidget(button)
+        self.url_edit.setParent(row)
+        self._link_layout.addWidget(self.url_edit, 1)
+        self._link_layout.addWidget(self._link_actions, 0)
+        card.body.addWidget(row)
         return card
+
+    def resizeEvent(self, event):  # noqa: N802 - assinatura do Qt
+        narrow = self.width() < 900
+        direction = (QBoxLayout.Direction.TopToBottom if narrow
+                     else QBoxLayout.Direction.LeftToRight)
+        if self._link_layout.direction() != direction:
+            self._link_layout.setDirection(direction)
+            self._link_layout.setAlignment(
+                self._link_actions,
+                Qt.AlignmentFlag.AlignRight if narrow else Qt.AlignmentFlag.AlignVCenter)
+        super().resizeEvent(event)
 
     def _batch_card(self) -> Card:
         """Entrada de lote para quem tem muitos links, sem sobrecarregar o fluxo normal."""
