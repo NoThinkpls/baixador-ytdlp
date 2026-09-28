@@ -48,3 +48,25 @@ class PlaylistItemsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EncoderCacheTests(unittest.TestCase):
+    def test_ausencia_de_encoder_fica_em_cache_ate_nova_deteccao(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from baixador_ytdlp import gpu
+
+        with tempfile.TemporaryDirectory() as folder:
+            ffmpeg = Path(folder) / "ffmpeg"
+            ffmpeg.write_bytes(b"x")
+            gpu._ENCODER_CACHE.clear()
+            gpu.forget_negative_cache()
+            with patch.object(gpu, "_encoder_probe", return_value=(False, "sem GPU")) as probe:
+                gpu._usable_encoders(ffmpeg, " V....D h264_nvenc NVIDIA NVENC")
+                gpu._usable_encoders(ffmpeg, " V....D h264_nvenc NVIDIA NVENC")
+                self.assertEqual(probe.call_count, 1)
+                gpu.forget_negative_cache()
+                gpu._usable_encoders(ffmpeg, " V....D h264_nvenc NVIDIA NVENC")
+                self.assertEqual(probe.call_count, 2)

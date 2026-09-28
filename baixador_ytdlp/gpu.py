@@ -4,6 +4,7 @@ from __future__ import annotations
 import platform
 import re
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -25,6 +26,11 @@ GPU_ENCODER_LABELS = {
 # (driver ainda inicializando, notebook trocando de GPU, retorno do macOS), e
 # não deve impedir a tentativa real do recorte pelo resto da sessão.
 _ENCODER_CACHE: dict[tuple[str, int, int], tuple[str, ...]] = {}
+# "Nenhum encoder funciona" vale por alguns minutos: sem isto, cada operação das
+# Ferramentas testava até seis encoders de novo em PCs sem GPU (segundos de
+# espera antes de começar). O prazo curto ainda permite a GPU "voltar".
+_NEGATIVE_CACHE: dict[tuple[str, int, int], float] = {}
+NEGATIVE_TTL = 600.0
 
 
 def _cache_key(ffmpeg: Path) -> tuple[str, int, int] | None:
@@ -73,11 +79,18 @@ def _encoder_probe(ffmpeg: Path, codec: str) -> tuple[bool, str]:
         return False, str(exc)
 
 
+def forget_negative_cache() -> None:
+    """Uma detecção pedida pela pessoa sempre testa de novo."""
+    _NEGATIVE_CACHE.clear()
+
+
 def _usable_encoders(ffmpeg: Path, advertised: str) -> tuple[list[str], dict[str, str]]:
     candidates = _advertised_encoders(advertised)
     key = _cache_key(ffmpeg)
     if key is not None and key in _ENCODER_CACHE:
         return list(_ENCODER_CACHE[key]), {}
+    if key is not None and time.monotonic() - _NEGATIVE_CACHE.get(key, -NEGATIVE_TTL) < NEGATIVE_TTL:
+        return [], {}
     usable: list[str] = []
     errors: dict[str, str] = {}
     for codec in candidates:
@@ -91,6 +104,9 @@ def _usable_encoders(ffmpeg: Path, advertised: str) -> tuple[list[str], dict[str
     if key is not None and usable:
         _ENCODER_CACHE.clear()  # só há um FFmpeg ativo por sessão
         _ENCODER_CACHE[key] = tuple(usable)
+        _NEGATIVE_CACHE.pop(key, None)
+    elif key is not None and candidates:
+        _NEGATIVE_CACHE[key] = time.monotonic()
     return usable, errors
 
 
