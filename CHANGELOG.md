@@ -47,6 +47,21 @@ formato Keep a Changelog.
 - A página Baixar mostra só as opções que valem no modo atual.
 - Releases locais com hashes, assinatura Ed25519 e notas extraídas do
   CHANGELOG (`scripts/prepare_release.py`).
+- Análise mais rápida: sem a execução extra do yt-dlp para testar cookies, e a
+  lista da playlist vem junto da análise ("Escolher itens" abre na hora).
+- Em PCs sem GPU, as Ferramentas não testam os encoders de novo a cada uso.
+- "Caber em um limite" usa sempre x264, com mais qualidade por byte.
+- Checagem de espaço soma o áudio de qualidades só de vídeo e considera todos
+  os itens da playlist.
+
+### Adicionado
+
+- O modelo do Whisper sai da memória da GPU após 10 minutos ocioso, e o botão
+  "Liberar memória" faz isso na hora.
+- Legendar aceita vários arquivos ou uma pasta de uma vez, com "Esvaziar fila".
+- Ferramentas: "Corte rápido, sem reencodar" (instantâneo, sem perda, corta no
+  quadro-chave).
+- Progresso de trecho sem hora final e sem voltar a 0% na faixa de áudio.
 
 ## [1.10.10] - 2026-09-28
 

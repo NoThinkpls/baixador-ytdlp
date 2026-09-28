@@ -47,43 +47,20 @@ nova · **H** manutenção.
 - [ ] U6: conferir no Windows que a atualização pelo app mostra só o progresso
       e reabre o aplicativo (o `.iss` não foi compilado aqui).
 
-## Rodada 3
+## Rodada 3 — em andamento
 
-- [ ] **M1** `yt-dlp.exe` é PyInstaller onefile (descompacta a cada chamada; a
-      análise chama 2–3 vezes). Avaliar a build onedir oficial para Windows
-      (confirmar nome do asset no release e presença no `SHA2-256SUMS`).
-- [ ] **M2** `tools.ensure_ffmpeg` extrai `ffplay.exe` sem uso. Avaliar os
-      builds yt-dlp/FFmpeg-Builds (confirmar checksums publicados).
-- [ ] **M3** `probe._resolve_cookies` faz um `--simulate` extra antes do `-J`;
-      playlist faz `-J` + contagem + seletor. Rodar `-J` com cookies e só repetir
-      sem eles se a fonte falhar; cachear o `--flat-playlist`.
-- [ ] **M4** `MediaToolWorker` → `select_section_encoder` → `detect(verify=True)`
-      testa até 6 encoders por operação, sem cache de negativos.
-- [ ] **M5** Modelo Whisper fica na VRAM indefinidamente. Descarregar após
-      inatividade (~10 min) + botão "Liberar memória da GPU".
-- [ ] **M6** Estimativa de disco: playlist usa só o 1º item; linha só-vídeo não
-      soma o áudio.
-- [ ] **M7** `downloader._RETRYABLE_FAILURES`: "tls"/"ssl" soltos casam demais.
-- [ ] **M8** Progresso de trecho: sem fim → duração 0 (usar duração da mídia);
-      `bv*+ba` roda duas passadas e a barra reinicia.
-- [ ] **U5** Configurações: "Até 1 downloads" (plural); ícone de sliders repetido
-      em Rede, Avançado e duas ferramentas; dois botões "Verificar" → unificar com
-      hora da última checagem; trocar canal do yt-dlp abre setup modal na hora;
-      card de Componentes deve mostrar o estado real do Whisper (CUDA ok / CPU
-      porque…).
-- [ ] **U7** Ferramentas: 7 cards ocupam a primeira tela; arquivo abaixo da dobra;
-      botão "Recortar" sem arquivo. Lista à esquerda + formulário à direita.
-- [ ] **U8** i18n: ~104 `tr()`; erros, toasts, status e `friendly_error` só em
-      pt-BR.
-- [ ] **U9** Legendar aceita só o 1º arquivo arrastado; fila pendente invisível.
-- [ ] **F1** Corte rápido sem reencodar (stream copy) ao lado do preciso.
-- [ ] **F2** Legendar em lote (vários arquivos/pasta), lista editável.
-- [ ] **F3** Pausar/retomar por item e fila inteira.
-- [ ] **F4** Trecho por capítulo (capítulos já vêm no `-J`).
-- [ ] **F5** Perfil "Baixar + legendar + incorporar".
-- [ ] **H2** CRLF e LF misturados no mesmo arquivo (`config.py`, `workers.py`,
-      `transcription.py`, `main_window.py`…). Adicionar `.gitattributes` e
-      normalizar num commit separado, só de quebras de linha.
+### Concluído
+
+| Item | Commit | Resumo |
+|---|---|---|
+| M6, M7, M8 | `de93b50` | Espaço soma áudio e itens da playlist; "ssl"/"tls" só como palavra; % em trecho sem fim e sem voltar a 0% na 2ª passada. `tests/test_download_estimates.py`. |
+| M4 | `892f84a` | Cache de 10 min para "nenhum encoder de GPU funciona"; detecção manual sempre testa de novo. |
+| M3 | `a3d75f6` | Análise sem `--simulate` extra de cookies; itens da playlist vêm da contagem. `tests/test_probe_calls.py`. |
+| M5 | `3330aa9` | Whisper descarregado após 10 min ocioso + botão "Liberar memória". `tests/test_whisper_idle.py`. |
+| U9, F2 | `e8a62d2` | Legendar aceita vários arquivos/pasta (sem subpastas) + "Esvaziar fila". |
+| F1 | `ff1cce7` | Corte rápido (stream copy) nas Ferramentas; "Caber em um limite" sempre na CPU. |
+
+Ver `PENDENCIAS.md` na raiz para o que falta e como terminar.
 
 ## Uso de GPU por etapa (decisão)
 
