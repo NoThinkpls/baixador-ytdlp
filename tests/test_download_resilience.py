@@ -32,7 +32,7 @@ class QueueStateTests(unittest.TestCase):
             with patch("baixador_ytdlp.config.SETTINGS_PATH", path):
                 settings = Settings.load()
 
-        self.assertTrue(settings.archive_enabled)
+        self.assertFalse(settings.archive_enabled)
         self.assertTrue(settings.resume_queue)
         self.assertEqual(settings.settings_schema_version, 6)
 
@@ -60,6 +60,17 @@ class QueueStateTests(unittest.TestCase):
 
 
 class DownloadArgumentsTests(unittest.TestCase):
+    def test_old_archive_setting_never_skips_a_new_request(self) -> None:
+        cfg = Settings(archive_enabled=True)
+        tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))
+        opts = DownloadOptions("https://example.invalid/video", "downloads")
+        args = build_args(opts, cfg, tools)
+        self.assertNotIn("--download-archive", args)
+        self.assertIn("--continue", args)
+        opts.repeat_index = 2
+        args = build_args(opts, cfg, tools)
+        self.assertIn(" (2).%(ext)s", args[args.index("--output") + 1])
+
     def test_audio_keeps_metadata_cover_and_organized_name(self) -> None:
         cfg = Settings(embed_thumbnail=True, embed_metadata=True, embed_chapters=True,
                        organize_audio_by_uploader=True)

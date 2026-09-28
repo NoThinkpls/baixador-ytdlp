@@ -12,7 +12,7 @@ from .plataforma import is_macos, is_windows, pasta_dados_usuario, pasta_do_exec
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.10.8"
+APP_VERSION = "1.10.9"
 IS_WINDOWS = is_windows()
 
 
@@ -133,9 +133,8 @@ class Settings:
     filename_template: str = "%(title).180B [%(id)s].%(ext)s"
     # Perfis de saída salvos na página Baixar; somente preferências, nunca credenciais.
     download_profiles: list[dict[str, object]] = field(default_factory=list)
-    # Ativado por padrão: o arquivo de histórico do yt-dlp por pasta evita
-    # baixar novamente o mesmo ID quando ele já foi concluído.
-    archive_enabled: bool = True
+    # Legado: preservado na leitura de configurações antigas, sem efeito no download.
+    archive_enabled: bool = False
     resume_queue: bool = True        # restaura itens interrompidos ao reabrir
     auto_retry_attempts: int = 2     # tentativas extras para falhas transitórias
     auto_retry_delay: int = 5        # espera base entre tentativas, em segundos
@@ -244,7 +243,7 @@ class Settings:
         except (TypeError, ValueError):
             schema = 0
         if schema < 2:
-            values["archive_enabled"] = True
+            values["archive_enabled"] = False
             values["resume_queue"] = True
             values["settings_schema_version"] = 2
         if schema < 3:
