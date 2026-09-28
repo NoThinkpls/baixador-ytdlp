@@ -1094,6 +1094,8 @@ class HomePage(QWidget):
     def _pick_playlist_items(self) -> None:
         if not self.info or not self.toolchain:
             return
+        if self._playlist_entries is None and self.info.entries:
+            self._playlist_entries = list(self.info.entries)  # vieram na análise
         if self._playlist_entries is not None:
             self._open_playlist_picker(self._playlist_entries)
             return
