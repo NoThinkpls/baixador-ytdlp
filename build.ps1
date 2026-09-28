@@ -11,6 +11,7 @@
 param(
     [switch]$Installer,
     [switch]$InstallInnoSetup,
+    [switch]$ValidateGpu,
     [ValidateSet('PyInstaller', 'Nuitka')]
     [string]$Packager = 'Nuitka'
 )
@@ -186,11 +187,13 @@ if ($missingRuntimeFiles) {
 }
 $selfTestReport = Join-Path ([System.IO.Path]::GetTempPath()) "baixador-self-test-$([guid]::NewGuid().ToString('N')).json"
 $env:BAIXADOR_YTDLP_SELF_TEST_REPORT = $selfTestReport
+$env:BAIXADOR_YTDLP_VALIDATE_GPU = if ($ValidateGpu) { '1' } else { '0' }
 # Aplicações Windows sem console retornam imediatamente ao PowerShell quando
 # chamadas com ``&``. Start-Process -Wait mede o término real do autoteste.
 $selfTestProcess = Start-Process -FilePath $exe -PassThru -Wait
 $selfTestExitCode = $selfTestProcess.ExitCode
 Remove-Item Env:\BAIXADOR_YTDLP_SELF_TEST_REPORT -ErrorAction SilentlyContinue
+Remove-Item Env:\BAIXADOR_YTDLP_VALIDATE_GPU -ErrorAction SilentlyContinue
 if ($selfTestExitCode -ne 0 -or -not (Test-Path -LiteralPath $selfTestReport -PathType Leaf)) {
     $details = if (Test-Path -LiteralPath $selfTestReport -PathType Leaf) {
         Get-Content -LiteralPath $selfTestReport -Raw
