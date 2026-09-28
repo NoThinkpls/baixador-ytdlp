@@ -398,7 +398,7 @@ class MainWindow(AppShell):
         self.media_tools.operation_finished.connect(
             lambda path: self._tray_message("Processamento concluído", Path(path).name)
         )
-        self.settings.update_requested.connect(lambda: self.run_setup(check_now=True))
+        self.settings.update_requested.connect(self._check_all_updates)
         self.settings.ytdlp_channel_changed.connect(self._switch_ytdlp_channel)
         self.settings.diagnostics_export_requested.connect(self._export_diagnostics)
         self.settings.app_update_requested.connect(lambda: self._check_app_update(force=True))
@@ -484,6 +484,7 @@ class MainWindow(AppShell):
         if checked_at:
             self.cfg.app_update_checked_at = checked_at
             self.cfg.save()
+            self.settings.refresh_update_status()
         if release:
             self._available_update = release
             self.update_banner.show_release(release)
@@ -847,9 +848,12 @@ class MainWindow(AppShell):
 
     def _switch_ytdlp_channel(self, channel: str) -> None:
         self.manager.ytdlp_channel = channel
-        Toast.info("Canal do yt-dlp", "Baixando a versão do canal escolhido…",
+        Toast.info("Canal do yt-dlp", "A mudança será aplicada na próxima verificação dos componentes.",
                    parent=self, duration=4000)
+
+    def _check_all_updates(self) -> None:
         self.run_setup(check_now=True)
+        self._check_app_update(force=True)
 
     def _export_diagnostics(self) -> None:
         from PySide6.QtWidgets import QFileDialog

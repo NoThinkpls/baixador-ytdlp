@@ -85,6 +85,10 @@ _BODY: dict[str, str] = {
                '<path d="M18.5 4v3"/><path d="M20 5.5h-3"/>',
     "cut": '<circle cx="6.4" cy="17.6" r="2.6"/><circle cx="17.6" cy="17.6" r="2.6"/>'
            '<path d="M8.3 15.7 18.5 4.5"/><path d="M15.7 15.7 5.5 4.5"/>',
+    "compress": '<path d="M3 9V4h5M21 9V4h-5M3 15v5h5M21 15v5h-5"/>'
+                '<path d="m4 5 5 5m11-5-5 5M4 19l5-5m11 5-5-5"/>',
+    "limit": '<rect x="3" y="6" width="18" height="12" rx="2"/>'
+             '<path d="M7 12h10M7 9v6m10-6v6"/>',
 }
 
 _TEMPLATE = (
