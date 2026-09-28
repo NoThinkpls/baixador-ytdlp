@@ -30,6 +30,26 @@ TASKS = [("Transcrever no idioma original", "transcribe"),
          ("Traduzir para inglês", "translate")]
 MEDIA_FILTER = ("Mídias (*.mp4 *.mkv *.mov *.avi *.webm *.m4v *.flv *.wmv *.mpeg *.mp3 "
                 "*.wav *.flac *.aac *.ogg *.m4a *.opus *.m4b);;Todos os arquivos (*.*)")
+MEDIA_SUFFIXES = frozenset(
+    "." + item.removeprefix("*.") for item in MEDIA_FILTER.split("(", 1)[1].split(")", 1)[0].split())
+
+
+def expand_media_paths(paths: list[str]) -> list[Path]:
+    """Arquivos de mídia de uma seleção; pastas entram com as mídias de dentro.
+
+    Pastas não são percorridas em profundidade: soltar a pasta errada não deve
+    enfileirar centenas de arquivos de subpastas.
+    """
+    result: list[Path] = []
+    seen: set[Path] = set()
+    for raw in paths:
+        path = Path(raw)
+        candidates = sorted(path.iterdir()) if path.is_dir() else [path]
+        for item in candidates:
+            if item.is_file() and item.suffix.lower() in MEDIA_SUFFIXES and item not in seen:
+                seen.add(item)
+                result.append(item)
+    return result
 
 
 class TranscriptionPage(QWidget):
@@ -270,16 +290,33 @@ class TranscriptionPage(QWidget):
 
         self.progress_label = Muted("Pronto para transcrever", card)
         card.body.addWidget(self.progress_label)
+        queue_row = QHBoxLayout()
+        queue_row.setSpacing(8)
         self.queue_label = Muted("", card)
         self.queue_label.setAccessibleName("Itens aguardando na fila de legendas")
         self.queue_label.hide()
-        card.body.addWidget(self.queue_label)
+        self.clear_queue_btn = Button("Esvaziar fila", "close", "ghost", card)
+        self.clear_queue_btn.setToolTip("Remove os itens que ainda não começaram")
+        self.clear_queue_btn.clicked.connect(self.clear_pending)
+        self.clear_queue_btn.hide()
+        queue_row.addWidget(self.queue_label, 1)
+        queue_row.addWidget(self.clear_queue_btn)
+        card.body.addLayout(queue_row)
         return card
+
+    def clear_pending(self) -> None:
+        count = len(self._pending)
+        self._pending.clear()
+        self._refresh_queue_label()
+        if count:
+            self._status(f"{count} item(ns) removido(s) da fila de legendas.")
 
     def _refresh_queue_label(self) -> None:
         if not hasattr(self, "queue_label"):
             return
         count = len(self._pending)
+        if hasattr(self, "clear_queue_btn"):
+            self.clear_queue_btn.setVisible(count > 0)
         if not count:
             self.queue_label.hide()
             return
@@ -384,9 +421,31 @@ class TranscriptionPage(QWidget):
 
     def _pick_media(self) -> None:
         from PySide6.QtWidgets import QFileDialog
-        path, _ = QFileDialog.getOpenFileName(self, "Selecionar mídia", "", MEDIA_FILTER)
-        if path:
-            self.set_media(path)
+        paths, _ = QFileDialog.getOpenFileNames(self, "Selecionar mídias", "", MEDIA_FILTER)
+        if paths:
+            self.add_media_files(paths)
+
+    def add_media_files(self, paths: list[str]) -> None:
+        """Um arquivo preenche o formulário; vários (ou uma pasta) entram na fila."""
+        files = expand_media_paths(paths)
+        if not files:
+            self._warn("Nenhum arquivo de áudio ou vídeo reconhecido na seleção.")
+            return
+        if len(files) == 1:
+            self.set_media(str(files[0]))
+            return
+        if not self.toolchain:
+            self._warn("As dependências ainda estão sendo verificadas.")
+            return
+        added = 0
+        for media in files:
+            opts = self._build_options(media, automatic=True)
+            if opts is not None:
+                self._enqueue(opts, False)
+                added += 1
+        if added:
+            Toast.info("Fila de legendas", f"{added} arquivos adicionados com as opções atuais.",
+                       parent=self.window(), duration=4500)
 
     def set_media(self, path: str) -> None:
         """Ponto de entrada usado pela fila, pelo histórico e pelo arrastar-e-soltar."""
@@ -420,16 +479,14 @@ class TranscriptionPage(QWidget):
     # ------------------------------------------------------ arrastar e soltar
     def dragEnterEvent(self, event):  # noqa: N802 - assinatura do Qt
         urls = event.mimeData().urls() if event.mimeData().hasUrls() else []
-        if urls and Path(urls[0].toLocalFile()).is_file():
+        if any(Path(url.toLocalFile()).exists() for url in urls if url.toLocalFile()):
             event.acceptProposedAction()
 
     def dropEvent(self, event):  # noqa: N802 - assinatura do Qt
-        for url in event.mimeData().urls():
-            path = url.toLocalFile()
-            if path and Path(path).is_file():
-                self.set_media(path)
-                event.acceptProposedAction()
-                return
+        paths = [url.toLocalFile() for url in event.mimeData().urls() if url.toLocalFile()]
+        if paths:
+            event.acceptProposedAction()
+            self.add_media_files(paths)
 
     def enqueue_media(self, path: str, embed: bool = False) -> None:
         """Enfileira uma mídia vinda de um download sem interromper a atual."""

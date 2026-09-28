@@ -50,3 +50,35 @@ class WhisperIdleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(HAS_QT, "requer PySide6 e PySideSix-Frameless-Window")
+class BatchMediaTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_pasta_e_varios_arquivos_entram_na_fila(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from baixador_ytdlp.ui.transcription_page import expand_media_paths
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for name in ("b.mp4", "a.MP3", "notas.txt"):
+                (root / name).write_bytes(b"x")
+            (root / "sub").mkdir()
+            (root / "sub" / "c.mp4").write_bytes(b"x")
+            files = expand_media_paths([folder, str(root / "b.mp4")])
+            self.assertEqual([p.name for p in files], ["a.MP3", "b.mp4"])
+
+            page = TranscriptionPage(Settings())
+            page.toolchain = MagicMock()
+            with patch.object(page, "_build_options", side_effect=lambda media, automatic: media), \
+                    patch.object(page, "_enqueue") as enqueue:
+                page.add_media_files([folder])
+            self.assertEqual(enqueue.call_count, 2)
+            page.add_media_files([str(root / "b.mp4")])
+            self.assertEqual(Path(page.media_edit.text()).name, "b.mp4")
