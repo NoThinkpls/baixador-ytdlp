@@ -119,10 +119,11 @@ def friendly_transcription_error(exc: BaseException) -> str:
     text = str(exc)
     match = re.search(r"silero_(?:encoder|decoder)_v5\.onnx", text, flags=re.IGNORECASE)
     if match and ("file doesn't exist" in text.casefold() or "no_suchfile" in text.casefold()):
-        return (
-            f"Arquivo interno do motor de transcrição ausente ({match.group(0)}). "
-            "A instalação está incompleta — reinstale a versão mais recente."
-        )
+        from .ui.i18n import tr
+
+        return tr("Arquivo interno do motor de transcrição ausente ({file}). "
+                  "A instalação está incompleta — reinstale a versão mais recente.").format(
+                      file=match.group(0))
     return text
 
 
