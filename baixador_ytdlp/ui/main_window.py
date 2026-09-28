@@ -559,11 +559,34 @@ class MainWindow(AppShell):
             self._gpu_worker = None
 
     def _on_enqueue(self, opts) -> None:
+        previous = next((entry for entry in self.history.entries
+                         if entry.kind == DOWNLOAD and entry.url == opts.url
+                         and entry.folder == Path(opts.output_dir) and entry.existing_file()), None)
+        if previous and not self._confirm_existing_download():
+            return
+        if previous:
+            original = previous.existing_file()
+            base = re.sub(r" \(\d+\)$", "", original.stem)
+            index = 2
+            while original.with_name(f"{base} ({index}){original.suffix}").exists():
+                index += 1
+            opts.repeat_index = index
         if self.queue.add(opts):
             self.switchTo(self.queue)
             return
         if self._confirm_duplicate(1) and self.queue.add(opts, allow_duplicate=True):
             self.switchTo(self.queue)
+
+    def _confirm_existing_download(self) -> bool:
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Arquivo já baixado")
+        dialog.setIcon(QMessageBox.Icon.Question)
+        dialog.setText("Esta mídia já aparece no histórico e o arquivo ainda existe.")
+        dialog.setInformativeText("Deseja baixar outra cópia com um número no nome?")
+        confirm = dialog.addButton("Baixar outra cópia", QMessageBox.ButtonRole.AcceptRole)
+        dialog.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
+        dialog.exec()
+        return dialog.clickedButton() is confirm
 
     def _on_enqueue_many(self, options) -> None:
         added, duplicates = self.queue.add_many(options)

@@ -206,12 +206,14 @@ def detect(
 
 
 def select_section_encoder(ffmpeg: Path, preferred: str = "") -> str:
-    """Escolhe encoder anunciado para o recorte, priorizando H.264.
+    """Escolhe encoder funcional para o recorte, priorizando H.264.
 
     A execução real confirma o backend e cai em CPU de modo seguro. Assim um
     teste curto não transforma uma GPU momentaneamente ocupada em "ausente".
     """
-    encoders = detect(ffmpeg, verify=False, query_device=False).section_encoders
+    # A lista anunciada inclui NVENC até em PCs sem NVIDIA. Confirmar um
+    # quadro evita escolher NVENC em máquinas AMD e cair direto na CPU.
+    encoders = detect(ffmpeg, verify=True, query_device=False).section_encoders
     if preferred and preferred in encoders:
         return preferred
     for codec in ("h264_nvenc", "h264_amf", "h264_videotoolbox"):

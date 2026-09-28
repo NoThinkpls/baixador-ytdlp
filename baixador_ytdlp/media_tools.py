@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .processes import CREATE_NO_WINDOW
+from .gpu import select_section_encoder
 from .tools import Toolchain
 
 TIME_RE = re.compile(r"^(?:\d{1,2}:)?(?:[0-5]?\d:)?[0-5]?\d(?:\.\d+)?$")
@@ -146,7 +147,7 @@ def _target_size_args(options: MediaToolOptions, toolchain: Toolchain) -> list[s
     ]
 
 
-def build_command(options: MediaToolOptions, toolchain: Toolchain) -> list[str]:
+def build_command(options: MediaToolOptions, toolchain: Toolchain, *, video_encoder: str = "") -> list[str]:
     """Monta uma invocação FFmpeg sem shell e sem nunca alterar o arquivo de origem."""
     if not options.source.is_file():
         raise MediaToolError("Selecione um arquivo de vídeo ou áudio existente.")
@@ -234,8 +235,30 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain) -> list[str]:
     else:
         raise MediaToolError("Ferramenta de mídia desconhecida.")
 
+    if video_encoder and options.operation in {"trim", "compress", "shorts", "burn", "target_size"}:
+        # Filtros permanecem na CPU; o encoder de hardware recebe os quadros
+        # prontos. Isso funciona também com subtitles/libass e fundos desfocados.
+        index = command.index("-c:v")
+        command[index + 1] = video_encoder
+        if "-crf" in command:
+            crf = command.index("-crf")
+            quality = command[crf + 1]
+            command[crf:crf + 2] = (["-cq", quality, "-b:v", "0"] if video_encoder.endswith("_nvenc")
+                                  else ["-q:v", "65"] if video_encoder.endswith("_videotoolbox")
+                                  else ["-rc", "cqp", "-qp_i", quality, "-qp_p", quality])
+        if "-preset" in command:
+            preset = command.index("-preset")
+            if video_encoder.endswith("_nvenc"):
+                command[preset + 1] = "p5"
+            else:
+                del command[preset:preset + 2]
     command += ["-progress", "pipe:1", "-nostats", str(options.destination)]
     return command
+
+
+def preferred_video_encoder(toolchain: Toolchain) -> str:
+    """Detecta um encoder anunciado; a execução real decide se ele funciona."""
+    return select_section_encoder(toolchain.ffmpeg)
 
 
 def _validate_time_range(start: str, end: str) -> None:

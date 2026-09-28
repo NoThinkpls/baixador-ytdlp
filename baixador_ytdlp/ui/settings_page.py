@@ -172,9 +172,6 @@ class SettingsPage(QWidget):
                          "Escolhe H.264/AAC em vez do melhor codec. Roda em qualquer TV, "
                          "mas com qualidade um pouco menor no mesmo tamanho.", "prefer_h264")
         self._section("Fila")
-        self._switch_row("Evitar baixar a mesma mídia novamente",
-                         "Guarda os IDs concluídos por pasta. Um item repetido é ignorado.",
-                         "archive_enabled")
         self._switch_row("Retomar a fila ao reabrir",
                          "Itens interrompidos voltam como pendentes e continuam os arquivos .part.",
                          "resume_queue")
@@ -424,7 +421,7 @@ class SettingsPage(QWidget):
         name = Path(cfg.download_dir).name or cfg.download_dir
         subtitles = (
             f"{cfg.container.upper()} · {name} · "
-            f"{'sem repetidos' if cfg.archive_enabled else 'repetidos permitidos'}",
+            "repetições sob confirmação",
             f"Até {cfg.max_parallel_downloads} downloads · "
             f"{'sem limite de banda' if not cfg.limit_rate else 'limite ' + cfg.limit_rate}",
             "Capa e metadados · " + ("legendas ligadas" if cfg.write_subs else "legendas desligadas"),

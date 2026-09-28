@@ -12,6 +12,29 @@ from baixador_ytdlp.tools import Toolchain
 
 
 class MediaToolsTests(unittest.TestCase):
+    def test_video_operations_select_gpu_encoder_without_affecting_copies(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.mp4"
+            subtitle = root / "captions.srt"
+            source.touch()
+            subtitle.touch()
+            tc = self._toolchain(root)
+            for operation in ("trim", "compress", "shorts", "burn", "target_size"):
+                options = MediaToolOptions(source, root / "output.mp4", operation,
+                                           start="1", end="2", subtitles=subtitle)
+                if operation == "target_size":
+                    from unittest.mock import patch
+                    with patch("baixador_ytdlp.media_tools.media_duration", return_value=10):
+                        command = build_command(options, tc, video_encoder="h264_nvenc")
+                else:
+                    command = build_command(options, tc, video_encoder="h264_nvenc")
+                self.assertEqual(command[command.index("-c:v") + 1], "h264_nvenc")
+                self.assertNotIn("-crf", command)
+            copy = build_command(MediaToolOptions(source, root / "copy.mkv", "remux"),
+                                 tc, video_encoder="h264_nvenc")
+            self.assertNotIn("h264_nvenc", copy)
+
     def _toolchain(self, root: Path) -> Toolchain:
         return Toolchain(
             ytdlp=root / "yt-dlp",
