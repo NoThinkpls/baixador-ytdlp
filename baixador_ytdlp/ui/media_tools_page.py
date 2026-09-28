@@ -36,12 +36,12 @@ OPERATIONS = {
         "action": "Criar MKV",
     },
     "compress": {
-        "title": "Reduzir tamanho", "icon": "tools", "tag": "H.264",
+        "title": "Reduzir tamanho", "icon": "compress", "tag": "H.264",
         "summary": "Crie um MP4 menor, equilibrando tamanho e qualidade.",
         "action": "Comprimir",
     },
     "target_size": {
-        "title": "Caber em um limite", "icon": "tools", "tag": "MB",
+        "title": "Caber em um limite", "icon": "limit", "tag": "MB",
         "summary": "Comprima para caber no limite do Discord, WhatsApp ou e-mail.",
         "action": "Comprimir para o limite",
     },
@@ -68,7 +68,7 @@ class ToolCard(QAbstractButton):
         self.setText(self.data["title"])
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumHeight(112)
+        self.setMinimumHeight(78)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setToolTip(self.data["summary"])
         self.setAccessibleName(self.data["title"])
@@ -79,7 +79,7 @@ class ToolCard(QAbstractButton):
         self.released.connect(self.update)
 
     def sizeHint(self) -> QSize:
-        return QSize(250, 112)
+        return QSize(250, 78)
 
     def paintEvent(self, _event):  # noqa: N802 - assinatura do Qt
         painter = QPainter(self)
@@ -95,17 +95,17 @@ class ToolCard(QAbstractButton):
         painter.setBrush(fill)
         painter.drawRoundedRect(rect, theme.RADIUS_CARD, theme.RADIUS_CARD)
 
-        icon_rect = QRectF(14, 14, 34, 34)
+        icon_rect = QRectF(12, 19, 34, 34)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(theme.qcolor("accent_soft" if not active else "accent"))
         painter.drawRoundedRect(icon_rect, 10, 10)
         icon_tone = "accent" if not active else "on_accent"
-        painter.drawPixmap(22, 22, icons.pixmap(self.data["icon"], theme.color(icon_tone), 18))
+        painter.drawPixmap(20, 27, icons.pixmap(self.data["icon"], theme.color(icon_tone), 18))
 
-        title_x = 60
+        title_x = 56
         painter.setFont(theme.headline())
         painter.setPen(QPen(theme.qcolor("text")))
-        painter.drawText(QRectF(title_x, 14, self.width() - title_x - 12, 22),
+        painter.drawText(QRectF(title_x, 13, self.width() - title_x - 12, 22),
                          int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
                          self.data["title"])
 
@@ -113,15 +113,9 @@ class ToolCard(QAbstractButton):
         painter.setPen(QPen(theme.qcolor("text_secondary")))
         metrics = QFontMetrics(painter.font())
         summary = metrics.elidedText(self.data["summary"], Qt.TextElideMode.ElideRight,
-                                     max(40, self.width() - 28))
-        painter.drawText(QRectF(14, 58, self.width() - 28, 20),
+                                     max(40, self.width() - title_x - 12))
+        painter.drawText(QRectF(title_x, 39, self.width() - title_x - 12, 20),
                          int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), summary)
-
-        painter.setFont(theme.caption())
-        painter.setPen(QPen(theme.qcolor("accent_text" if active else "text_tertiary")))
-        painter.drawText(QRectF(14, 84, self.width() - 28, 16),
-                         int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
-                         self.data["tag"])
         if self.hasFocus():
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(QPen(theme.qcolor("accent_text"), 2))
@@ -164,10 +158,10 @@ class MediaToolsPage(QWidget):
         page = ScrollColumn(self, spacing=14)
         root.addWidget(page, 1)
 
-        page.add(SectionLabel("1. O que você quer fazer?", self))
-        page.add(self._tool_picker())
-        page.add(SectionLabel("2. Arquivo de origem", self))
+        page.add(SectionLabel("1. Arquivo de origem", self))
         page.add(self._source_group())
+        page.add(SectionLabel("2. O que você quer fazer?", self))
+        page.add(self._tool_picker())
         page.add(SectionLabel("3. Ajustes desta tarefa", self))
         page.add(self._options_group())
         page.add(SectionLabel("4. Onde salvar", self))
@@ -200,6 +194,7 @@ class MediaToolsPage(QWidget):
         group = InsetGroup(self)
         self.source_edit = TextField("Arquivo de vídeo ou áudio de origem", group)
         self.source_edit.editingFinished.connect(self._suggest_destination)
+        self.source_edit.textChanged.connect(self._update_run_enabled)
         source_button = Button("Escolher arquivo", "folder", "secondary", group)
         source_button.clicked.connect(self._choose_source)
         group.add_row(self._path_row(
@@ -333,6 +328,7 @@ class MediaToolsPage(QWidget):
         self.run_button.setMinimumHeight(42)
         self.run_button.setMinimumWidth(172)
         self.run_button.clicked.connect(self._run)
+        self.run_button.setEnabled(False)
         row.addWidget(self.cancel_button)
         row.addWidget(self.run_button)
         column.addLayout(row)
@@ -344,6 +340,12 @@ class MediaToolsPage(QWidget):
     def set_media(self, path: str) -> None:
         self.source_edit.setText(path)
         self._suggest_destination()
+
+    def _update_run_enabled(self, *_args) -> None:
+        if hasattr(self, "run_button"):
+            self.run_button.setEnabled(
+                Path(self.source_edit.text().strip()).is_file()
+                and not (self.worker and self.worker.isRunning()))
 
     def _operation(self) -> str:
         return self._operation_key
@@ -376,6 +378,7 @@ class MediaToolsPage(QWidget):
         source = Path(self.source_edit.text().strip())
         if source.is_file():
             self.destination_edit.setText(str(default_destination(source, self._operation())))
+        self._update_run_enabled()
 
     def _choose_destination(self) -> None:
         suggested = self.destination_edit.text().strip()
@@ -428,6 +431,7 @@ class MediaToolsPage(QWidget):
     def _clear_worker(self, worker: MediaToolWorker) -> None:
         if self.worker is worker:
             self.worker = None
+            self._update_run_enabled()
 
     def _cancel(self) -> None:
         if self.worker and self.worker.isRunning():
@@ -444,7 +448,7 @@ class MediaToolsPage(QWidget):
         self._set_progress(100)
         self.progress_host.hide()
         self.taskbar_progress.emit(-1.0)
-        self.run_button.setEnabled(True)
+        self._update_run_enabled()
         self.cancel_button.hide()
         self.status.setText(f"Concluído: {Path(output).name}")
         self.operation_finished.emit(output)
@@ -454,7 +458,7 @@ class MediaToolsPage(QWidget):
     def _failed(self, message: str) -> None:
         self.progress_host.hide()
         self.taskbar_progress.emit(-1.0)
-        self.run_button.setEnabled(True)
+        self._update_run_enabled()
         self.cancel_button.hide()
         self.status.setText(message)
         self._show_error(message)
