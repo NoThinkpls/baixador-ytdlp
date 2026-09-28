@@ -56,6 +56,10 @@ class HomePage(QWidget):
         self._playlist_items = ""
         self._playlist_entries: list | None = None
         self._entries_worker: PlaylistEntriesWorker | None = None
+        # URL efetivamente analisada. O download usa sempre esta, nunca o texto
+        # atual do campo: a pessoa pode editar ou colar outro link depois.
+        self._analyzed_url = ""
+        self._probing_url = ""
         self._build_ui()
         self.setAcceptDrops(True)
 
@@ -116,6 +120,7 @@ class HomePage(QWidget):
         self.url_edit.setMinimumHeight(42)
         self.url_edit.setFont(theme.font(14, 400))
         self.url_edit.returnPressed.connect(self.analyze)
+        self.url_edit.textChanged.connect(self._on_url_text_changed)
 
         self.paste_btn = Button("Colar", "paste", "secondary", card)
         self.paste_btn.setMinimumHeight(42)
@@ -770,6 +775,7 @@ class HomePage(QWidget):
         self.busy.show()
         self.analyze_btn.setEnabled(False)
         self.analyze_btn.setText("Analisando…")
+        self._probing_url = url
         self.worker = ProbeWorker(url, self.toolchain, self.cfg, self)
         self.worker.finished_ok.connect(self._on_info)
         self.worker.failed.connect(self._on_probe_error)
@@ -811,8 +817,33 @@ class HomePage(QWidget):
         self._reset_analyze_button()
         Toast.error("Não deu para analisar", message, parent=self.window(), duration=8000)
 
+    def _on_url_text_changed(self, text: str) -> None:
+        """Descarta a análise quando o link do campo deixa de ser o analisado."""
+        if self.info is not None and text.strip() != self._analyzed_url:
+            self._invalidate_analysis()
+
+    def _invalidate_analysis(self) -> None:
+        self.info = None
+        self._analyzed_url = ""
+        self._playlist_items = ""
+        self._playlist_entries = None
+        self.info_card.hide()
+        self.thumbnail.clear()
+        self.quality_label.hide()
+        self.quality_hint.hide()
+        self.table.hide()
+        self.pick_items_btn.hide()
+        self._update_playlist_hint()
+        self._refresh_filename_preview()
+        self.download_btn.setEnabled(False)
+        self.download_btn.setToolTip("O link mudou. Analise de novo para liberar o download")
+
     def _on_info(self, info: MediaInfo) -> None:
         self._reset_analyze_button()
+        if self.url_edit.text().strip() != self._probing_url:
+            # O campo mudou enquanto a análise rodava: o resultado é de outro link.
+            return
+        self._analyzed_url = self._probing_url
         self.info = info
 
         self.media_title.setText(info.title)
@@ -957,7 +988,7 @@ class HomePage(QWidget):
             return
 
         opts = DownloadOptions(
-            url=self.url_edit.text().strip(),
+            url=self._analyzed_url,
             output_dir=output_dir,
             selector=selector,
             container=self.container_combo.currentData(),
@@ -994,7 +1025,7 @@ class HomePage(QWidget):
             return
         self.pick_items_btn.setEnabled(False)
         self.pick_items_btn.setText("Listando…")
-        worker = PlaylistEntriesWorker(self.url_edit.text().strip(), self.toolchain, self.cfg, self)
+        worker = PlaylistEntriesWorker(self._analyzed_url, self.toolchain, self.cfg, self)
         self._entries_worker = worker
         worker.finished_ok.connect(self._on_playlist_entries)
         worker.failed.connect(lambda message: self._warn(f"Não deu para listar a playlist: {message}"))
