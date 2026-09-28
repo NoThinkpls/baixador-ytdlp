@@ -2,8 +2,8 @@
     Compila o baixador-ytdlp e (opcionalmente) gera o instalador.
 
     Uso:
-        .\build.ps1                         # compila com Nuitka
-        .\build.ps1 -Packager PyInstaller   # usa a rota de contingência
+        .\build.ps1                         # compila com PyInstaller
+        .\build.ps1 -Packager Nuitka        # rota experimental
         .\build.ps1 -Installer              # compila e gera o setup
         .\build.ps1 -Installer -InstallInnoSetup # instala o Inno Setup, se necessário
 #>
@@ -13,7 +13,7 @@ param(
     [switch]$InstallInnoSetup,
     [switch]$ValidateGpu,
     [ValidateSet('PyInstaller', 'Nuitka')]
-    [string]$Packager = 'Nuitka'
+    [string]$Packager = 'PyInstaller'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -117,6 +117,7 @@ if ($Packager -eq 'Nuitka') {
         '--user-package-configuration-file=nuitka-package.config.yml',
         '--include-package=nvidia.cuda_runtime', '--include-package=nvidia.cublas',
         '--include-package=nvidia.cudnn',
+        '--include-package=onnxruntime',
         # Dados carregados dinamicamente não aparecem na análise de imports do
         # Nuitka. Incluímos os pacotes do motor por inteiro, como fazia a
         # coleta do PyInstaller, e validamos os assets do VAD após a build.
@@ -149,6 +150,18 @@ if ($Packager -eq 'Nuitka') {
     if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
         throw "O Nuitka terminou sem gerar $exe"
     }
+    # nvidia.cudnn é um namespace package sem __init__.py. O Nuitka ignora o
+    # include-package e as DLLs carregadas tardiamente não entram na análise.
+    $cudnnRoot = & $python -c "import nvidia.cudnn; print(next(iter(nvidia.cudnn.__path__)))"
+    if ($LASTEXITCODE -ne 0 -or -not $cudnnRoot) {
+        throw 'Não foi possível localizar o cuDNN instalado no ambiente de build.'
+    }
+    $cudnnSource = Join-Path $cudnnRoot 'bin'
+    $cudnnDest = Join-Path $releaseBundle 'nvidia\cudnn\bin'
+    New-Item -ItemType Directory -Path $cudnnDest -Force | Out-Null
+    Get-ChildItem -LiteralPath $cudnnSource -Filter 'cudnn*.dll' -File | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $cudnnDest -Force
+    }
 } else {
     Invoke-Python @('-m', 'PyInstaller', 'baixador_ytdlp.spec', '--noconfirm')
     $exe = Join-Path $PSScriptRoot 'dist\baixador-ytdlp\baixador-ytdlp.exe'
@@ -178,7 +191,9 @@ $fasterWhisperAssets = & $python -c "from pathlib import Path; from faster_whisp
 if ($LASTEXITCODE -ne 0) {
     throw 'Não foi possível listar os assets do faster-whisper instalados para validar a build.'
 }
-$bundleAssets = Join-Path (Split-Path -Parent $exe) 'faster_whisper\assets'
+$bundleRoot = Split-Path -Parent $exe
+if ($Packager -eq 'PyInstaller') { $bundleRoot = Join-Path $bundleRoot '_internal' }
+$bundleAssets = Join-Path $bundleRoot 'faster_whisper\assets'
 $missingRuntimeFiles = @($fasterWhisperAssets | Where-Object {
     $_ -and -not (Test-Path -LiteralPath (Join-Path $bundleAssets $_) -PathType Leaf)
 })

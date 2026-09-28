@@ -3,7 +3,7 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
-## [1.12.0] - não publicada
+## [1.12.0] - 2026-09-28
 
 ### Novidades desta rodada
 
@@ -20,6 +20,8 @@ formato Keep a Changelog.
   do artefato e verificação de integridade dos arquivos extraídos.
 - `ffplay.exe` removido da instalação e de versões anteriores.
 - Validação de GPU separada da compilação; pode ser exigida com `-ValidateGpu`.
+- Build Windows com PyInstaller após corrigir a inclusão de metadados, CUDA e
+  o processo auxiliar do VAD; Nuitka segue disponível como rota alternativa.
 
 ### Corrigido
 

@@ -2,8 +2,9 @@
 
 Estado em 28/09/2026. A branch `main` tem commits locais à frente do GitHub.
 As rodadas 1 e 2 e os itens M2, U5, F5, F4, F3, U7, U8 e M1 da rodada 3 foram
-implementados localmente. A versão candidata é **1.12.0**; ainda faltam H2,
-validação de build/GPU, testes manuais e publicação.
+implementados localmente. A versão candidata é **1.12.0**. A build local Windows
+com GPU e instalador passou; faltam a publicação e a validação de uso nas três
+plataformas pelo GitHub Actions.
 
 Contexto completo: `docs/PLANO-DE-CORRECOES.md` (auditoria, status por item e
 tabela de uso de GPU) e `CLAUDE.md` (decisões e convenções do projeto).
@@ -77,14 +78,14 @@ Ordem sugerida (do mais simples/seguro ao maior):
       release do yt-dlp o nome do zip e se ele está no `SHA2-256SUMS`, depois
       adaptar `tools.ensure_ytdlp` (extrair em pasta, apontar para o .exe de
       dentro, integridade por arquivo). Risco médio: testar bem.
-- [ ] **H2** — Por último, em commit separado e só de quebras de linha:
+- [x] **H2** — Por último, em commit separado e só de quebras de linha:
       adicionar `.gitattributes` (`* text=auto eol=lf`, com exceções para
       `*.ps1 *.cmd *.bat *.iss text eol=crlf`) e rodar
       `git add --renormalize .`. Vários arquivos misturam CRLF e LF hoje.
 
 ## 4. Publicar a v1.12.0 (uma vez, depois de tudo acima)
 
-1. Atualizar a data em `## [1.12.0] - não publicada` no `CHANGELOG.md`.
+1. Atualizar a data no `CHANGELOG.md` (feito em 28/09/2026).
 2. **Assinatura Ed25519 (opcional, recomendada):**
    - `python scripts\release_signing.py generate` → a chave privada vai para
      `%APPDATA%\BaixadorYtdlp-release\release-signing.key` (fazer backup fora do
@@ -93,19 +94,20 @@ Ordem sugerida (do mais simples/seguro ao maior):
      commit.
    - A partir daí o app recusa atualização sem `.sig` válido. Perder a chave
      privada obriga todos a atualizar manualmente.
-3. `.\build.ps1` de novo (com a chave pública já no código).
-4. `python scripts\prepare_release.py` → gera `SHA256SUMS.txt`, assina, confere
-   e extrai as notas; mostra o comando `gh`. Depois
-   `python scripts\prepare_release.py --publish` publica a release `v1.12.0`.
-5. `git push` (se ainda houver commits locais).
+3. `.\build.ps1 -Installer -ValidateGpu` (feito localmente em 28/09/2026).
+4. `git push origin main` dispara o workflow, que valida Windows, macOS e Linux
+   e publica `v1.12.0` quando todos os jobs passam. A aprovação do ambiente
+   `release`, se exigida pelo GitHub, permanece com o mantenedor.
+5. Se o GitHub Actions ficar indisponível, `python scripts\prepare_release.py`
+   prepara uma release local Windows; publicar manualmente apenas com os links
+   das outras plataformas tratados de forma explícita.
 6. Na versão seguinte, atualizar pelo app e conferir: só aparece a janela de
-   progresso do instalador (`/SILENT`) e o app reabre sozinho. O `.iss` não foi
-   compilado no ambiente onde as mudanças foram feitas.
+  progresso do instalador (`/SILENT`) e o app reabre sozinho.
 
 ## Observações
 
-- O GitHub Actions está bloqueado na conta; o workflow `.github/workflows/build.yml`
-  foi mantido coerente (DLLs do cuDNN 9), mas a release sai do build local.
+- O GitHub Actions voltou a executar em 28/09/2026. O workflow usa PyInstaller
+  no Windows, após o autoteste do ONNX Runtime falhar na rota Nuitka.
 - Instalador ficará maior por causa do cuDNN 9. Depois de validar a GPU, dá
   para testar excluir `cudnn_adv64_9.dll` (282 MB, não usado pelo Whisper).
 - Os commits foram feitos com o autor "Nathan Ferraz", igual ao histórico.
