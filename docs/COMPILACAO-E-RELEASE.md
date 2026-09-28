@@ -1,7 +1,7 @@
 # Compilação e publicação de Releases
 
-> As releases Windows usam Nuitka. A comparação de desempenho e segurança, a
-> rota de contingência com PyInstaller e as pendências de validação estão em
+> A v1.12.0 usa PyInstaller após a rota Nuitka falhar no autoteste do ONNX
+> Runtime. A comparação de desempenho e segurança está em
 > [Avaliação do Nuitka](AVALIACAO-NUITKA.md).
 
 [Read this guide in English](BUILD-AND-RELEASE.en.md)
@@ -42,9 +42,10 @@ andamento, os links de download ainda podem retornar arquivo não encontrado.
 
 ## Release feita na máquina local
 
-Enquanto o GitHub Actions estiver indisponível, a release sai do `build.ps1`:
+Como contingência, a release pode sair do `build.ps1` quando o GitHub Actions
+estiver indisponível. Em 28/09/2026, o workflow voltou a executar:
 
-1. `.\build.ps1` — gera `dist\installer` e roda o autoteste (inclusive CUDA).
+1. `.\build.ps1 -Installer -ValidateGpu` — gera `dist\installer` e roda o autoteste com CUDA.
 2. `python scripts\prepare_release.py` — cria `SHA256SUMS.txt`, assina
    (`SHA256SUMS.txt.sig`), confere a assinatura com a chave embutida no app e
    extrai as notas da versão do `CHANGELOG.md`. Mostra o comando do `gh`.
@@ -64,7 +65,7 @@ Enquanto o GitHub Actions estiver indisponível, a release sai do `build.ps1`:
 ## Desenvolvimento local
 
 Os scripts `build.ps1` e `build.cmd` existem apenas como apoio ao desenvolvimento.
-No Windows, `build.ps1` usa Nuitka por padrão; passe `-Packager PyInstaller`
-para a rota de contingência. Para distribuição, use os artefatos produzidos
+No Windows, `build.ps1` usa PyInstaller por padrão; passe `-Packager Nuitka`
+para testar a rota alternativa. Para distribuição, use os artefatos produzidos
 pelo GitHub Actions.
 

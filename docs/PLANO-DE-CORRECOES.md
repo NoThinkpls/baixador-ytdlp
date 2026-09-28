@@ -21,7 +21,8 @@ nova · **H** manutenção.
 
 ### Validação pendente (só na máquina do Nathan, com NVIDIA)
 
-- [ ] `build.ps1 -ValidateGpu` passa, incluindo o autoteste com `cudnn_smoke`.
+- [x] `build.ps1 -Installer -ValidateGpu` passou com PyInstaller, incluindo
+      `cudnn_smoke` e o processo filho do VAD (28/09/2026).
 - [ ] Transcrição real: log com "Modelo pronto: CUDA" e processo no `nvidia-smi`.
 - [ ] Testar remover `cudnn_adv64_9.dll` (282 MB, não usado pelo Whisper) para
       reduzir o instalador. Só depois de o item acima passar.

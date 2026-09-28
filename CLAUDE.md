@@ -7,15 +7,16 @@ transcrição local com faster-whisper (CTranslate2) e ferramentas de vídeo.
 
 Siga `docs/PLANO-DE-CORRECOES.md`: auditoria completa da v1.10.10 com status de
 cada item. As rodadas 1 e 2 e a parte funcional da 3 estão feitas na versão
-candidata 1.12.0. H2 e as validações de release estão em `PENDENCIAS.md`.
+candidata 1.12.0. A validação e a publicação estão em `PENDENCIAS.md`.
 
 ## Decisões do mantenedor (não reabrir)
 
 - Base continua em Python; não migrar para outra linguagem.
 - Sem assinatura Authenticode (não quer gastar com o projeto). Ed25519 das
   releases é gratuita e está no plano (A8).
-- GitHub Actions está bloqueado na conta: a build é local (`build.ps1`, Nuitka)
-  e a release sai com `python scripts/prepare_release.py --publish`.
+- GitHub Actions voltou a executar em 28/09/2026: o workflow compila as três
+  plataformas e publica após passar. A build Windows local usa PyInstaller
+  nesta rodada após falha do autoteste Nuitka.
 - A verificação de dependências do legendador continua bloqueante antes de
   liberar a interface; só cache é aceito.
 - Sugestões de funcionalidade são bem-vindas em revisões, sempre com a UI

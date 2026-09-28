@@ -1,7 +1,7 @@
 # Build and release
 
-> Windows releases use Nuitka. The performance and security comparison, the
-> PyInstaller fallback, and outstanding validation are documented in the
+> v1.12.0 uses PyInstaller after the Nuitka route failed its ONNX Runtime
+> self-test. The performance and security comparison is documented in the
 > Portuguese [Nuitka assessment](AVALIACAO-NUITKA.md).
 
 [Leia em português](COMPILACAO-E-RELEASE.md)
@@ -35,6 +35,6 @@ Do not create the tag or release manually in the normal workflow. The automation
 ## Local development
 
 `build.ps1` and `build.cmd` are development helpers only. On Windows,
-`build.ps1` defaults to Nuitka; use `-Packager PyInstaller` for the fallback
+`build.ps1` defaults to PyInstaller; use `-Packager Nuitka` for the alternative
 route. Use the artifacts produced by GitHub Actions for distribution.
 
