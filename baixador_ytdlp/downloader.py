@@ -53,6 +53,7 @@ class DownloadOptions:
     embed_transcription: bool = False # incorpora a legenda como faixa, sem reencodar
     playlist_items: str = ""         # ex.: "1-3,7" — vazio = playlist inteira
     repeat_index: int = 0          # sufixo (2), (3)… em repetição confirmada
+    media_duration: float = 0.0    # segundos, da análise; dá % a trecho sem fim definido
 
 
 @dataclass
@@ -78,8 +79,11 @@ _RETRYABLE_FAILURES = (
     "network is unreachable", "name or service not known", "getaddrinfo",
     "urlopen error", "http error 408", "http error 429", "http error 500",
     "http error 502", "http error 503", "http error 504", "incomplete read",
-    "unexpected eof", "tls", "ssl", "remote end closed",
+    "unexpected eof", "remote end closed",
 )
+# SSL/TLS só como palavra: soltos, "tls" e "ssl" casavam com qualquer texto que
+# os contivesse e faziam erros definitivos entrarem no ciclo de repetição.
+_RETRYABLE_WORDS = re.compile(r"\b(?:ssl|tls)\b|ssleoferror|sslerror")
 
 
 def is_retryable_error(message: str) -> bool:
@@ -90,7 +94,8 @@ def is_retryable_error(message: str) -> bool:
     transmite a impressão errada de que o aplicativo está "travado".
     """
     text = (message or "").casefold()
-    return any(marker in text for marker in _RETRYABLE_FAILURES)
+    return (any(marker in text for marker in _RETRYABLE_FAILURES)
+            or _RETRYABLE_WORDS.search(text) is not None)
 
 
 def _output_template(opts: DownloadOptions, cfg: Settings) -> str:
@@ -230,9 +235,12 @@ def _time_seconds(value: str) -> float:
 
 def _section_duration(opts: DownloadOptions) -> float:
     start = _time_seconds(opts.section_start) if opts.section_start.strip() else 0.0
-    if not opts.section_end.strip():
+    if opts.section_end.strip():
+        end = _time_seconds(opts.section_end)
+    elif opts.media_duration > 0:
+        end = opts.media_duration  # "até o fim": usa a duração vinda da análise
+    else:
         return 0.0
-    end = _time_seconds(opts.section_end)
     return max(0.0, end - start)
 
 
@@ -259,6 +267,10 @@ class DownloadRunner:
         self._cancelled = threading.Event()
         self._last_progress_emit = 0.0
         self._last_progress_state: tuple[str, str] | None = None
+        # Vídeo e áudio separados (bv*+ba) passam duas vezes pelo FFmpeg no
+        # recorte; sem isto a barra voltava a 0% no meio do trabalho.
+        self._section_pass = 0
+        self._section_elapsed = 0.0
 
     def cancel(self) -> None:
         self._cancelled.set()
@@ -357,11 +369,26 @@ class DownloadRunner:
         prog.status = "processing"
         prog.stage = prog.stage or "Processando o trecho com FFmpeg…"
         duration = _section_duration(self.opts)
-        if key == "out_time_us" and duration:
+        if key == "out_time_us":
             elapsed = _to_float(value) / 1_000_000
-            prog.percent = min(99.0, max(0.0, elapsed * 100 / duration))
-        elif key == "out_time" and duration:
-            prog.percent = min(99.0, max(0.0, _time_seconds(value) * 100 / duration))
+        elif key == "out_time":
+            elapsed = _time_seconds(value)
+        else:
+            return True
+        if not duration or elapsed < 0:
+            return True
+        if elapsed + 1.0 < self._section_elapsed:
+            self._section_pass += 1  # nova execução do FFmpeg (a faixa de áudio)
+        self._section_elapsed = elapsed
+        fraction = min(1.0, elapsed / duration)
+        split = "+" in self.opts.selector and not self.opts.audio_only
+        if not split:
+            percent = fraction * 100
+        elif self._section_pass == 0:
+            percent = fraction * 85  # o vídeo é quase todo o trabalho
+        else:
+            percent = 85 + fraction * 14
+        prog.percent = min(99.0, max(prog.percent if self._section_pass else 0.0, percent))
         return True
 
     def _emit_progress(
