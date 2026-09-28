@@ -430,6 +430,10 @@ class TranscriptionPage(QWidget):
             return
         self._run(opts, embed)
 
+    def has_active_work(self) -> bool:
+        """Há transcrição ou incorporação rodando, ou itens esperando na fila."""
+        return self._busy() or bool(self._pending)
+
     def _busy(self) -> bool:
         return bool((self.worker and self.worker.is_busy())
                     or (self.mux_worker and self.mux_worker.isRunning()))

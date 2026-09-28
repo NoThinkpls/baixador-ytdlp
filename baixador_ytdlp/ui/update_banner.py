@@ -72,6 +72,16 @@ class UpdateBanner(QFrame):
             self.details.setText("Baixando e verificando a atualização…")
         self.update_button.setText("Baixando…")
 
+    def show_ready_on_exit(self) -> None:
+        self.details.setText(
+            "Baixada e verificada. Será instalada quando você fechar o aplicativo."
+        )
+        self.update_button.setText("Instalar agora")
+        self.update_button.setEnabled(True)
+        self.dismiss_button.setText("Ocultar")
+        self.dismiss_button.setEnabled(True)
+        self.show()
+
     def show_error(self, message: str) -> None:
         self.details.setText(message)
         self.update_button.setEnabled(True)
