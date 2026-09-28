@@ -3,6 +3,52 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.10.11] - não publicada
+
+### Corrigido
+
+- A transcrição volta a usar a GPU NVIDIA. O CTranslate2 4.8.2 exige cuDNN 9, mas
+  o instalador embutia cuDNN 8 e a transcrição caía para CPU. Agora o cuDNN é o
+  9.10.2.21, a mesma versão que acompanha o CTranslate2, e cuBLAS/cudart 12.8
+  cobrem também as RTX 50.
+- A interface não mostra mais "CUDA" quando o conjunto embutido é incompatível; o
+  autoteste da build carrega o cuDNN de verdade e falha se ele não casar.
+- Baixar usa sempre o link analisado. Editar ou colar outro link descarta a
+  análise anterior em vez de baixar o novo endereço com o formato do antigo.
+- Atualizar o aplicativo pergunta antes quando há tarefas ativas: instalar ao
+  fechar ou agora, pausando os downloads. A instalação fecha pelo caminho normal,
+  salvando fila e ajustes, e não fica mais presa na bandeja.
+- Fechar o aplicativo também avisa sobre transcrições e ferramentas em andamento.
+- A duração máxima dos blocos de legenda passa a valer no modo por palavra.
+- A limpeza de texto das legendas preserva %, $, /, &, @, #, + e aspas
+  tipográficas ("24/7" não vira mais "247").
+- Mensagens de erro corretas para restrição de idade, bloqueio regional e
+  servidor instável, que antes apareciam como pedido de robô ou vídeo removido.
+
+### Alterado
+
+- Instaladores baixados em sessões anteriores são apagados automaticamente.
+
+## [1.10.10] - 2026-09-28
+
+### Corrigido
+
+- Baixar só um trecho usa o FFmpeg do yt-dlp sem forçar CUDA/NVENC, AMF ou
+  VideoToolbox. O progresso do recorte continua aparecendo na fila.
+
+## [1.10.9] - 2026-09-27
+
+### Adicionado
+
+- Ferramentas de vídeo (recortar, reduzir tamanho, caber em um limite, versão
+  vertical e legenda gravada) usam NVENC, AMF ou VideoToolbox quando disponíveis,
+  com nova tentativa automática na CPU.
+
+### Alterado
+
+- Um link já baixado pode ser baixado de novo após confirmação; a cópia recebe
+  um número no nome. O arquivo de histórico de IDs do yt-dlp deixou de ser usado.
+
 ## [1.10.8] - 2026-09-27
 
 ### Corrigido

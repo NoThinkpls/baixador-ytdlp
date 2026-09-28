@@ -5,7 +5,7 @@
 #define AppName "baixador-ytdlp"
 ; A versão pode vir da linha de comando: ISCC /DAppVersion=1.2.3 installer.iss
 #ifndef AppVersion
-#define AppVersion "1.10.10"
+#define AppVersion "1.10.11"
 #endif
 #define AppExe "baixador-ytdlp.exe"
 
