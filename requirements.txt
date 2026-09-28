@@ -5,10 +5,12 @@ ctranslate2==4.8.2
 huggingface-hub==0.29.3
 certifi==2025.8.3
 send2trash==1.8.3
-# Runtime CUDA incluído no instalador. O CTranslate2 para CUDA 12 requer
-# cuBLAS e, em modelos de fala, cuDNN 8. As versões são fixadas para impedir
-# que uma atualização automática do pip traga cuDNN 9 incompatível.
-nvidia-cuda-runtime-cu12==12.4.127
-nvidia-cublas-cu12==12.4.5.8
-nvidia-cudnn-cu12==8.9.7.29
-
+# Runtime CUDA incluído no instalador. Desde a 4.5 o CTranslate2 usa cuDNN 9
+# (não aceita cuDNN 8). O wheel do CTranslate2 4.8.2 para Windows já traz o
+# cudnn64_9.dll 9.10.2.21; as sub-bibliotecas (ops, cnn, graph, engines) vêm do
+# pacote NVIDIA abaixo e precisam ser EXATAMENTE da mesma versão.
+# cuBLAS/cudart 12.8 cobrem também as RTX 50 (Blackwell). Sobem sempre juntos:
+# tests/test_cuda_stack.py falha se as versões ficarem incompatíveis.
+nvidia-cuda-runtime-cu12==12.8.90
+nvidia-cublas-cu12==12.8.4.1
+nvidia-cudnn-cu12==9.10.2.21

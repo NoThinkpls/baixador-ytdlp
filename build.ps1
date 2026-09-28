@@ -82,10 +82,10 @@ function Invoke-Python {
 Write-Host '> Instalando dependências' -ForegroundColor Cyan
 Invoke-Python @('-m', 'pip', 'install', '--upgrade', 'pip')
 # Locks com hashes (gerados por scripts/update_locks.sh): a build local recebe
-# exatamente os mesmos pacotes do CI, inclusive o CTranslate2 compatível com cuDNN 8.
+# exatamente os mesmos pacotes do CI, inclusive CTranslate2 e cuDNN 9 casados.
 Invoke-Python @('-m', 'pip', 'install', '--require-hashes', '-r', 'requirements-windows.lock', '-r', 'requirements-build-windows.lock')
 # Sem PyTorch: o Whisper roda sobre CTranslate2. As DLLs CUDA compatíveis
-# (runtime, cuBLAS e cuDNN 8) entram no instalador e não são baixadas pelo app.
+# (runtime, cuBLAS e cuDNN 9) entram no instalador e não são baixadas pelo app.
 
 $versionLine = Select-String -Path 'baixador_ytdlp\config.py' -Pattern '^APP_VERSION\s*=\s*"([^"]+)"' | Select-Object -First 1
 if (-not $versionLine -or $versionLine.Line -notmatch '"([^"]+)"') {
@@ -160,7 +160,10 @@ if ($Packager -eq 'Nuitka') {
 # do pacote. Isso evita publicar uma build que só descobre a falta na inferência.
 $requiredCudaDlls = @(
     'cudart64_12.dll', 'cublas64_12.dll', 'cublasLt64_12.dll',
-    'cudnn64_8.dll', 'cudnn_ops_infer64_8.dll', 'cudnn_cnn_infer64_8.dll'
+    # cuDNN 9 (exigido pelo CTranslate2 >= 4.5): principal + sub-bibliotecas
+    # usadas pela convolução do Whisper.
+    'cudnn64_9.dll', 'cudnn_graph64_9.dll', 'cudnn_ops64_9.dll', 'cudnn_cnn64_9.dll',
+    'cudnn_engines_precompiled64_9.dll', 'cudnn_heuristic64_9.dll'
 )
 $missingCudaDlls = foreach ($dll in $requiredCudaDlls) {
     if (-not (Get-ChildItem -Path (Split-Path -Parent $exe) -Filter $dll -File -Recurse -ErrorAction SilentlyContinue)) {
