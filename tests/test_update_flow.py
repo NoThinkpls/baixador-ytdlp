@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,7 +22,8 @@ if HAS_QT:
     from baixador_ytdlp.ui.main_window import MainWindow
 
 
-@unittest.skipUnless(HAS_QT, "requer PySide6 e PySideSix-Frameless-Window")
+@unittest.skipUnless(HAS_QT and sys.platform == "win32",
+                     "fluxo do instalador .exe requer Windows e Qt")
 class UpdateFlowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
