@@ -185,6 +185,27 @@ class AppUpdateTests(unittest.TestCase):
         self.assertEqual(release.installer_name, "BaixadorYtdlp-1.4.4-setup.exe")
         self.assertEqual(release.sha256, "a" * 64)
 
+    def test_release_traz_tamanho_e_notas(self) -> None:
+        payload = {
+            "tag_name": "v1.4.4",
+            "html_url": "https://example.invalid/release",
+            "body": "### Corrigido\n- GPU volta a transcrever",
+            "assets": [
+                {"name": "BaixadorYtdlp-1.4.4-setup.exe", "size": 734_003_200,
+                 "browser_download_url": "https://example.invalid/setup.exe"},
+                {"name": "SHA256SUMS.txt",
+                 "browser_download_url": "https://example.invalid/SHA256SUMS.txt"},
+            ],
+        }
+        checksum = "a" * 64 + "  BaixadorYtdlp-1.4.4-setup.exe\n"
+        with patch("baixador_ytdlp.updater.IS_WINDOWS", True), \
+                patch.object(AppUpdater, "_request_json", return_value=payload), \
+                patch.object(AppUpdater, "_request_text", return_value=checksum):
+            release = AppUpdater().find_update("1.4.3")
+        assert release is not None
+        self.assertEqual(release.size, 734_003_200)
+        self.assertIn("GPU volta", release.notes)
+
     def test_accepts_stable_installer_alias_for_older_release(self) -> None:
         payload = {
             "tag_name": "v1.4.4",

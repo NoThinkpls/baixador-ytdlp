@@ -409,9 +409,15 @@ class MainWindow(AppShell):
         self.sidebar_collapsed_changed.connect(self._save_sidebar_state)
         self.update_banner.update_requested.connect(self._download_app_update)
         self.update_banner.dismissed.connect(self._dismiss_app_update)
+        self.update_banner.skipped.connect(self._skip_app_update)
+        self.update_banner.notes_requested.connect(self._show_release_notes)
         # A tela aparece imediatamente; a consulta de rede começa depois, em thread própria.
         QTimer.singleShot(700, self._check_app_update)
         QTimer.singleShot(5000, self._cleanup_old_installers)
+        self._update_timer = QTimer(self)
+        self._update_timer.setInterval(3 * 60 * 60 * 1000)
+        self._update_timer.timeout.connect(self._periodic_update_check)
+        self._update_timer.start()
 
     def _save_sidebar_state(self, collapsed: bool) -> None:
         self.cfg.sidebar_collapsed = bool(collapsed)
@@ -493,14 +499,31 @@ class MainWindow(AppShell):
                         parent=self, duration=7000)
 
     def _dismiss_app_update(self) -> None:
-        if self._downloaded_installer is not None:
-            # Já está agendada para o fechamento: só esconde o aviso.
-            self.update_banner.hide()
-            return
+        """Lembrar depois: esconde nesta sessão; a próxima abertura avisa de novo."""
+        self.update_banner.hide()
+
+    def _skip_app_update(self) -> None:
         if self._available_update:
             self.cfg.update_dismissed_version = self._available_update.version
             self.cfg.save()
         self.update_banner.hide()
+
+    def _show_release_notes(self) -> None:
+        release = self._available_update or self.update_banner.release
+        if not release:
+            return
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(f"Novidades da {release.tag}")
+        dialog.setTextFormat(Qt.TextFormat.MarkdownText)
+        dialog.setText(release.notes or "Esta versão não publicou notas.")
+        dialog.setInformativeText(f"Página da versão: {release.page_url}")
+        dialog.exec()
+
+    def _periodic_update_check(self) -> None:
+        # O app pode ficar dias aberto na bandeja; o intervalo configurado é
+        # respeitado pelo próprio worker.
+        if not self.update_banner.isVisible() and self._downloaded_installer is None:
+            self._check_app_update()
 
     def _active_work(self) -> list[str]:
         """Descrição curta do que seria interrompido se o app fechasse agora."""

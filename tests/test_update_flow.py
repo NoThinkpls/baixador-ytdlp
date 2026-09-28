@@ -106,6 +106,17 @@ class UpdateFlowTests(unittest.TestCase):
                 self.window._shortcut_cancel()
             cancel.assert_called_once()
 
+    def test_lembrar_depois_nao_pula_a_versao(self) -> None:
+        release = MagicMock(version="9.9.9", tag="v9.9.9", size=0, notes="")
+        self.window._available_update = release
+        self.window.update_banner.show_release(release)
+        self.window._dismiss_app_update()
+        self.assertEqual(self.window.cfg.update_dismissed_version, "")
+        self.assertFalse(self.window.update_banner.isVisible())
+        self.window.update_banner.show_release(release)
+        self.window._skip_app_update()
+        self.assertEqual(self.window.cfg.update_dismissed_version, "9.9.9")
+
 
 if __name__ == "__main__":
     unittest.main()
