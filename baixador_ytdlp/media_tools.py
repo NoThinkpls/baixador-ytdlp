@@ -28,6 +28,18 @@ class MediaToolOptions:
     subtitle_language: str = ""   # ISO 639-1 do Whisper (pt, en…); vazio = indefinido
     target_mb: int = 25           # "target_size": limite do arquivo final em MB
     shorts_blur: bool = True      # "shorts": fundo desfocado em vez de barras pretas
+    fast_trim: bool = False       # "trim": cópia direta, sem reencodar (corta no quadro-chave)
+
+
+# Operações que podem usar encoder de GPU. "Caber em um limite" fica na CPU: o
+# x264 entrega mais qualidade por byte, que é o objetivo dessa ferramenta, e
+# respeita melhor o teto de bitrate numa passada só.
+GPU_VIDEO_OPERATIONS = frozenset({"trim", "compress", "shorts", "burn"})
+
+
+def uses_gpu(options: MediaToolOptions) -> bool:
+    return options.operation in GPU_VIDEO_OPERATIONS and not (
+        options.operation == "trim" and options.fast_trim)
 
 
 ISO_639_2 = {"pt": "por", "en": "eng", "es": "spa", "fr": "fra", "de": "deu",
@@ -171,11 +183,17 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain, *, video_enco
         if options.end:
             length = time_seconds(options.end) - time_seconds(options.start)
             command += ["-t", f"{length:.6f}"]
-        command += [
-            "-map", "0:v:0?", "-map", "0:a?", "-map_chapters", "-1",
-            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-            "-c:a", "aac", "-b:a", "192k",
-        ]
+        if options.fast_trim:
+            # Corte rápido: nada é reencodado, então é instantâneo e sem perda,
+            # mas o início cai no quadro-chave anterior ao ponto escolhido.
+            command += ["-map", "0", "-map_chapters", "-1", "-c", "copy",
+                        "-avoid_negative_ts", "make_zero"]
+        else:
+            command += [
+                "-map", "0:v:0?", "-map", "0:a?", "-map_chapters", "-1",
+                "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+                "-c:a", "aac", "-b:a", "192k",
+            ]
     elif options.operation == "audio":
         command += ["-vn", "-c:a", "libmp3lame", "-q:a", "2"]
     elif options.operation == "remux":
@@ -235,7 +253,7 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain, *, video_enco
     else:
         raise MediaToolError("Ferramenta de mídia desconhecida.")
 
-    if video_encoder and options.operation in {"trim", "compress", "shorts", "burn", "target_size"}:
+    if video_encoder and uses_gpu(options) and "-c:v" in command:
         # Filtros permanecem na CPU; o encoder de hardware recebe os quadros
         # prontos. Isso funciona também com subtitles/libass e fundos desfocados.
         index = command.index("-c:v")

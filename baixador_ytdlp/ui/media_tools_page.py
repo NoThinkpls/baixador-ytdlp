@@ -235,6 +235,13 @@ class MediaToolsPage(QWidget):
             "Início e fim", "Use mm:ss ou hh:mm:ss. O vídeo será recodificado para "
             "começar e terminar nos pontos escolhidos.", times, group)
         group.add_row(self.trim_row)
+        self.fast_trim_switch = Switch(group)
+        self.fast_trim_row = SettingRow(
+            "Corte rápido, sem reencodar",
+            "Instantâneo e sem perda de qualidade, mas começa no quadro-chave mais "
+            "próximo: podem sobrar alguns segundos antes do início escolhido.",
+            self.fast_trim_switch, group)
+        group.add_row(self.fast_trim_row)
 
         self.subtitle_edit = TextField("Arquivo .srt, .vtt ou .ass", group)
         subtitle_button = Button("Escolher legenda", "document", "secondary", group)
@@ -347,6 +354,7 @@ class MediaToolsPage(QWidget):
         self.options_title.setText(data["title"])
         self.options_summary.setText(data["summary"])
         self.trim_row.setVisible(operation == "trim")
+        self.fast_trim_row.setVisible(operation == "trim")
         self.subtitle_row.setVisible(operation == "burn")
         self.target_row.setVisible(operation == "target_size")
         self.blur_row.setVisible(operation == "shorts")
@@ -400,6 +408,7 @@ class MediaToolsPage(QWidget):
             subtitles=Path(self.subtitle_edit.text().strip()) if self.subtitle_edit.text().strip() else None,
             target_mb=int(self.target_combo.currentData() or 25),
             shorts_blur=self.blur_switch.isChecked(),
+            fast_trim=self.fast_trim_switch.isChecked(),
         )
         worker = MediaToolWorker(options, self.toolchain, self)
         self.worker = worker
