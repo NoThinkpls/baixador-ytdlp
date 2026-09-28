@@ -33,6 +33,7 @@ MEDIA_FILTER = ("Mídias (*.mp4 *.mkv *.mov *.avi *.webm *.m4v *.flv *.wmv *.mpe
 
 
 class TranscriptionPage(QWidget):
+    IDLE_RELEASE_MS = 10 * 60 * 1000
     # saída (a legenda) e origem (a mídia) — alimentam o histórico
     transcription_finished = Signal(str, str)
     # -1 informa que não há nenhuma transcrição ativa.
@@ -45,6 +46,7 @@ class TranscriptionPage(QWidget):
         self.cfg = cfg
         self.toolchain = None
         self.worker: PersistentTranscriptionWorker | None = None
+        self._released_workers: set[PersistentTranscriptionWorker] = set()
         self.mux_worker: MediaToolWorker | None = None
         # Cada item guarda as próprias opções no momento em que entra na fila.
         # Antes a fila relia o formulário ao começar e, na conclusão, pegava a
@@ -310,6 +312,19 @@ class TranscriptionPage(QWidget):
         self.cancel_btn.setMinimumHeight(42)
         self.open_btn = Button("Abrir pasta", "folder", "ghost", bar)
         self.open_btn.setMinimumHeight(42)
+        self.release_btn = Button("Liberar memória", "sweep", "ghost", bar)
+        self.release_btn.setMinimumHeight(42)
+        self.release_btn.setToolTip(
+            "Descarrega o modelo Whisper da GPU/RAM agora. O próximo item carrega de novo.")
+        self.release_btn.clicked.connect(self.release_engine)
+        self.release_btn.hide()
+        # O modelo fica carregado entre itens para não recarregar a cada arquivo,
+        # mas ocupava a VRAM para sempre (jogos e outros apps sentiam). Depois de
+        # um tempo ocioso ele é descarregado sozinho.
+        self._idle_timer = QTimer(self)
+        self._idle_timer.setSingleShot(True)
+        self._idle_timer.setInterval(self.IDLE_RELEASE_MS)
+        self._idle_timer.timeout.connect(self.release_engine)
 
         self.start_btn.clicked.connect(self.start)
         self.pause_btn.clicked.connect(self.toggle_pause)
@@ -324,6 +339,7 @@ class TranscriptionPage(QWidget):
         row.addWidget(self.pause_btn)
         row.addWidget(self.cancel_btn)
         row.addStretch(1)
+        row.addWidget(self.release_btn)
         row.addWidget(self.open_btn)
         column.addLayout(row)
         return bar
@@ -503,6 +519,8 @@ class TranscriptionPage(QWidget):
         self.cancel_btn.setEnabled(True)
         self.pause_btn.show()
         self.cancel_btn.show()
+        self._idle_timer.stop()
+        self.release_btn.hide()
         if self.worker is None:
             worker = PersistentTranscriptionWorker(self.toolchain, self)
             self.worker = worker
@@ -635,6 +653,22 @@ class TranscriptionPage(QWidget):
         opts, embed = self._pending.popleft()
         self._run(opts, embed)
 
+    def release_engine(self) -> None:
+        """Encerra o processo do Whisper ocioso, devolvendo VRAM e RAM."""
+        worker = self.worker
+        if (worker is None or worker.is_busy() or self._pending
+                or (self.mux_worker and self.mux_worker.isRunning())):
+            return
+        self._idle_timer.stop()
+        self.worker = None
+        self.release_btn.hide()
+        self._released_workers.add(worker)
+        worker.shutdown()
+        worker.finished.connect(worker.close_queues)
+        worker.finished.connect(lambda w=worker: self._released_workers.discard(w))
+        worker.finished.connect(worker.deleteLater)
+        self._status("Modelo descarregado da memória; o próximo item carrega de novo.")
+
     def _finish_controls(self) -> None:
         self.start_btn.setEnabled(True)
         self.start_btn.setText("Iniciar transcrição")
@@ -645,9 +679,17 @@ class TranscriptionPage(QWidget):
         self.cancel_btn.hide()
         self._paused = False
         self.taskbar_progress.emit(-1.0)
+        if self.worker is not None:
+            self._idle_timer.start()
+            self.release_btn.show()
 
     def shutdown(self) -> None:
         """Finaliza o worker antes de o Qt destruir a janela principal."""
+        self._idle_timer.stop()
+        for released in list(self._released_workers):
+            if released.isRunning() and not released.wait(5000):
+                released.force_stop()
+                released.wait(2000)
         worker = self.worker
         if worker is not None and worker.isRunning():
             self._status("Encerrando transcrição antes de fechar o aplicativo…")
