@@ -84,6 +84,8 @@ class MediaInfo:
     audio_languages: list[str] = field(default_factory=list)
     subtitles: list[str] = field(default_factory=list)
     auto_subtitles: list[str] = field(default_factory=list)
+    # Itens já listados na contagem da playlist; o seletor usa sem nova chamada.
+    entries: list = field(default_factory=list)
 
     @property
     def best_label(self) -> str:
@@ -98,7 +100,9 @@ class MediaInfo:
 
 
 class ProbeError(RuntimeError):
-    pass
+    def __init__(self, message: str, raw: str = ""):
+        super().__init__(message)
+        self.raw = raw  # stderr original, para decidir uma nova tentativa
 
 
 @dataclass
@@ -175,7 +179,7 @@ def _run_json(args: list[str], timeout: int, env: dict | None = None) -> dict:
                   (proc.stderr or "sem saída de erro")[-8000:])
         msg = (proc.stderr or "").strip().splitlines()
         detail = msg[-1] if msg else "erro desconhecido"
-        raise ProbeError(friendly_error(detail))
+        raise ProbeError(friendly_error(detail), proc.stderr or "")
 
     try:
         return json.loads(proc.stdout)
@@ -191,57 +195,38 @@ def _cookie_args(cookies_browser: str, cookies_file: str) -> list[str]:
     return []
 
 
-def _resolve_cookies(common: list[str], cookies: list[str], url: str,
-                     timeout: int, env: dict | None = None) -> tuple[list[str], str]:
-    """Confere se a fonte de cookies funciona antes de usá-la na análise real.
+_COOKIE_FALLBACK_NOTE = (
+    "\n\nOs cookies do navegador escolhido não puderam ser lidos (o Chrome e o Edge "
+    "no Windows não liberam mais os cookies para outros programas). A análise seguiu "
+    "sem cookies. Use o Firefox ou um arquivo cookies.txt em Configurações.")
 
-    O Chrome e o Edge no Windows não entregam mais os cookies para processos
-    externos (App-Bound Encryption). Sem esta checagem, a análise inteira morria
-    com "Failed to decrypt with DPAPI" — um erro sobre o navegador, exibido como
-    se fosse um erro do vídeo. Agora a falha de leitura degrada para "sem
-    cookies" e o motivo vai junto da mensagem final.
-    """
-    if not cookies:
-        return common, ""
-    probe_args = common + cookies + ["--simulate", "--skip-download",
-                                     "--playlist-items", "1", "--quiet", "--", url]
-    proc = _popen(probe_args, env)
-    with _RUNNING_LOCK:
-        _RUNNING.add(proc)
-    try:
-        try:
-            _, stderr = proc.communicate(timeout=min(timeout, 45))
-        except subprocess.TimeoutExpired:
-            _kill_tree(proc)
-            _drain(proc)
-            return common + cookies, ""
-    finally:
-        with _RUNNING_LOCK:
-            _RUNNING.discard(proc)
 
-    stderr_text = decode_external_output(stderr)
-    if proc.returncode == 0 or not is_cookie_source_failure(stderr_text):
-        return common + cookies, ""
-
-    log_event("Fonte de cookies indisponível, seguindo sem cookies: %s",
-              stderr_text.strip()[-400:])
-    return common, ("\n\nOs cookies do navegador escolhido não puderam ser lidos "
-                    "(o Chrome e o Edge no Windows não liberam mais os cookies para "
-                    "outros programas). A análise seguiu sem cookies. Use o Firefox "
-                    "ou um arquivo cookies.txt em Configurações.")
+def _flat_entries(data: dict) -> list["PlaylistEntry"]:
+    result: list[PlaylistEntry] = []
+    for position, entry in enumerate(data.get("entries") or [], start=1):
+        if not isinstance(entry, dict):
+            continue
+        result.append(PlaylistEntry(
+            index=position,
+            title=str(entry.get("title") or entry.get("id") or f"Item {position}"),
+            duration=human_duration(entry.get("duration")),
+            entry_id=str(entry.get("id") or ""),
+        ))
+    return result
 
 
 def _playlist_count(ytdlp: Path, base: list[str], url: str, timeout: int,
-                    env: dict | None = None) -> int:
-    """Conta os itens com --flat-playlist: uma requisição, sem extrair formato de cada vídeo."""
+                    env: dict | None = None) -> tuple[int, list["PlaylistEntry"]]:
+    """Conta e lista os itens com --flat-playlist numa única requisição."""
     try:
         data = _run_json(base + ["-J", "--flat-playlist", "--", url], timeout, env)
     except ProbeError:
-        return 0
+        return 0, []
+    entries = _flat_entries(data)
     for key in ("playlist_count", "n_entries"):
         if isinstance(data.get(key), int):
-            return data[key]
-    return len([e for e in (data.get("entries") or []) if e])
+            return data[key], entries
+    return len(entries), entries
 
 
 @dataclass
@@ -286,17 +271,7 @@ def playlist_entries(url: str, ytdlp: Path, cookies_browser: str = "", cookies_f
         args += ["--extractor-args", extractor_args]
     args += _cookie_args(cookies_browser, cookies_file)
     data = _run_json(args + ["-J", "--flat-playlist", "--", url], timeout, env)
-    result: list[PlaylistEntry] = []
-    for position, entry in enumerate(data.get("entries") or [], start=1):
-        if not isinstance(entry, dict):
-            continue
-        result.append(PlaylistEntry(
-            index=position,
-            title=str(entry.get("title") or entry.get("id") or f"Item {position}"),
-            duration=human_duration(entry.get("duration")),
-            entry_id=str(entry.get("id") or ""),
-        ))
-    return result
+    return _flat_entries(data)
 
 
 def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = "",
@@ -314,18 +289,30 @@ def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = 
         common += ["--extractor-args", extractor_args]
 
     cookies = _cookie_args(cookies_browser, cookies_file)
-    base, note = _resolve_cookies(common, cookies, url, timeout, env)
+    base, note = common + cookies, ""
 
     # --playlist-items 1: a análise extrai os formatos de UM vídeo, não dos N da
     # playlist. Sem isso, uma playlist de 200 itens levava minutos e centenas de
     # requisições só para montar a tabela de qualidades do primeiro vídeo.
+    request = ["-J", "--playlist-items", "1", "--", url]
     try:
-        data = _run_json(base + ["-J", "--playlist-items", "1", "--", url], timeout, env)
+        data = _run_json(base + request, timeout, env)
     except ProbeError as exc:
-        raise ProbeError(f"{exc}{note}") from exc
+        # Antes havia um --simulate extra só para testar os cookies, dobrando o
+        # tempo de toda análise. Agora a análise vai direto e só repete sem
+        # cookies quando a falha foi ler o navegador (App-Bound Encryption).
+        if not cookies or not is_cookie_source_failure(exc.raw):
+            raise
+        log_event("Fonte de cookies indisponível, seguindo sem cookies: %s", exc.raw.strip()[-400:])
+        base, note = common, _COOKIE_FALLBACK_NOTE
+        try:
+            data = _run_json(base + request, timeout, env)
+        except ProbeError as retry:
+            raise ProbeError(f"{retry}{note}", retry.raw) from retry
 
     is_playlist = data.get("_type") == "playlist"
     count = 0
+    flat: list[PlaylistEntry] = []
     entry = data
     if is_playlist:
         entries = [e for e in (data.get("entries") or []) if e]
@@ -335,7 +322,8 @@ def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = 
         count = next((data[k] for k in ("playlist_count", "n_entries")
                       if isinstance(data.get(k), int) and data[k] > 1), 0)
         if count <= 1:
-            count = _playlist_count(ytdlp, base, url, timeout, env) or len(entries)
+            count, flat = _playlist_count(ytdlp, base, url, timeout, env)
+            count = count or len(entries)
 
     return MediaInfo(
         title=entry.get("title") or data.get("title") or "Sem título",
@@ -350,6 +338,7 @@ def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = 
         audio_languages=_audio_languages(entry),
         subtitles=_caption_languages(entry.get("subtitles")),
         auto_subtitles=_caption_languages(entry.get("automatic_captions")),
+        entries=flat,
     )
 
 
