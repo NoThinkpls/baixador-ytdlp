@@ -233,8 +233,12 @@ class AppUpdater:
         if sys.platform.startswith("win"):
             kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
-            # Não usa /SILENT: a pessoa vê e controla a atualização do próprio app.
-            subprocess.Popen([str(installer), "/CLOSEAPPLICATIONS"], **kwargs)
+            # /SILENT pula as páginas do assistente (a pessoa já confirmou no app),
+            # mas mantém a janela de progresso visível. Não é /VERYSILENT: a
+            # instalação continua à vista e pode mostrar erros. O próprio
+            # instalador reabre o app ao terminar (entrada [Run] com WizardSilent).
+            subprocess.Popen([str(installer), "/SILENT", "/SP-", "/CLOSEAPPLICATIONS",
+                              "/NORESTART"], **kwargs)
         except OSError as exc:
             raise UpdateError("Não foi possível abrir o instalador da atualização.") from exc
 
