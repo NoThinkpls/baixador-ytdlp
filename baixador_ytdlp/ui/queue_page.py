@@ -17,6 +17,7 @@ from ..probe import human_size
 from ..queue_state import QueueState
 from ..workers import DownloadWorker
 from . import icons, theme
+from .i18n import tr
 from .components import (Button, Chip, EmptyState, Headline, IconButton, ListRow, LogView,
                          Muted, PageHeader, ProgressBar, ScrollColumn, Toast)
 
@@ -56,6 +57,8 @@ def apply_badge(badge: QLabel, icon_name: str, tone: str) -> None:
 
 class JobCard(ListRow):
     cancel_requested = Signal(int)
+    pause_requested = Signal(int)
+    resume_requested = Signal(int)
     retry_requested = Signal(int)
     transcribe_requested = Signal(str)   # caminho do arquivo
 
@@ -112,9 +115,14 @@ class JobCard(ListRow):
 
         self.cancel_btn = IconButton("close", "Cancelar e remover da fila", self.action_group)
         self.cancel_btn.clicked.connect(lambda: self.cancel_requested.emit(self.job_id))
+        self.pause_btn = IconButton("pause", "Pausar download", self.action_group)
+        self.pause_btn.clicked.connect(lambda: self.pause_requested.emit(self.job_id))
+        self.resume_btn = IconButton("play", "Retomar download", self.action_group)
+        self.resume_btn.clicked.connect(lambda: self.resume_requested.emit(self.job_id))
+        self.resume_btn.hide()
 
         for button in (self.transcribe_btn, self.detail_btn, self.retry_btn,
-                       self.open_btn, self.cancel_btn):
+                       self.open_btn, self.pause_btn, self.resume_btn, self.cancel_btn):
             actions.addWidget(button)
         top.addWidget(self.action_group, 0, Qt.AlignmentFlag.AlignVCenter)
 
@@ -142,6 +150,8 @@ class JobCard(ListRow):
         """Itens finalizados também saem da lista um a um."""
         self.cancel_btn.setToolTip("Remover da fila (o arquivo continua no disco)")
         self.cancel_btn.show()
+        self.pause_btn.hide()
+        self.resume_btn.hide()
 
     # ------------------------------------------------------------- estados
     def _set_state(self, label: str, tone: str, icon_name: str) -> None:
@@ -149,7 +159,7 @@ class JobCard(ListRow):
         if self._state == label:
             return
         self._state = label
-        self.chip.setText(label)
+        self.chip.setText(tr(label))
         self.chip.set_tone(tone)
         apply_badge(self.badge, icon_name, tone)
 
@@ -169,24 +179,35 @@ class JobCard(ListRow):
         self._set_state("Na fila", "neutral", "queue")
         self.cancel_btn.setToolTip("Cancelar e remover da fila")
         self.cancel_btn.show()
+        self.pause_btn.show()
+        self.resume_btn.hide()
         for button in (self.retry_btn, self.detail_btn, self.open_btn, self.transcribe_btn):
             button.hide()
 
     def mark_starting(self) -> None:
-        self.status.setText("Iniciando…")
+        self.pause_btn.show()
+        self.resume_btn.hide()
+        self.status.setText(tr("Iniciando…"))
         self._set_state("Iniciando", "accent", "download")
+
+    def mark_paused(self) -> None:
+        self.status.setText(f"Pausado · {self.kind}")
+        self._set_state("Pausado", "neutral", "pause")
+        self.pause_btn.hide()
+        self.resume_btn.show()
+        self.bar.show()
 
     def update_progress(self, prog: Progress) -> None:
         if prog.status == "retrying":
             self._set_state("Tentando novamente", "warning", "refresh")
-            self.status.setText(prog.stage or "Aguardando nova tentativa…")
+            self.status.setText(tr(prog.stage or "Aguardando nova tentativa…"))
             return
         if prog.status == "processing":
             self._set_state("Processando", "accent", "tools")
         else:
             self._set_state("Baixando", "accent", "download")
         if prog.stage:
-            self.status.setText(prog.stage)
+            self.status.setText(tr(prog.stage))
             if prog.percent:
                 self.bar.setValue(int(prog.percent))
             return
@@ -203,6 +224,8 @@ class JobCard(ListRow):
         self.status.setText(" · ".join(parts))
 
     def mark_done(self, files: list[Path], warning: str = "") -> None:
+        self.pause_btn.hide()
+        self.resume_btn.hide()
         self.files = files
         self._tint_bar("warning" if warning else "success")
         self.bar.setValue(100)
@@ -221,13 +244,15 @@ class JobCard(ListRow):
             self.status.setText(f"Concluído — {files[0].name}"
                                 + (f" (+{len(files) - 1})" if len(files) > 1 else ""))
         else:
-            self.status.setText("Concluído")
+            self.status.setText(tr("Concluído"))
 
     def mark_failed(self, message: str, detail: str = "") -> None:
+        self.pause_btn.hide()
+        self.resume_btn.hide()
         self._show_removable()
         self.bar.setValue(0)
         self.bar.hide()  # barra vazia no erro só ocupava espaço
-        self.status.setText(message)
+        self.status.setText(tr(message))
         self.detail = detail
         cancelled = message == "Cancelado"
         self._set_state("Cancelado" if cancelled else "Erro",
@@ -290,6 +315,8 @@ class Job:
     removing: bool = False
     warning: str = ""
     failed: bool = False
+    paused: bool = False
+    pause_requested: bool = False
 
 
 class QueuePage(QWidget):
@@ -324,6 +351,10 @@ class QueuePage(QWidget):
         self.retry_failed_btn.clicked.connect(self.retry_failed)
         self.retry_failed_btn.hide()
         header.add_action(self.retry_failed_btn)
+        self.pause_all_btn = Button("Pausar tudo", "pause", "secondary", header)
+        self.pause_all_btn.clicked.connect(self.pause_all)
+        self.pause_all_btn.setEnabled(False)
+        header.add_action(self.pause_all_btn)
         self.clear_btn = Button("Limpar finalizados", "sweep", "secondary", header)
         self.clear_btn.setToolTip("Remove da lista os itens concluídos, com erro ou cancelados")
         self.clear_btn.clicked.connect(self.clear_finished)
@@ -392,6 +423,8 @@ class QueuePage(QWidget):
         self._next_id += 1
         card = JobCard(job_id, opts, self.container)
         card.cancel_requested.connect(self.cancel)
+        card.pause_requested.connect(self.pause)
+        card.resume_requested.connect(self.resume)
         card.retry_requested.connect(self.retry)
         card.transcribe_requested.connect(self.transcribe_requested)
         # Ordem de chegada, a mesma do processamento: o próximo a baixar fica em
@@ -415,10 +448,15 @@ class QueuePage(QWidget):
             return
         # O arquivo pode conter repetições que o usuário confirmou na sessão
         # anterior. A restauração deve preservar essa escolha.
-        restored = sum(
-            1 for opts in self._state.load()
-            if self._add(opts, persist=False, allow_duplicate=True)
-        )
+        restored = 0
+        for opts, paused in self._state.load_entries():
+            if self._add(opts, persist=False, allow_duplicate=True):
+                restored += 1
+                if paused:
+                    job_id = self._next_id - 1
+                    self.pending.remove(job_id)
+                    self.jobs[job_id].paused = True
+                    self.jobs[job_id].card.mark_paused()
         if restored:
             self._pump()
         else:
@@ -427,10 +465,47 @@ class QueuePage(QWidget):
     def _persist(self) -> None:
         """Mantém somente jobs que ainda precisam de trabalho no próximo início."""
         options = [
-            job.opts for job in self.jobs.values()
-            if not job.removing and (job.active or job.id in self.pending)
+            (job.opts, job.paused or job.pause_requested) for job in self.jobs.values()
+            if not job.removing and (job.active or job.id in self.pending or job.paused)
         ]
-        self._state.save(options)
+        self._state.save_entries(options)
+
+    def pause(self, job_id: int) -> None:
+        job = self.jobs.get(job_id)
+        if not job or job.removing or job.paused or job.pause_requested:
+            return
+        if job_id in self.pending:
+            self.pending.remove(job_id)
+            job.paused = True
+            job.card.mark_paused()
+        elif job.active and job.worker:
+            job.pause_requested = True
+            job.card.mark_paused()
+            job.worker.cancel()  # DownloadRunner conserva os arquivos .part.
+        self._persist()
+        self._refresh_summary()
+        self._pump()
+
+    def resume(self, job_id: int) -> None:
+        job = self.jobs.get(job_id)
+        if not job or job.removing or not job.paused or job.active:
+            return
+        job.paused = False
+        job.card.reset()
+        self.pending.append(job_id)
+        self._persist()
+        self._pump()
+
+    def pause_all(self) -> None:
+        for job_id in list(self.pending):
+            self.pending.remove(job_id)
+            job = self.jobs[job_id]
+            job.paused = True
+            job.card.mark_paused()
+        for job_id in [job.id for job in self.jobs.values() if job.active]:
+            self.pause(job_id)
+        self._persist()
+        self._refresh_summary()
 
     @staticmethod
     def _same_download(first: DownloadOptions, second: DownloadOptions) -> bool:
@@ -522,7 +597,8 @@ class QueuePage(QWidget):
 
     def _on_progress(self, job_id: int, prog: Progress) -> None:
         if job := self.jobs.get(job_id):
-            job.card.update_progress(prog)
+            if not job.pause_requested:
+                job.card.update_progress(prog)
             self._emit_overall()
 
     def _on_warning(self, job_id: int, message: str) -> None:
@@ -540,6 +616,7 @@ class QueuePage(QWidget):
                 self._emit_overall()
                 return
             paths = [Path(f) for f in files]
+            job.pause_requested = False
             job.card.mark_done(paths, job.warning)
             if job.warning:
                 Toast.warning("Concluído com aviso", job.warning.split("\n", 1)[0],
@@ -561,6 +638,14 @@ class QueuePage(QWidget):
                 self._pump()
                 self._emit_overall()
                 return
+            if job.pause_requested:
+                job.pause_requested = False
+                job.paused = True
+                job.card.mark_paused()
+                self._persist()
+                self._pump()
+                self._emit_overall()
+                return
             job.card.mark_failed(message, detail)
             job.failed = message != "Cancelado"
             if message != "Cancelado":
@@ -573,14 +658,19 @@ class QueuePage(QWidget):
     def _refresh_summary(self) -> None:
         running = sum(1 for job in self.jobs.values() if job.active and not job.removing)
         waiting = sum(1 for job_id in self.pending if not self.jobs[job_id].removing)
+        paused = sum(1 for job in self.jobs.values() if job.paused and not job.removing)
         parts = []
         if running:
             parts.append(f"{running} baixando")
         if waiting:
             parts.append(f"{waiting} na fila")
+        if paused:
+            parts.append(f"{paused} pausado{'s' if paused != 1 else ''}")
+        self.pause_all_btn.setEnabled(bool(running or waiting))
         self.summary.setText(" · ".join(parts))
         visible = [job for job_id, job in self.jobs.items() if not job.removing]
-        finished = [job for job in visible if not job.active and job.id not in self.pending]
+        finished = [job for job in visible if not job.active and job.id not in self.pending
+                    and not job.paused]
         failed = sum(1 for job in finished if job.failed)
         self.clear_btn.setEnabled(bool(finished))
         self.retry_failed_btn.setVisible(failed > 0)
@@ -604,7 +694,7 @@ class QueuePage(QWidget):
 
     def clear_finished(self) -> None:
         for job_id, job in list(self.jobs.items()):
-            if job.active or job_id in self.pending:
+            if job.active or job_id in self.pending or job.paused:
                 continue
             job.card.setParent(None)
             job.card.deleteLater()

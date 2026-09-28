@@ -23,6 +23,9 @@ class QueueState:
         self.path = path
 
     def load(self) -> list[DownloadOptions]:
+        return [options for options, _paused in self.load_entries()]
+
+    def load_entries(self) -> list[tuple[DownloadOptions, bool]]:
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -31,7 +34,7 @@ class QueueState:
             return []
 
         known = set(DownloadOptions.__dataclass_fields__)
-        result: list[DownloadOptions] = []
+        result: list[tuple[DownloadOptions, bool]] = []
         for item in raw:
             if not isinstance(item, dict):
                 continue
@@ -39,14 +42,17 @@ class QueueState:
             if not isinstance(values.get("url"), str) or not isinstance(values.get("output_dir"), str):
                 continue
             try:
-                result.append(DownloadOptions(**values))
+                result.append((DownloadOptions(**values), item.get("_paused") is True))
             except (TypeError, ValueError):
                 continue
         return result
 
     def save(self, options: Iterable[DownloadOptions]) -> None:
         """Substitui o estado só depois de o arquivo novo estar completo."""
-        entries = [asdict(item) for item in options]
+        self.save_entries((item, False) for item in options)
+
+    def save_entries(self, options: Iterable[tuple[DownloadOptions, bool]]) -> None:
+        entries = [{**asdict(item), "_paused": paused} for item, paused in options]
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.path.with_suffix(".tmp")
@@ -56,4 +62,3 @@ class QueueState:
             # A retomada é uma conveniência; falha de disco não pode interromper
             # nem cancelar um download que já esteja válido.
             pass
-
