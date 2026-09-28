@@ -6,8 +6,8 @@ transcrição local com faster-whisper (CTranslate2) e ferramentas de vídeo.
 ## Trabalho em andamento
 
 Siga `docs/PLANO-DE-CORRECOES.md`: auditoria completa da v1.10.10 com status de
-cada item. A rodada 1 está feita (v1.10.11, não publicada). Continue pela
-rodada 2, um item por commit, e marque o item no plano no mesmo commit.
+cada item. As rodadas 1 e 2 estão feitas (v1.10.11, não publicada). Continue pela
+rodada 3, um item por commit, e marque o item no plano no mesmo commit.
 
 ## Decisões do mantenedor (não reabrir)
 
@@ -15,7 +15,7 @@ rodada 2, um item por commit, e marque o item no plano no mesmo commit.
 - Sem assinatura Authenticode (não quer gastar com o projeto). Ed25519 das
   releases é gratuita e está no plano (A8).
 - GitHub Actions está bloqueado na conta: a build é local (`build.ps1`, Nuitka)
-  e a release é publicada à mão com `gh`.
+  e a release sai com `python scripts/prepare_release.py --publish`.
 - A verificação de dependências do legendador continua bloqueante antes de
   liberar a interface; só cache é aceito.
 - Sugestões de funcionalidade são bem-vindas em revisões, sempre com a UI

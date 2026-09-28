@@ -25,9 +25,28 @@ formato Keep a Changelog.
 - Mensagens de erro corretas para restrição de idade, bloqueio regional e
   servidor instável, que antes apareciam como pedido de robô ou vídeo removido.
 
+- Se a conversão por GPU falhar depois de um download bem-sucedido, o item
+  conclui com aviso e mantém o arquivo original, em vez de virar erro.
+- Cancelar uma transcrição não se perde mais na troca de item, e um resultado
+  enviado logo antes de o motor encerrar não vira mais falha.
+- Esc pede confirmação antes de cancelar uma transcrição ou uma ferramenta.
+- O campo de link ocupa a linha inteira em janelas estreitas.
+
 ### Alterado
 
 - Instaladores baixados em sessões anteriores são apagados automaticamente.
+- Aviso de atualização com tamanho, botão "Novidades", "Lembrar depois" (só
+  nesta sessão) e "Pular versão"; antes "Agora não" pulava a versão para sempre.
+  Com o app aberto por dias, uma nova checagem acontece a cada 3 horas.
+- A atualização instala sem refazer o assistente (só a janela de progresso) e
+  reabre o aplicativo ao terminar.
+- Fila na ordem de chegada, com tipo, formato e pasta em cada item; itens
+  finalizados saem um a um; botão para tentar de novo todas as falhas.
+- Avisos iguais viram um só com contador e aparecem no canto inferior direito,
+  sem cobrir o link e o botão Analisar.
+- A página Baixar mostra só as opções que valem no modo atual.
+- Releases locais com hashes, assinatura Ed25519 e notas extraídas do
+  CHANGELOG (`scripts/prepare_release.py`).
 
 ## [1.10.10] - 2026-09-28
 
