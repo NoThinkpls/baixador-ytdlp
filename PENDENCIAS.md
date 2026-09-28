@@ -1,6 +1,6 @@
 # Pendências para fechar a v1.10.11
 
-Estado em 28/09/2026. A branch `main` deste repositório tem **24 commits locais
+Estado em 28/09/2026. A branch `main` deste repositório tem **commits locais
 à frente do GitHub** (a partir de `1704090`, a v1.10.10 publicada): rodadas 1 e
 2 completas e parte da rodada 3. A versão já está em **1.10.11** (config,
 installer.iss, version_info.txt) e o `CHANGELOG.md` já descreve tudo o que foi
