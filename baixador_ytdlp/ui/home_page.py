@@ -42,6 +42,30 @@ def _is_playlist_url(url: str) -> bool:
             or "/c/" in path or "/user/" in path)
 
 
+def _count_items(selection: str) -> int:
+    """Quantos itens uma seleção como "1-3,7" representa (0 = playlist inteira)."""
+    total = 0
+    for part in (selection or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        start, _, end = part.partition("-")
+        try:
+            low = int(start)
+            high = int(end) if end else low
+        except ValueError:
+            continue
+        total += max(0, high - low + 1)
+    return total
+
+
+def _duration_seconds(raw: dict) -> float:
+    try:
+        return max(0.0, float((raw or {}).get("duration") or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 class HomePage(QWidget):
     enqueue = Signal(object)  # DownloadOptions
     enqueue_many = Signal(list)  # list[DownloadOptions]
@@ -706,14 +730,23 @@ class HomePage(QWidget):
         """Bloqueia início quando a estimativa conhecida não cabe com margem de segurança."""
         if not self.info:
             return True
+        best_audio = max((row.estimated_size for row in self.info.rows if row.audio_only), default=0)
         if audio_only:
-            estimated = max((row.estimated_size for row in self.info.rows if row.audio_only), default=0)
+            estimated = best_audio
         elif selected_row > 0 and selected_row - 1 < len(self.info.rows):
-            estimated = self.info.rows[selected_row - 1].estimated_size
+            row = self.info.rows[selected_row - 1]
+            # Linha só de vídeo baixa também o melhor áudio para juntar.
+            estimated = row.estimated_size + (best_audio if row.video_only else 0)
         else:
-            estimated = max((row.estimated_size for row in self.info.rows if not row.audio_only), default=0)
+            estimated = max((row.estimated_size + (best_audio if row.video_only else 0)
+                             for row in self.info.rows if not row.audio_only), default=0)
         if not estimated:
             return True
+        items = 1
+        if self.info.is_playlist:
+            # A estimativa vem do 1º item; multiplica pelos itens que vão baixar.
+            items = _count_items(self._playlist_items) or max(1, self.info.playlist_count)
+            estimated *= items
         try:
             free = shutil.disk_usage(output_dir).free
         except OSError:
@@ -721,9 +754,10 @@ class HomePage(QWidget):
         required = int(estimated * 1.25) + 100 * 1024 * 1024
         if free >= required:
             return True
+        scope = f" dos {items} itens da playlist" if items > 1 else " deste download"
         self._warn(
-            "Espaço livre insuficiente para a estimativa deste download "
-            f"({estimated / 1024**2:.0f} MB + margem)."
+            f"Espaço livre insuficiente para a estimativa{scope} "
+            f"({estimated / 1024**2:.0f} MB + margem; livres: {free / 1024**2:.0f} MB)."
         )
         return False
 
@@ -1040,6 +1074,7 @@ class HomePage(QWidget):
             playlist_items=self._playlist_items if self.info.is_playlist else "",
             transcribe_after=self.transcribe_switch.isChecked(),
             embed_transcription=self.embed_transcription_switch.isChecked(),
+            media_duration=_duration_seconds(self.info.raw),
         )
         self.enqueue.emit(opts)
 
