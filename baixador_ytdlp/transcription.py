@@ -908,8 +908,14 @@ class Transcriber:
         return ((item.get("avg_logprob") is not None and item["avg_logprob"] < log_limit) or
                 (item.get("no_speech_prob") is not None and item["no_speech_prob"] > speech_limit))
 
+    # Símbolos que aparecem em fala transcrita ficam (R$ 50, 24/7, 50%, e-mail@x,
+    # C++). Saem emoji, notas musicais e marcação que players interpretariam
+    # como tag ou estilo (<>, {}).
+    _DISALLOWED_CHARS = re.compile(
+        r"[^\w\s.,!?;:'\"()\[\]%$€£/&@#+=*«»“”‘’…¿¡–—°ºª-]", re.UNICODE)
+
     def _normalize_text(self, value: str) -> str:
-        value = re.sub(r"[^\w\s\.,!?;:\-\'\"()]", "", value, flags=re.UNICODE)
+        value = self._DISALLOWED_CHARS.sub("", value)
         return re.sub(r"\s+", " ", value).strip()
 
     def _clean(self, segments: list[dict]) -> list[dict]:
@@ -973,10 +979,15 @@ class Transcriber:
         for word in segment["words"]:
             if group:
                 elapsed = word["end"] - group[0]["start"]
+                shown = group[-1]["end"] - group[0]["start"]
                 sentence_break = group[-1]["text"].endswith((".", "!", "?"))
-                if char_count + len(word["text"]) + 1 > self.max_chars_per_line * self.max_lines or (
-                    sentence_break and elapsed >= self.min_duration
-                ):
+                # A duração máxima vale também no caminho por palavra, que é o
+                # usado sempre (word_timestamps=True). Sem isto, fala lenta
+                # gerava blocos de 8–10 s ignorando o limite da interface.
+                too_long = elapsed > self.max_duration and shown >= self.min_duration
+                if (char_count + len(word["text"]) + 1 > self.max_chars_per_line * self.max_lines
+                        or (sentence_break and elapsed >= self.min_duration)
+                        or too_long):
                     flush()
             group.append(word)
             char_count += len(word["text"]) + (1 if len(group) > 1 else 0)
