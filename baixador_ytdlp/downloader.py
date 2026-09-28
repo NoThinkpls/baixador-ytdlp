@@ -18,7 +18,6 @@ from typing import Callable, Optional
 
 from .config import IS_WINDOWS, Settings
 from .cookies import cookie_args
-from .gpu import select_section_encoder
 from .processes import popen_isolated, terminate_process_tree
 from .tools import CREATE_NO_WINDOW, Toolchain, decode_external_output
 from .diagnostics import log_event
@@ -113,9 +112,6 @@ def build_args(
     opts: DownloadOptions,
     cfg: Settings,
     tc: Toolchain,
-    *,
-    section_encoder: str = "",
-    section_hwaccel: bool = True,
 ) -> list[str]:
     args: list[str] = [
         str(tc.ytdlp),
@@ -175,15 +171,7 @@ def build_args(
             # O FFmpeg usado como downloader não participa do progress-template
             # do yt-dlp. O canal -progress mantém a interface informada durante
             # recortes longos em vez de deixá-la parada em "Iniciando".
-            ffmpeg_args = ["-progress", "pipe:1", "-nostats"]
-            ffmpeg_args += _section_encoder_args(section_encoder, cfg)
-            if section_hwaccel and (input_args := _section_input_args(section_encoder)):
-                # ``ffmpeg_i`` posiciona os argumentos antes de cada ``-i``;
-                # em ``ffmpeg_o`` eles chegariam tarde demais para ativar a
-                # decodificação CUDA/VideoToolbox. O recorte reexecuta somente
-                # o encoder na GPU se o decoder por hardware não aceitar a mídia.
-                args += ["--downloader-args", "ffmpeg_i:" + " ".join(input_args)]
-            args += ["--downloader-args", "ffmpeg_o:" + " ".join(ffmpeg_args)]
+            args += ["--downloader-args", "ffmpeg_o:-progress pipe:1 -nostats"]
 
     if cfg.embed_metadata:
         args.append("--embed-metadata")
@@ -252,52 +240,11 @@ def preview_command(
     opts: DownloadOptions,
     cfg: Settings,
     tc: Toolchain,
-    *,
-    section_encoder: str = "",
-    section_hwaccel: bool = True,
 ) -> str:
     """Linha de comando equivalente — útil para auditoria e para reproduzir no terminal."""
     return " ".join(
-        shlex.quote(a) for a in build_args(
-            opts, cfg, tc, section_encoder=section_encoder,
-            section_hwaccel=section_hwaccel,
-        )
+        shlex.quote(a) for a in build_args(opts, cfg, tc)
     )
-
-
-def _section_encoder_args(codec: str, cfg: Settings) -> list[str]:
-    if not codec:
-        return []
-    args = ["-c:v", codec]
-    if codec.endswith("_nvenc"):
-        preset = cfg.transcode_preset if cfg.transcode_enabled else "p5"
-        cq = cfg.transcode_cq if cfg.transcode_enabled else 18
-        args += ["-preset", preset, "-rc", "vbr", "-cq", str(cq), "-b:v", "0"]
-    elif codec.endswith("_amf"):
-        quality = max(1, min(51, cfg.transcode_cq if cfg.transcode_enabled else 18))
-        args += ["-quality", "balanced", "-rc", "cqp",
-                 "-qp_i", str(quality), "-qp_p", str(quality)]
-    elif codec.endswith("_videotoolbox"):
-        quality = max(1, min(100, (cfg.transcode_cq if cfg.transcode_enabled else 18) * 3))
-        args += ["-q:v", str(quality), "-b:v", "0"]
-    # O áudio costuma vir em Opus/WebM e não pode ser apenas copiado para todos
-    # os MP4. AAC mantém compatibilidade; o custo é desprezível perto do vídeo.
-    return [*args, "-c:a", "aac", "-b:a", "192k"]
-
-
-def _section_input_args(codec: str) -> list[str]:
-    """Pede decoder de hardware só para backends em que é confiável.
-
-    AMF continua usando a codificação AMD, mas não força D3D11 na entrada: há
-    drivers AMD que codificam bem via AMF e falham ao receber superfícies D3D11
-    de certos VP9/AV1. NVENC e VideoToolbox têm uma nova tentativa automática
-    sem estes argumentos quando o decoder não suporta a mídia.
-    """
-    if codec.endswith("_nvenc"):
-        return ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
-    if codec.endswith("_videotoolbox"):
-        return ["-hwaccel", "videotoolbox"]
-    return []
 
 
 class DownloadRunner:
@@ -328,88 +275,22 @@ class DownloadRunner:
         if self._cancelled.is_set():
             return []
 
-        section_encoder = ""
-        section = _section_range(self.opts)
-        if section and not self.opts.audio_only and self.opts.container in {"mp4", "mkv"}:
-            self._emit_progress(on_progress, Progress(
-                status="processing", stage="Verificando aceleração para o recorte…",
-            ), force=True)
-            preferred = self.cfg.transcode_codec if self.cfg.transcode_enabled else ""
-            section_encoder = select_section_encoder(self.tc.ffmpeg, preferred)
-
-        return self._run_section(on_progress, section_encoder)
-
-    def _run_section(
-        self,
-        on_progress: Callable[[Progress], None],
-        section_encoder: str,
-    ) -> list[Path]:
-        """Executa recorte em camadas, sem abandonar a GPU cedo demais."""
-        if not section_encoder:
-            return self._run_once(on_progress, "", section_hwaccel=False)
-        try:
-            return self._run_once(on_progress, section_encoder, section_hwaccel=True)
-        except DownloadError:
-            if self._cancelled.is_set() or not self._is_encoder_failure(section_encoder):
-                raise
-            if _section_input_args(section_encoder):
-                # VP9, AV1, HDR e alguns drivers não aceitam o decoder CUDA ou
-                # VideoToolbox. Isso não significa que o encoder de vídeo não
-                # funcione, então mantemos a codificação na GPU na segunda vez.
-                log_event(
-                    "Recorte %s: decoder de hardware falhou; mantendo encoder GPU: %s",
-                    section_encoder, self.tail(40),
-                )
-                self.files.clear()
-                self._emit_progress(on_progress, Progress(
-                    status="processing",
-                    stage="Decoder GPU incompatível — mantendo a codificação na GPU…",
-                ), force=True)
-                try:
-                    return self._run_once(on_progress, section_encoder, section_hwaccel=False)
-                except DownloadError:
-                    if self._cancelled.is_set() or not self._is_encoder_failure(section_encoder):
-                        raise
-            # O teste sintético é apenas um indício. Só depois de a mídia real
-            # recusar o encoder seguimos para CPU, preservando a conclusão.
-            log_event(
-                "Encoder %s falhou no recorte; repetindo com FFmpeg/CPU: %s",
-                section_encoder, self.tail(40),
-            )
-            self.log.append(
-                f"A aceleração {section_encoder} falhou na mídia; nova tentativa segura na CPU."
-            )
-            self.files.clear()
-            self._emit_progress(on_progress, Progress(
-                status="processing", stage="GPU indisponível para esta mídia — usando CPU…",
-            ), force=True)
-            return self._run_once(on_progress, "", section_hwaccel=False)
+        return self._run_once(on_progress)
 
     def _run_once(
         self,
         on_progress: Callable[[Progress], None],
-        section_encoder: str,
-        *,
-        section_hwaccel: bool,
     ) -> list[Path]:
-        args = build_args(
-            self.opts, self.cfg, self.tc, section_encoder=section_encoder,
-            section_hwaccel=section_hwaccel,
-        )
+        args = build_args(self.opts, self.cfg, self.tc)
         log_event(
             "yt-dlp download iniciado%s: %s",
-            (f" (recorte={section_encoder or 'cpu'}, "
-             f"decoder={'gpu' if section_hwaccel and _section_input_args(section_encoder) else 'cpu'})")
-            if _section_range(self.opts) else "",
-            preview_command(
-                self.opts, self.cfg, self.tc, section_encoder=section_encoder,
-                section_hwaccel=section_hwaccel,
-            ),
+            " (recorte via FFmpeg)" if _section_range(self.opts) else "",
+            preview_command(self.opts, self.cfg, self.tc),
         )
         prog = Progress(status="downloading")
         if _section_range(self.opts):
             prog.status = "processing"
-            prog.stage = self._section_stage(section_encoder, section_hwaccel)
+            prog.stage = "Baixando e recortando com FFmpeg…"
         else:
             prog.stage = "Conectando ao servidor…"
         self._emit_progress(on_progress, prog, force=True)
@@ -457,6 +338,10 @@ class DownloadRunner:
         if code != 0:
             log_event("yt-dlp download falhou (código=%s): %s", code, self.tail(300))
             raise DownloadError(self._last_error())
+        if not self.files:
+            raise DownloadError(
+                "O yt-dlp terminou sem informar um arquivo baixado. Confira os detalhes da tarefa."
+            )
 
         prog.status = "finished"
         prog.percent = 100.0
@@ -478,28 +363,6 @@ class DownloadRunner:
         elif key == "out_time" and duration:
             prog.percent = min(99.0, max(0.0, _time_seconds(value) * 100 / duration))
         return True
-
-    @staticmethod
-    def _section_stage(codec: str, hwaccel: bool) -> str:
-        if codec.endswith("_nvenc"):
-            return ("Baixando e recortando com NVIDIA NVENC…" if hwaccel
-                    else "NVIDIA NVENC ativo — decodificando na CPU por compatibilidade…")
-        if codec.endswith("_amf"):
-            return "Baixando e recortando com AMD AMF…"
-        if codec.endswith("_videotoolbox"):
-            return ("Baixando e recortando com Apple VideoToolbox…" if hwaccel
-                    else "Apple VideoToolbox ativo — decodificando na CPU por compatibilidade…")
-        return "Baixando e recortando com FFmpeg na CPU…"
-
-    def _is_encoder_failure(self, codec: str) -> bool:
-        output = self.tail(300).casefold()
-        markers = (
-            codec.casefold(), "nvenc", "nvcuda", "no capable devices",
-            "amf", "videotoolbox", "initializing output stream",
-            "error while opening encoder", "hardware accelerator failed",
-            "hwaccel", "device creation failed", "failed setup for format cuda",
-        )
-        return any(marker in output for marker in markers)
 
     def _emit_progress(
         self,

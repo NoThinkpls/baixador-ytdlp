@@ -29,7 +29,7 @@ os ajustes de conversão aparecem quando o recurso está ativo.
 
 ## O que o aplicativo oferece
 
-- Download de vídeo, áudio, playlists e trechos com escolha de qualidade e formato. Recortes exatos mostram o andamento e tentam NVENC, AMF ou VideoToolbox diretamente; NVIDIA e Apple também usam decodificação por hardware quando a mídia aceita. Se o decoder não for compatível, a codificação continua na GPU; só então há fallback seguro para CPU.
+- Download de vídeo, áudio, playlists e trechos com escolha de qualidade e formato. O yt-dlp usa FFmpeg para extrair trechos e ajustar os quadros de corte, sem forçar CUDA/NVENC, AMF ou VideoToolbox nesse fluxo. O progresso do recorte aparece na fila.
 - Análise prévia com miniatura, nome final estimado, tamanhos aproximados, codecs, formatos, idiomas de áudio e legendas manuais/automáticas disponíveis.
 - Entrada em lote pela própria tela: cole vários links, um por linha, e envie todos à fila.
 - Envio direto do navegador pelo protocolo `baixador://` (favorito de um clique) e escolha dos itens de uma playlist.

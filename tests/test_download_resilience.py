@@ -96,15 +96,15 @@ class DownloadArgumentsTests(unittest.TestCase):
         self.assertFalse(is_retryable_error("ERROR: Unsupported URL"))
         self.assertFalse(is_retryable_error("ERROR: Private video"))
 
-    def test_exact_video_cut_reports_progress_and_uses_nvenc(self) -> None:
-        cfg = Settings(transcode_enabled=False)
+    def test_exact_video_cut_reports_progress_without_gpu_arguments(self) -> None:
+        cfg = Settings(transcode_enabled=True, transcode_codec="h264_nvenc")
         tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))
         args = build_args(
             DownloadOptions(
                 "https://example.invalid/video", "downloads",
                 section_start="01:04:30", section_end="01:46:00",
             ),
-            cfg, tools, section_encoder="h264_nvenc",
+            cfg, tools,
         )
 
         self.assertIn("--force-keyframes-at-cuts", args)
@@ -113,34 +113,10 @@ class DownloadArgumentsTests(unittest.TestCase):
             for index, value in enumerate(args)
             if value == "--downloader-args"
         ]
-        self.assertIn(
-            "ffmpeg_i:-hwaccel cuda -hwaccel_output_format cuda",
-            downloader_args,
-        )
-        output_args = next(value for value in downloader_args if value.startswith("ffmpeg_o:"))
-        self.assertIn("-progress pipe:1", output_args)
-        self.assertIn("-c:v h264_nvenc", output_args)
-        self.assertIn("-cq 18", output_args)
+        self.assertEqual(downloader_args, ["ffmpeg_o:-progress pipe:1 -nostats"])
+        self.assertFalse(any("nvenc" in value or "cuda" in value for value in args))
 
-    def test_exact_video_cut_can_keep_gpu_encoder_without_gpu_decoder(self) -> None:
-        tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))
-        args = build_args(
-            DownloadOptions(
-                "https://example.invalid/video", "downloads",
-                section_start="10", section_end="20",
-            ),
-            Settings(), tools, section_encoder="h264_nvenc", section_hwaccel=False,
-        )
-
-        downloader_args = [
-            args[index + 1]
-            for index, value in enumerate(args)
-            if value == "--downloader-args"
-        ]
-        self.assertFalse(any(value.startswith("ffmpeg_i:") for value in downloader_args))
-        self.assertTrue(any("-c:v h264_nvenc" in value for value in downloader_args))
-
-    def test_exact_cut_retries_nvenc_without_gpu_decoder_before_cpu_fallback(self) -> None:
+    def test_exact_cut_runs_once_without_probing_gpu(self) -> None:
         tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))
         runner = DownloadRunner(
             DownloadOptions(
@@ -151,16 +127,22 @@ class DownloadArgumentsTests(unittest.TestCase):
         )
         callback = Mock()
         expected = [Path("downloads/trecho.mp4")]
-        with patch.object(
-            runner, "_run_once", side_effect=[DownloadError("nvcuda falhou"), expected],
-        ) as run_once, patch.object(runner, "_is_encoder_failure", return_value=True), \
-                patch("baixador_ytdlp.downloader.log_event"):
-            self.assertEqual(runner._run_section(callback, "h264_nvenc"), expected)
+        with patch.object(runner, "_run_once", return_value=expected) as run_once:
+            self.assertEqual(runner.run(callback), expected)
+        run_once.assert_called_once_with(callback)
 
-        self.assertEqual(run_once.call_count, 2)
-        self.assertTrue(run_once.call_args_list[0].kwargs["section_hwaccel"])
-        self.assertFalse(run_once.call_args_list[1].kwargs["section_hwaccel"])
-        self.assertEqual(run_once.call_args_list[1].args[1], "h264_nvenc")
+    def test_section_never_reports_success_without_output_file(self) -> None:
+        tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"), env=Mock(return_value={}))
+        runner = DownloadRunner(
+            DownloadOptions("https://example.invalid/video", "downloads",
+                            section_start="10", section_end="20"), Settings(), tools,
+        )
+        process = Mock(stdout=iter(()))
+        process.wait.return_value = 0
+        with patch("baixador_ytdlp.downloader.popen_isolated", return_value=process), \
+                patch("baixador_ytdlp.downloader.log_event"):
+            with self.assertRaisesRegex(DownloadError, "sem informar um arquivo"):
+                runner.run(Mock())
 
     def test_audio_cut_does_not_force_a_pointless_video_reencode(self) -> None:
         tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))
@@ -169,7 +151,7 @@ class DownloadArgumentsTests(unittest.TestCase):
                 "https://example.invalid/audio", "downloads", audio_only=True,
                 section_start="10", section_end="20",
             ),
-            Settings(), tools, section_encoder="h264_nvenc",
+            Settings(), tools,
         )
 
         self.assertIn("--download-sections", args)
