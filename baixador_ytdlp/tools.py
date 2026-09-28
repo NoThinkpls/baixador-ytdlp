@@ -770,6 +770,11 @@ class ToolManager:
         progress("FFmpeg para Linux instalado", 100)
 
     def ensure_ffmpeg(self, progress: ProgressCB, check_now: bool = False) -> None:
+        # Versões anteriores extraíam ffplay, que nenhuma função do app usa.
+        if IS_WINDOWS and (self.bin_dir / "ffplay.exe").exists():
+            _quiet_unlink(self.bin_dir / "ffplay.exe")
+            for bucket in ("tool_sha256", "tool_sha256_verified"):
+                (self.state.get(bucket) or {}).pop("ffplay.exe", None)
         target = self.bin_dir / FFMPEG_EXE
         current = self.local_ffmpeg_version(target)
 
@@ -808,7 +813,7 @@ class ToolManager:
             progress("Conferindo a integridade do FFmpeg…", -1)
             self.require_sha256(zip_path, self._asset_sha256(asset), "FFmpeg")
             progress("Extraindo FFmpeg…", -1)
-            wanted = {"ffmpeg.exe", "ffprobe.exe", "ffplay.exe"}
+            wanted = {"ffmpeg.exe", "ffprobe.exe"}
             with zipfile.ZipFile(zip_path) as zf:
                 for member in zf.namelist():
                     name = Path(member).name
