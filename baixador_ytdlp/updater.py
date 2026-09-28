@@ -52,6 +52,15 @@ class ReleaseInfo:
     installer_name: str
     installer_url: str
     sha256: str
+    size: int = 0          # bytes do instalador, informado pelo GitHub
+    notes: str = ""        # corpo da release (Markdown)
+
+
+def _as_size(value) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def version_key(value: str) -> tuple[int, int, int] | None:
@@ -139,6 +148,8 @@ class AppUpdater:
             installer_name=installer_name,
             installer_url=installer_url,
             sha256=sha256.lower(),
+            size=_as_size(installer.get("size")),
+            notes=str(payload.get("body") or "").strip()[:20000],
         )
 
     def _verify_checksum_signature(self, assets: list, checksum_text: str,
