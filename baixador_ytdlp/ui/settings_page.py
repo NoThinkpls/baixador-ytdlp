@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import datetime
 
 import subprocess
 from pathlib import Path
@@ -176,7 +177,7 @@ class SettingsPage(QWidget):
                          "Itens interrompidos voltam como pendentes e continuam os arquivos .part.",
                          "resume_queue")
 
-        self._category("Rede e desempenho", "Velocidade, limites e falhas de conexão.", "tools")
+        self._category("Rede e desempenho", "Velocidade, limites e falhas de conexão.", "queue")
         self._section("Velocidade")
         self._spin_row("Fragmentos simultâneos",
                        f"Acelera o download de cada vídeo. Para os {usable_cores()} núcleos "
@@ -324,7 +325,7 @@ class SettingsPage(QWidget):
             "ytdlp_channel",
             on_change=self._ytdlp_channel_changed,
         )
-        self._category("Avançado", "Extrator, histórico e ferramentas.", "tools")
+        self._category("Avançado", "Extrator, histórico e ferramentas.", "document")
         self._section("Extrator e ferramentas")
         self._line_row("Ajustes do extrator (avançado)",
                        "Repassado ao yt-dlp como --extractor-args. Vazio na dúvida. "
@@ -422,7 +423,7 @@ class SettingsPage(QWidget):
         subtitles = (
             f"{cfg.container.upper()} · {name} · "
             "repetições sob confirmação",
-            f"Até {cfg.max_parallel_downloads} downloads · "
+            f"Até {cfg.max_parallel_downloads} {'download' if cfg.max_parallel_downloads == 1 else 'downloads'} · "
             f"{'sem limite de banda' if not cfg.limit_rate else 'limite ' + cfg.limit_rate}",
             "Capa e metadados · " + ("legendas ligadas" if cfg.write_subs else "legendas desligadas"),
             "Sem cookies" if not cfg.cookies_file and not cfg.cookies_browser else
@@ -631,7 +632,7 @@ class SettingsPage(QWidget):
         line = QHBoxLayout()
         line.setSpacing(12)
         line.addWidget(self.versions, 1)
-        button = PrimaryButton("Verificar componentes", "update", row)
+        button = PrimaryButton("Verificar agora", "update", row)
         button.clicked.connect(self.update_requested.emit)
         line.addWidget(button)
         column.addLayout(line)
@@ -655,16 +656,19 @@ class SettingsPage(QWidget):
         row, column = self._custom_row(
             "Nova versão do aplicativo",
             "Consulta as Releases do GitHub e avisa na faixa inferior da janela.")
-        # Mesmo arranjo da linha "Componentes": texto à esquerda, botão à direita
-        # na mesma altura — antes o botão descia sozinho e criava um vão.
         line = QHBoxLayout()
         line.setSpacing(12)
-        line.addWidget(Muted(f"Versão instalada: {APP_VERSION}", row), 1)
-        button = PrimaryButton("Verificar agora", "update", row)
-        button.clicked.connect(self.app_update_requested.emit)
-        line.addWidget(button)
+        self.app_update_status = Muted("", row)
+        line.addWidget(self.app_update_status, 1)
         column.addLayout(line)
+        self.refresh_update_status()
         self._add_row(row)
+
+    def refresh_update_status(self) -> None:
+        checked_at = self.cfg.app_update_checked_at
+        last = (datetime.fromtimestamp(checked_at).strftime("%d/%m/%Y %H:%M")
+                if checked_at else "ainda não verificado")
+        self.app_update_status.setText(f"Versão instalada: {APP_VERSION} · Última checagem: {last}")
 
     def _cookies_file_row(self) -> None:
         """Arquivo cookies.txt: caminho, seletor e o passo a passo de exportação."""
@@ -852,6 +856,11 @@ class SettingsPage(QWidget):
     def set_versions(self, ytdlp: str, ffmpeg: str, transcription_runtime: str = "") -> None:
         text = f"yt-dlp {ytdlp or '—'} · FFmpeg {self.friendly_ffmpeg_version(ffmpeg)}"
         if transcription_runtime:
+            from .. import runtime
+
+            if not runtime.embedded_cuda_available():
+                transcription_runtime = re.sub(r"\(CUDA\)", "(CPU)", transcription_runtime)
+                transcription_runtime += " · CUDA indisponível: DLLs ausentes ou incompatíveis"
             text += f"\n{transcription_runtime}"
         self.versions.setText(text)
 
