@@ -6,8 +6,8 @@ transcrição local com faster-whisper (CTranslate2) e ferramentas de vídeo.
 ## Trabalho em andamento
 
 Siga `docs/PLANO-DE-CORRECOES.md`: auditoria completa da v1.10.10 com status de
-cada item. As rodadas 1 e 2 estão feitas (v1.10.11, não publicada). Continue pela
-rodada 3, um item por commit, e marque o item no plano no mesmo commit.
+cada item. As rodadas 1 e 2 e parte da 3 estão feitas (v1.10.11, não publicada). O que
+falta está em `PENDENCIAS.md`, na raiz; siga a ordem de lá.
 
 ## Decisões do mantenedor (não reabrir)
 
