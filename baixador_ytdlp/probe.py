@@ -13,6 +13,7 @@ from .processes import popen_isolated, terminate_process_tree
 from .tools import decode_external_output
 from .diagnostics import log_event
 from .security import validate_media_url
+from .ui.i18n import tr
 
 VCODEC_NAMES = {
     "avc1": "H.264", "h264": "H.264", "vp9": "VP9", "vp09": "VP9",
@@ -86,6 +87,7 @@ class MediaInfo:
     auto_subtitles: list[str] = field(default_factory=list)
     # Itens já listados na contagem da playlist; o seletor usa sem nova chamada.
     entries: list = field(default_factory=list)
+    chapters: list[dict] = field(default_factory=list)
 
     @property
     def best_label(self) -> str:
@@ -339,10 +341,19 @@ def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = 
         subtitles=_caption_languages(entry.get("subtitles")),
         auto_subtitles=_caption_languages(entry.get("automatic_captions")),
         entries=flat,
+        chapters=[chapter for chapter in (entry.get("chapters") or [])
+                  if isinstance(chapter, dict)
+                  and isinstance(chapter.get("start_time"), (int, float))
+                  and isinstance(chapter.get("end_time"), (int, float))
+                  and chapter["end_time"] > chapter["start_time"]],
     )
 
 
 def friendly_error(detail: str) -> str:
+    return tr(_friendly_error_pt(detail))
+
+
+def _friendly_error_pt(detail: str) -> str:
     """Traduz o erro do yt-dlp para uma instrução que resolve o problema.
 
     A versão anterior mandava "ative os cookies do navegador" para qualquer erro

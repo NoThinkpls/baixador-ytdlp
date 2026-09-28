@@ -447,6 +447,14 @@ class HomePage(QWidget):
             "Intervalo", "Use mm:ss ou hh:mm:ss. Um dos dois já basta.", times, group)
         self.trim_row.hide()
         group.add_row(self.trim_row)
+        self.chapter_combo = Select(group)
+        self.chapter_combo.addItem("Escolha um capítulo", userData=None)
+        self.chapter_combo.currentIndexChanged.connect(self._select_chapter)
+        self.chapter_row = SettingRow(
+            "Capítulo", "Preenche o início e o fim; você ainda pode ajustar os horários.",
+            self.chapter_combo, group)
+        self.chapter_row.hide()
+        group.add_row(self.chapter_row)
         return group
 
     def _destination_group(self) -> InsetGroup:
@@ -801,6 +809,20 @@ class HomePage(QWidget):
         self.start_edit.setEnabled(checked)
         self.end_edit.setEnabled(checked)
         self.trim_row.setVisible(checked)
+        self.chapter_row.setVisible(checked and self.chapter_combo.count() > 1)
+
+    @staticmethod
+    def _chapter_time(seconds: float) -> str:
+        total = int(seconds)
+        hours, remainder = divmod(total, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes:02d}:{seconds:02d}"
+
+    def _select_chapter(self, index: int) -> None:
+        chapter = self.chapter_combo.itemData(index)
+        if chapter:
+            self.start_edit.setText(self._chapter_time(chapter["start_time"]))
+            self.end_edit.setText(self._chapter_time(chapter["end_time"]))
 
     def _toggle_folder(self, checked: bool) -> None:
         self.folder_edit.setEnabled(checked)
@@ -924,6 +946,16 @@ class HomePage(QWidget):
             return
         self._analyzed_url = self._probing_url
         self.info = info
+        self.chapter_combo.blockSignals(True)
+        self.chapter_combo.clear()
+        self.chapter_combo.addItem("Escolha um capítulo", userData=None)
+        for number, chapter in enumerate(info.chapters, start=1):
+            title = str(chapter.get("title") or f"Capítulo {number}")
+            self.chapter_combo.addItem(
+                f"{title} ({self._chapter_time(chapter['start_time'])}–"
+                f"{self._chapter_time(chapter['end_time'])})", userData=chapter)
+        self.chapter_combo.blockSignals(False)
+        self.chapter_row.setVisible(self.trim_check.isChecked() and bool(info.chapters))
         self.filename_row.show()
 
         self.media_title.setText(info.title)
