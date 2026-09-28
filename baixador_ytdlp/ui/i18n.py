@@ -164,6 +164,53 @@ EN: dict[str, str] = {
     "Revisão fixada e verificada pelo aplicativo.": "Revision pinned and verified by the app.",
     "Separados por vírgula.": "Comma-separated.", "Todos os arquivos (*.*)": "All files (*.*)",
     "Usar a pasta padrão": "Use default folder", "Verificando componentes": "Checking components",
+    # Mensagens exibidas depois da criação dos widgets.
+    "Baixar + legendar + incorporar": "Download + caption + embed",
+    "Escolha um capítulo": "Choose a chapter", "Capítulo": "Chapter",
+    "Pausar tudo": "Pause all", "Pausado": "Paused", "Na fila": "Queued",
+    "Iniciando": "Starting", "Baixando": "Downloading", "Processando": "Processing",
+    "Tentando novamente": "Retrying", "Concluído": "Completed",
+    "Concluído com aviso": "Completed with warning", "Cancelado": "Cancelled",
+    "Falha no download": "Download failed", "Aguardando nova tentativa…": "Waiting to retry…",
+    "A mudança será aplicada na próxima verificação dos componentes.":
+        "The change will apply at the next component check.",
+    "Você já está usando a versão mais recente.": "You already have the latest version.",
+    "Não foi possível verificar atualizações": "Could not check for updates",
+    "Não foi possível exportar": "Could not export",
+    "Diagnóstico exportado": "Diagnostics exported",
+    "Lista importada": "List imported", "Perfil excluído": "Profile deleted",
+    "Processamento concluído": "Processing completed",
+    "Não foi possível processar a mídia": "Could not process the media",
+    "Não foi possível adicionar as legendas": "Could not add the captions",
+    "Arquivo interno do motor de transcrição ausente ({file}). A instalação está incompleta — reinstale a versão mais recente.":
+        "Internal transcription engine file is missing ({file}). The installation is incomplete — reinstall the latest version.",
+    "Vídeo com restrição de idade. É preciso fornecer cookies de uma conta logada.":
+        "Age restricted video. Provide cookies from a signed-in account.",
+    "Vídeo privado ou exclusivo para membros. Só com cookies de uma conta com acesso.":
+        "Private or members-only video. Provide cookies from an account with access.",
+    "Esse site não é suportado pelo yt-dlp.": "This site is not supported by yt-dlp.",
+    "Vídeo bloqueado na sua região. Um proxy em outro país resolveria.":
+        "This video is blocked in your region. A proxy in another country may help.",
+    "A transmissão ainda não começou. Tente novamente quando o evento estiver ao vivo.":
+        "The stream has not started. Try again when it goes live.",
+    "O site está instável ou fora do ar agora. Tente novamente em alguns minutos.":
+        "The site is unstable or offline. Try again in a few minutes.",
+    "O formato escolhido não existe para este vídeo. Selecione Automático e tente novamente.":
+        "The selected format is unavailable for this video. Select Automatic and try again.",
+    "O vídeo está indisponível, foi removido ou o canal foi encerrado.":
+        "The video is unavailable, was removed, or the channel was closed.",
+    "Sem conexão com a internet, ou a rede bloqueou o acesso.":
+        "No internet connection, or the network blocked access.",
+    "Não foi possível ler os cookies do Chrome ou do Edge. Desde o Chrome 127 esses navegadores criptografam os cookies de um jeito que só o próprio navegador consegue abrir, e isso não tem solução do lado do yt-dlp. Em Configurações, use o Firefox ou aponte um arquivo cookies.txt.":
+        "Could not read Chrome or Edge cookies. These browsers encrypt cookies so only the browser can open them. In Settings, use Firefox or provide a cookies.txt file.",
+    "O YouTube exigiu um desafio JavaScript que o yt-dlp não conseguiu resolver. Isso acontece quando falta o runtime JavaScript (Deno) — apesar da mensagem, não é problema de cookies. Vá em Configurações → Dependências → Verificar agora para instalá-lo.":
+        "YouTube required a JavaScript challenge that yt-dlp could not solve. Install the JavaScript runtime (Deno) through Settings → Components → Check now.",
+    "O YouTube pediu confirmação de que você não é um robô. É preciso fornecer cookies de uma conta logada: em Configurações, aponte um arquivo cookies.txt exportado por uma janela anônima, ou selecione o Firefox.":
+        "YouTube asked you to confirm you are not a bot. In Settings, provide cookies.txt from a signed-in account or select Firefox.",
+    "O YouTube limitou as requisições deste IP. Espere alguns minutos antes de tentar de novo, ou configure um proxy.":
+        "YouTube rate limited this IP. Wait a few minutes before retrying, or configure a proxy.",
+    "O site recusou o acesso (HTTP 403). Verifique os componentes em Configurações e tente novamente; cookies só são necessários se o site pedir login ou confirmar que você não é um robô.":
+        "The site denied access (HTTP 403). Check components in Settings and retry; cookies are needed only when the site requires sign-in or bot confirmation.",
 }
 
 
@@ -179,4 +226,3 @@ def language() -> str:
 def tr(text: str) -> str:
     """Traduz um texto visível da UI, preservando mensagens ainda não catalogadas."""
     return EN.get(text, text) if _language == "en" else text
-

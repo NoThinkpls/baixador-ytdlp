@@ -828,6 +828,7 @@ class Toast(QFrame):
     def __init__(self, kind: str, title: str, message: str, parent: QWidget,
                  duration: int = 5000):
         super().__init__(parent)
+        title, message = tr(title), tr(message)
         icon_name, tone = self._TONES.get(kind, self._TONES["info"])
         self.setObjectName("toast")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -907,6 +908,7 @@ class Toast(QFrame):
                      parent: QWidget | None = None, duration: int = 5000):
         if parent is None:
             return None
+        title, message = tr(title), tr(message)
         stack = cls._stack(parent)
         alive = [item for item in stack if not item._closing]
         same = next((item for item in alive if item._key == (kind, title)), None)
