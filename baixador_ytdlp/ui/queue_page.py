@@ -75,7 +75,8 @@ class JobCard(ListRow):
         texts = QVBoxLayout()
         texts.setSpacing(3)
         self.title = Headline(opts.title or opts.url, self, wrap=True)
-        self.status = Muted("Na fila", self)
+        self.kind = self.describe(opts)
+        self.status = Muted(f"Na fila · {self.kind}", self)
         texts.addWidget(self.title)
         texts.addWidget(self.status)
         top.addLayout(texts, 1)
@@ -123,6 +124,25 @@ class JobCard(ListRow):
         self.body.addLayout(top)
         self.body.addWidget(self.bar)
 
+    @staticmethod
+    def describe(opts: DownloadOptions) -> str:
+        """Tipo, formato e destino em uma linha: o que vai sair e onde."""
+        if opts.audio_only:
+            kind = f"Áudio {opts.audio_format.upper()}"
+        else:
+            kind = "Vídeo" if opts.container == "original" else f"Vídeo {opts.container.upper()}"
+        if opts.playlist:
+            kind += " · playlist"
+        if opts.section_start.strip() or opts.section_end.strip():
+            kind += " · trecho"
+        folder = Path(opts.output_dir).name or opts.output_dir
+        return f"{kind} · {folder}"
+
+    def _show_removable(self) -> None:
+        """Itens finalizados também saem da lista um a um."""
+        self.cancel_btn.setToolTip("Remover da fila (o arquivo continua no disco)")
+        self.cancel_btn.show()
+
     # ------------------------------------------------------------- estados
     def _set_state(self, label: str, tone: str, icon_name: str) -> None:
         """Evita repintar etiqueta e disco a cada evento de progresso."""
@@ -144,8 +164,10 @@ class JobCard(ListRow):
         self.detail = ""
         self._tint_bar("accent")
         self.bar.setValue(0)
-        self.status.setText("Na fila")
+        self.bar.show()
+        self.status.setText(f"Na fila · {self.kind}")
         self._set_state("Na fila", "neutral", "queue")
+        self.cancel_btn.setToolTip("Cancelar e remover da fila")
         self.cancel_btn.show()
         for button in (self.retry_btn, self.detail_btn, self.open_btn, self.transcribe_btn):
             button.hide()
@@ -180,12 +202,18 @@ class JobCard(ListRow):
             parts.append(f"item {prog.index} de {prog.count}")
         self.status.setText(" · ".join(parts))
 
-    def mark_done(self, files: list[Path]) -> None:
+    def mark_done(self, files: list[Path], warning: str = "") -> None:
         self.files = files
-        self._tint_bar("success")
+        self._tint_bar("warning" if warning else "success")
         self.bar.setValue(100)
-        self._set_state("Concluído", "success", "success")
-        self.cancel_btn.hide()
+        if warning:
+            self._set_state("Concluído com aviso", "warning", "warning")
+        else:
+            self._set_state("Concluído", "success", "success")
+        self.detail = warning
+        self.detail_btn.setToolTip("Ver o aviso completo" if warning else "Ver o erro completo")
+        self.detail_btn.setVisible(bool(warning))
+        self._show_removable()
         self.retry_btn.hide()
         if files:
             self.open_btn.show()
@@ -196,8 +224,9 @@ class JobCard(ListRow):
             self.status.setText("Concluído")
 
     def mark_failed(self, message: str, detail: str = "") -> None:
-        self.cancel_btn.hide()
+        self._show_removable()
         self.bar.setValue(0)
+        self.bar.hide()  # barra vazia no erro só ocupava espaço
         self.status.setText(message)
         self.detail = detail
         cancelled = message == "Cancelado"
@@ -205,6 +234,7 @@ class JobCard(ListRow):
                         "neutral" if cancelled else "danger",
                         "stop" if cancelled else "error")
         self.retry_btn.setVisible(not cancelled)
+        self.detail_btn.setToolTip("Ver o erro completo")
         self.detail_btn.setVisible(bool(detail))
 
     # -------------------------------------------------------------- ações
@@ -258,6 +288,8 @@ class Job:
     worker: DownloadWorker | None = None
     active: bool = False
     removing: bool = False
+    warning: str = ""
+    failed: bool = False
 
 
 class QueuePage(QWidget):
@@ -288,8 +320,14 @@ class QueuePage(QWidget):
         self.summary = Muted("", header)
         self.summary.setWordWrap(False)
         header.add_action(self.summary)
-        self.clear_btn = Button("Limpar concluídos", "sweep", "secondary", header)
+        self.retry_failed_btn = Button("Tentar de novo as falhas", "refresh", "secondary", header)
+        self.retry_failed_btn.clicked.connect(self.retry_failed)
+        self.retry_failed_btn.hide()
+        header.add_action(self.retry_failed_btn)
+        self.clear_btn = Button("Limpar finalizados", "sweep", "secondary", header)
+        self.clear_btn.setToolTip("Remove da lista os itens concluídos, com erro ou cancelados")
         self.clear_btn.clicked.connect(self.clear_finished)
+        self.clear_btn.setEnabled(False)
         header.add_action(self.clear_btn)
         root.addWidget(header)
 
@@ -356,7 +394,9 @@ class QueuePage(QWidget):
         card.cancel_requested.connect(self.cancel)
         card.retry_requested.connect(self.retry)
         card.transcribe_requested.connect(self.transcribe_requested)
-        self.cards.insertWidget(0, card)
+        # Ordem de chegada, a mesma do processamento: o próximo a baixar fica em
+        # cima. Antes o mais novo entrava no topo e a fila parecia invertida.
+        self.cards.insertWidget(self.cards.count() - 1, card)
         self.jobs[job_id] = Job(job_id, opts, card)
         self.pending.append(job_id)
         self.empty.hide()
@@ -410,6 +450,8 @@ class QueuePage(QWidget):
         if not job or job.active:
             return
         job.card.reset()
+        job.warning = ""
+        job.failed = False
         if job_id not in self.pending:
             self.pending.append(job_id)
         self._persist()
@@ -427,6 +469,7 @@ class QueuePage(QWidget):
             job = self.jobs[self.pending.pop(0)]
             worker = DownloadWorker(job.id, job.opts, self.cfg, self.toolchain, self)
             worker.progress.connect(self._on_progress)
+            worker.warning.connect(self._on_warning)
             worker.finished_ok.connect(self._on_done)
             worker.failed.connect(self._on_failed)
             worker.finished.connect(worker.deleteLater)
@@ -482,6 +525,10 @@ class QueuePage(QWidget):
             job.card.update_progress(prog)
             self._emit_overall()
 
+    def _on_warning(self, job_id: int, message: str) -> None:
+        if job := self.jobs.get(job_id):
+            job.warning = message
+
     def _on_done(self, job_id: int, files: list) -> None:
         job = self.jobs.get(job_id)
         if job:
@@ -493,7 +540,10 @@ class QueuePage(QWidget):
                 self._emit_overall()
                 return
             paths = [Path(f) for f in files]
-            job.card.mark_done(paths)
+            job.card.mark_done(paths, job.warning)
+            if job.warning:
+                Toast.warning("Concluído com aviso", job.warning.split("\n", 1)[0],
+                              parent=self.window(), duration=7000)
             self.job_finished.emit(job.opts, paths)
             if self.cfg.open_folder_on_finish and paths:
                 reveal(paths[0])
@@ -512,6 +562,7 @@ class QueuePage(QWidget):
                 self._emit_overall()
                 return
             job.card.mark_failed(message, detail)
+            job.failed = message != "Cancelado"
             if message != "Cancelado":
                 Toast.error("Falha no download", message, parent=self.window(), duration=9000)
             self._persist()
@@ -528,6 +579,19 @@ class QueuePage(QWidget):
         if waiting:
             parts.append(f"{waiting} na fila")
         self.summary.setText(" · ".join(parts))
+        visible = [job for job_id, job in self.jobs.items() if not job.removing]
+        finished = [job for job in visible if not job.active and job.id not in self.pending]
+        failed = sum(1 for job in finished if job.failed)
+        self.clear_btn.setEnabled(bool(finished))
+        self.retry_failed_btn.setVisible(failed > 0)
+        if failed:
+            self.retry_failed_btn.setText(
+                "Tentar de novo a falha" if failed == 1 else f"Tentar de novo as {failed} falhas")
+
+    def retry_failed(self) -> None:
+        for job_id, job in list(self.jobs.items()):
+            if job.failed and not job.active and not job.removing:
+                self.retry(job_id)
 
     def _emit_overall(self) -> None:
         """Média dos downloads ativos — alimenta a barra de tarefas do Windows."""

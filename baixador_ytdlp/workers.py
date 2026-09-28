@@ -363,6 +363,7 @@ class DownloadWorker(QThread):
     progress = Signal(int, object)          # job_id, Progress
     finished_ok = Signal(int, object)       # job_id, list[Path]
     failed = Signal(int, str, str)          # job_id, mensagem, saída completa
+    warning = Signal(int, str)              # job_id, aviso (emitido antes de finished_ok)
 
     def __init__(self, job_id: int, opts: DownloadOptions, cfg: Settings,
                  tc: Toolchain, parent=None):
@@ -441,6 +442,7 @@ class DownloadWorker(QThread):
                     and not self.opts.audio_only and files):
                 self.transcoder = Transcoder(self.tc, self.cfg)
                 converted: list[Path] = []
+                failures: list[str] = []
                 for path in files:
                     if not path.exists():
                         continue
@@ -450,8 +452,21 @@ class DownloadWorker(QThread):
                                         stage=f"Convertendo na GPU — {path.name}")
                         self.progress.emit(self.job_id, prog)
 
-                    converted.append(self.transcoder.run(path, report))
+                    try:
+                        converted.append(self.transcoder.run(path, report))
+                    except Exception as exc:  # noqa: BLE001
+                        if self._cancelled.is_set():
+                            raise
+                        # O download deu certo: perder o arquivo por causa de
+                        # uma etapa opcional seria pior que manter o original.
+                        report_exception(f"conversão do job {self.job_id}", exc)
+                        failures.append(f"{path.name}: {exc}")
+                        converted.append(path)
                 files = converted or files
+                if failures:
+                    self.warning.emit(self.job_id, (
+                        "Download concluído, mas a conversão na GPU falhou; o arquivo "
+                        "original foi mantido.\n\n" + "\n".join(failures)))
 
             self.finished_ok.emit(self.job_id, files)
         except Exception as exc:  # noqa: BLE001
