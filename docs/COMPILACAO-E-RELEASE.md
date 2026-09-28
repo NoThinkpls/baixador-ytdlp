@@ -40,6 +40,27 @@ Não crie a tag nem a Release manualmente no fluxo normal: a automação cria ou
 atualiza ambas quando os três pacotes terminam. Enquanto a etapa final está em
 andamento, os links de download ainda podem retornar arquivo não encontrado.
 
+## Release feita na máquina local
+
+Enquanto o GitHub Actions estiver indisponível, a release sai do `build.ps1`:
+
+1. `.\build.ps1` — gera `dist\installer` e roda o autoteste (inclusive CUDA).
+2. `python scripts\prepare_release.py` — cria `SHA256SUMS.txt`, assina
+   (`SHA256SUMS.txt.sig`), confere a assinatura com a chave embutida no app e
+   extrai as notas da versão do `CHANGELOG.md`. Mostra o comando do `gh`.
+3. `python scripts\prepare_release.py --publish` — faz o mesmo e publica.
+
+### Assinatura Ed25519 (uma vez)
+
+1. `python scripts\release_signing.py generate` grava a chave privada em
+   `%APPDATA%\BaixadorYtdlp-release\release-signing.key` e imprime a pública.
+   Faça backup desse arquivo fora do computador; ele nunca vai para o Git.
+2. Cole a chave pública em `RELEASE_PUBLIC_KEYS` (`baixador_ytdlp/updater.py`) e
+   publique essa versão normalmente.
+3. A partir dela, o app recusa atualizações sem `SHA256SUMS.txt.sig` válido, e o
+   `prepare_release.py` bloqueia uma release sem assinatura ou com chave errada.
+   Perder a chave privada obriga quem já tem o app a atualizar manualmente.
+
 ## Desenvolvimento local
 
 Os scripts `build.ps1` e `build.cmd` existem apenas como apoio ao desenvolvimento.
