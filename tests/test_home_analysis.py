@@ -64,6 +64,20 @@ class HomeAnalysisTests(unittest.TestCase):
         self.assertIsNone(self.page.info)
         self.assertFalse(self.page.download_btn.isEnabled())
 
+    def test_opcoes_dependentes_so_aparecem_quando_valem(self) -> None:
+        page = self.page
+        self.assertTrue(page.audio_format_row.isHidden())
+        self.assertTrue(page.embed_row.isHidden())
+        page.audio_switch.setChecked(True)
+        self.assertFalse(page.audio_format_row.isHidden())
+        self.assertTrue(page.container_row.isHidden())
+        page.transcribe_switch.setChecked(True)
+        self.assertTrue(page.embed_row.isHidden())  # áudio puro não recebe faixa
+        page.audio_switch.setChecked(False)
+        self.assertFalse(page.embed_row.isHidden())
+        page.set_url("https://example.com/watch?v=B")
+        self.assertTrue(page.filename_row.isHidden())
+
 
 if __name__ == "__main__":
     unittest.main()

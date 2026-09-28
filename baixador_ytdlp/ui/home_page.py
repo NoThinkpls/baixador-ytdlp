@@ -336,10 +336,13 @@ class HomePage(QWidget):
         self._select_data(self.container_combo, self.cfg.container)
         self.container_combo.setMinimumWidth(200)
         self.container_combo.currentIndexChanged.connect(self._refresh_filename_preview)
-        group.add_row(SettingRow(
+        # Linhas que só valem em certo modo ficam ocultas fora dele, em vez de
+        # desabilitadas sem explicação: a lista encolhe e cada opção à vista vale.
+        self.container_row = SettingRow(
             "Formato do arquivo",
             "Container do vídeo final. MKV nunca reconverte.",
-            self.container_combo, group))
+            self.container_combo, group)
+        group.add_row(self.container_row)
 
         self.audio_switch = Switch(group)
         self.audio_switch.checkedChanged.connect(self._toggle_audio)
@@ -356,19 +359,23 @@ class HomePage(QWidget):
         self.audio_combo.setEnabled(False)
         self.audio_combo.setMinimumWidth(200)
         self.audio_combo.currentIndexChanged.connect(self._refresh_filename_preview)
-        group.add_row(SettingRow(
+        self.audio_format_row = SettingRow(
             "Formato do áudio",
-            "Vale quando “Somente áudio” está ligado.",
-            self.audio_combo, group))
+            "Formato do arquivo de áudio extraído.",
+            self.audio_combo, group)
+        self.audio_format_row.hide()
+        group.add_row(self.audio_format_row)
 
         self.filename_preview = Muted("Analise uma mídia para visualizar o nome final.", group)
         self.filename_preview.setAccessibleName("Prévia do nome do arquivo")
-        group.add_row(SettingRow(
+        self.filename_row = SettingRow(
             "Nome previsto",
             "Usa o modelo definido em Configurações; o yt-dlp ainda aplica a sanitização do sistema.",
             self.filename_preview,
             group,
-        ))
+        )
+        self.filename_row.hide()  # só faz sentido depois de analisar
+        group.add_row(self.filename_row)
 
         self.transcribe_switch = Switch(group)
         self.transcribe_switch.checkedChanged.connect(self._toggle_transcription_after)
@@ -381,12 +388,14 @@ class HomePage(QWidget):
 
         self.embed_transcription_switch = Switch(group)
         self.embed_transcription_switch.setEnabled(False)
-        group.add_row(SettingRow(
+        self.embed_row = SettingRow(
             "Incorporar legenda como faixa",
             "Cria uma cópia legendada sem reencodar o vídeo; a faixa pode ser desligada no player.",
             self.embed_transcription_switch,
             group,
-        ))
+        )
+        self.embed_row.hide()
+        group.add_row(self.embed_row)
 
         self.trim_check = Switch(group)
         self.trim_check.setToolTip(
@@ -731,15 +740,19 @@ class HomePage(QWidget):
     def _toggle_audio(self, checked: bool) -> None:
         self.audio_combo.setEnabled(checked)
         self.container_combo.setEnabled(not checked)
+        self.audio_format_row.setVisible(checked)
+        self.container_row.setVisible(not checked)
         self.table.setEnabled(not checked)
-        can_embed = self.transcribe_switch.isChecked() and not checked
-        self.embed_transcription_switch.setEnabled(can_embed)
-        if not can_embed:
-            self.embed_transcription_switch.setChecked(False)
+        self._refresh_embed_row()
 
-    def _toggle_transcription_after(self, checked: bool) -> None:
-        can_embed = bool(checked) and not self.audio_switch.isChecked()
+    def _toggle_transcription_after(self, _checked: bool) -> None:
+        self._refresh_embed_row()
+
+    def _refresh_embed_row(self) -> None:
+        # Incorporar precisa de legenda gerada e de um vídeo para receber a faixa.
+        can_embed = self.transcribe_switch.isChecked() and not self.audio_switch.isChecked()
         self.embed_transcription_switch.setEnabled(can_embed)
+        self.embed_row.setVisible(can_embed)
         if not can_embed:
             self.embed_transcription_switch.setChecked(False)
 
@@ -857,6 +870,7 @@ class HomePage(QWidget):
         self.quality_hint.hide()
         self.table.hide()
         self.pick_items_btn.hide()
+        self.filename_row.hide()
         self._update_playlist_hint()
         self._refresh_filename_preview()
         self.download_btn.setEnabled(False)
@@ -869,6 +883,7 @@ class HomePage(QWidget):
             return
         self._analyzed_url = self._probing_url
         self.info = info
+        self.filename_row.show()
 
         self.media_title.setText(info.title)
         meta = [p for p in (info.uploader, f"duração {info.duration}") if p]
