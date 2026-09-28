@@ -355,21 +355,30 @@ class MainWindow(AppShell):
         QDesktopServices.openUrl(QUrl(
             "https://github.com/NoThinkpls/baixador-ytdlp/blob/main/docs/GUIA-DE-USO.md"))
 
+    def _confirm_cancel(self, title: str, text: str) -> bool:
+        """Esc é fácil de apertar sem querer; nenhuma tarefa longa cai sem confirmação."""
+        answer = QMessageBox.question(
+            self, title, text,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
     def _shortcut_cancel(self) -> None:
         current = self.stackedWidget.currentWidget()
         if current is self.transcription and self.transcription.cancel_btn.isEnabled():
-            self.transcription.cancel()
+            if self._confirm_cancel("Cancelar a transcrição?",
+                                    "A transcrição em andamento será interrompida."):
+                self.transcription.cancel()
         elif current is self.media_tools and self.media_tools.cancel_button.isVisible():
-            self.media_tools.cancel_current()
+            if self._confirm_cancel("Cancelar o processamento?",
+                                    "O arquivo em processamento será descartado; o original "
+                                    "não é alterado."):
+                self.media_tools.cancel_current()
         elif current is self.queue and self.queue.has_pending_work():
-            answer = QMessageBox.question(
-                self,
-                "Cancelar a fila?",
-                "Deseja cancelar e remover todos os downloads pendentes ou em andamento?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if answer == QMessageBox.StandardButton.Yes:
+            if self._confirm_cancel(
+                    "Cancelar a fila?",
+                    "Deseja cancelar e remover todos os downloads pendentes ou em andamento?"):
                 self.queue.cancel_all()
 
     def _wire(self) -> None:

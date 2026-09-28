@@ -94,6 +94,18 @@ class UpdateFlowTests(unittest.TestCase):
         self.assertTrue(self.window.isVisible())
         self.assertEqual(self.window._install_mode, "on_exit")
 
+    def test_esc_so_cancela_transcricao_com_confirmacao(self) -> None:
+        page = self.window.transcription
+        self.window.switchTo(page)
+        with patch.object(page.cancel_btn, "isEnabled", return_value=True), \
+                patch.object(page, "cancel") as cancel:
+            with patch.object(self.window, "_confirm_cancel", return_value=False):
+                self.window._shortcut_cancel()
+            cancel.assert_not_called()
+            with patch.object(self.window, "_confirm_cancel", return_value=True):
+                self.window._shortcut_cancel()
+            cancel.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
