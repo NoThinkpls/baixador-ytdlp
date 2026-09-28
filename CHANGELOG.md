@@ -3,7 +3,23 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
-## [1.10.11] - não publicada
+## [1.12.0] - não publicada
+
+### Novidades desta rodada
+
+- Pausar e retomar cada download ou toda a fila, mantendo os arquivos `.part` e
+  o estado pausado entre sessões.
+- Perfil pronto para baixar, gerar legenda e incorporá-la como faixa; seleção
+  de capítulo para preencher o intervalo do download.
+- Ferramentas mais compactas, com arquivo de origem no topo e ação indisponível
+  até escolher um arquivo.
+- Configurações com checagem manual unificada, último horário visível, estado
+  real do Whisper, ícones distintos e troca de canal do yt-dlp na próxima checagem.
+- Mensagens de erro, avisos e estados da fila traduzidos para inglês.
+- yt-dlp para Windows instalado a partir do ZIP oficial em pasta, com SHA-256
+  do artefato e verificação de integridade dos arquivos extraídos.
+- `ffplay.exe` removido da instalação e de versões anteriores.
+- Validação de GPU separada da compilação; pode ser exigida com `-ValidateGpu`.
 
 ### Corrigido
 

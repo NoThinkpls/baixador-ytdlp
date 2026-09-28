@@ -6,8 +6,8 @@ transcrição local com faster-whisper (CTranslate2) e ferramentas de vídeo.
 ## Trabalho em andamento
 
 Siga `docs/PLANO-DE-CORRECOES.md`: auditoria completa da v1.10.10 com status de
-cada item. As rodadas 1 e 2 e parte da 3 estão feitas (v1.10.11, não publicada). O que
-falta está em `PENDENCIAS.md`, na raiz; siga a ordem de lá.
+cada item. As rodadas 1 e 2 e a parte funcional da 3 estão feitas na versão
+candidata 1.12.0. H2 e as validações de release estão em `PENDENCIAS.md`.
 
 ## Decisões do mantenedor (não reabrir)
 

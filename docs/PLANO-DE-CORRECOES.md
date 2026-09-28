@@ -21,7 +21,7 @@ nova · **H** manutenção.
 
 ### Validação pendente (só na máquina do Nathan, com NVIDIA)
 
-- [ ] `build.ps1` passa, incluindo o autoteste com `cudnn_smoke`.
+- [ ] `build.ps1 -ValidateGpu` passa, incluindo o autoteste com `cudnn_smoke`.
 - [ ] Transcrição real: log com "Modelo pronto: CUDA" e processo no `nvidia-smi`.
 - [ ] Testar remover `cudnn_adv64_9.dll` (282 MB, não usado pelo Whisper) para
       reduzir o instalador. Só depois de o item acima passar.
@@ -59,8 +59,16 @@ nova · **H** manutenção.
 | M5 | `3330aa9` | Whisper descarregado após 10 min ocioso + botão "Liberar memória". `tests/test_whisper_idle.py`. |
 | U9, F2 | `e8a62d2` | Legendar aceita vários arquivos/pasta (sem subpastas) + "Esvaziar fila". |
 | F1 | `ff1cce7` | Corte rápido (stream copy) nas Ferramentas; "Caber em um limite" sempre na CPU. |
+| M2 | `25fd062` | FFmpeg instala apenas ffmpeg e ffprobe e limpa ffplay antigo. |
+| U5 | `7077ab9` | Configurações com singular, ícones distintos, checagem unificada e estado real CUDA/CPU. |
+| F5 | `27f0cf1` | Perfil pronto para baixar, legendar e incorporar faixa. |
+| F4 | `8158ca0` | Capítulos da análise preenchem o intervalo do trecho. |
+| F3 | `13aab50` | Pausa e retomada por item ou de toda a fila, com estado persistente. |
+| U7 | `b3ad1b3` | Ferramentas compactas com seleção do arquivo no topo. |
+| U8 | `876d575` | Avisos, estados e erros amigáveis respeitam o idioma inglês. |
+| M1 | `0e3b629` | Windows instala yt-dlp do ZIP oficial em pasta, com hashes do ZIP e de cada arquivo. |
 
-Ver `PENDENCIAS.md` na raiz para o que falta e como terminar.
+Ver `PENDENCIAS.md` na raiz para H2, validação final e publicação da 1.12.0.
 
 ## Uso de GPU por etapa (decisão)
 
