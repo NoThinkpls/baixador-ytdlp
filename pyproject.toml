@@ -14,3 +14,10 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Nos testes, vários "with patch(...)" aninhados agrupam os dublês por assunto.
 "tests/**" = ["SIM117"]
+
+[tool.pyright]
+include = ["baixador_ytdlp", "main.py"]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+# torch e mlx_whisper são opcionais e só existem em algumas plataformas.
+reportMissingImports = "warning"

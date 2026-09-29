@@ -222,7 +222,7 @@ def _is_private_host(host: str) -> bool:
     except OSError:
         return False  # a própria conexão vai falhar; não bloqueia por DNS instável
     for address in addresses:
-        ip = ipaddress.ip_address(address.split("%")[0])
+        ip = ipaddress.ip_address(str(address).split("%")[0])
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
             return True
     return False
@@ -247,7 +247,8 @@ class ThumbnailWorker(QThread):
             # nunca endereços da rede local/loopback.
             if parsed.scheme != "https" or _is_private_host(parsed.hostname or ""):
                 raise ValueError("Miniatura ignorada: endereço não permitido.")
-            handlers = [urllib.request.HTTPSHandler(context=_verified_ssl_context())]
+            handlers: list[urllib.request.BaseHandler] = [
+                urllib.request.HTTPSHandler(context=_verified_ssl_context())]
             if self.proxy:
                 handlers.append(urllib.request.ProxyHandler({"http": self.proxy, "https": self.proxy}))
             opener = urllib.request.build_opener(*handlers)

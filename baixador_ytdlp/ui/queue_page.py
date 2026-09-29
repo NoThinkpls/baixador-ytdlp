@@ -367,12 +367,12 @@ class QueuePage(QWidget):
             "Analise um link na página Baixar e ele aparece aqui com o progresso.", self)
         root.addWidget(self.empty, 1)
 
-        self.scroll = ScrollColumn(self, spacing=10)
-        self.cards = self.scroll.column
+        self.scroll_area = ScrollColumn(self, spacing=10)
+        self.cards = self.scroll_area.column
         self.cards.addStretch(1)
-        self.container = self.scroll.body
-        self.scroll.hide()
-        root.addWidget(self.scroll, 3)
+        self.container = self.scroll_area.body
+        self.scroll_area.hide()
+        root.addWidget(self.scroll_area, 3)
 
     def set_toolchain(self, toolchain) -> None:
         self.toolchain = toolchain
@@ -433,7 +433,7 @@ class QueuePage(QWidget):
         self.jobs[job_id] = Job(job_id, opts, card)
         self.pending.append(job_id)
         self.empty.hide()
-        self.scroll.show()
+        self.scroll_area.show()
         if persist:
             self._persist()
         return True
@@ -590,9 +590,9 @@ class QueuePage(QWidget):
     def _refresh_visibility(self) -> None:
         if any(not job.removing for job in self.jobs.values()):
             self.empty.hide()
-            self.scroll.show()
+            self.scroll_area.show()
         else:
-            self.scroll.hide()
+            self.scroll_area.hide()
             self.empty.show()
 
     def _on_progress(self, job_id: int, prog: Progress) -> None:
@@ -700,7 +700,7 @@ class QueuePage(QWidget):
             job.card.deleteLater()
             del self.jobs[job_id]
         if not self.jobs:
-            self.scroll.hide()
+            self.scroll_area.hide()
             self.empty.show()
         self._persist()
         self._refresh_summary()

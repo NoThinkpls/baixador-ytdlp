@@ -18,6 +18,7 @@ import subprocess
 import threading
 import time
 import weakref
+from typing import Any
 
 from .config import IS_WINDOWS
 import contextlib
@@ -166,7 +167,7 @@ def release_job(job: int) -> None:
 
 def popen_isolated(args, **kwargs) -> subprocess.Popen:
     """``Popen`` em grupo próprio e, no Windows, preso a um Job Object."""
-    options = dict(isolated_process_kwargs())
+    options: dict[str, Any] = dict(isolated_process_kwargs())
     extra_flags = int(kwargs.pop("creationflags", 0) or 0)
     if IS_WINDOWS:
         options["creationflags"] = int(options["creationflags"]) | extra_flags
