@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .processes import CREATE_NO_WINDOW
-from .gpu import select_section_encoder
+from .gpu import UPLOAD_FILTER, backend_of, device_args, quality_args, select_section_encoder
 from .tools import Toolchain
 
 TIME_RE = re.compile(r"^(?:\d{1,2}:)?(?:[0-5]?\d:)?[0-5]?\d(?:\.\d+)?$")
@@ -256,20 +256,33 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain, *, video_enco
     if video_encoder and uses_gpu(options) and "-c:v" in command:
         # Filtros permanecem na CPU; o encoder de hardware recebe os quadros
         # prontos. Isso funciona também com subtitles/libass e fundos desfocados.
+        if backend_of(video_encoder) == "vaapi" and "-filter_complex" in command:
+            # Fundo desfocado usa um grafo complexo; enviar o resultado à GPU exigiria
+            # reescrevê-lo. Fica na CPU (x264), que já é o comportamento de segurança.
+            return _finish(command, options)
         index = command.index("-c:v")
         command[index + 1] = video_encoder
         if "-crf" in command:
             crf = command.index("-crf")
-            quality = command[crf + 1]
-            command[crf:crf + 2] = (["-cq", quality, "-b:v", "0"] if video_encoder.endswith("_nvenc")
-                                  else ["-q:v", "65"] if video_encoder.endswith("_videotoolbox")
-                                  else ["-rc", "cqp", "-qp_i", quality, "-qp_p", quality])
+            command[crf:crf + 2] = quality_args(video_encoder, int(command[crf + 1]))
         if "-preset" in command:
             preset = command.index("-preset")
             if video_encoder.endswith("_nvenc"):
                 command[preset + 1] = "p5"
             else:
                 del command[preset:preset + 2]
+        if backend_of(video_encoder) == "vaapi":
+            # O VAAPI só aceita quadros na GPU: os filtros rodam na CPU e o resultado sobe no fim.
+            if "-vf" in command:
+                vf = command.index("-vf") + 1
+                command[vf] = f"{command[vf]},{UPLOAD_FILTER}"
+            else:
+                command[command.index("-c:v"):command.index("-c:v")] = ["-vf", UPLOAD_FILTER]
+            command[command.index("-i"):command.index("-i")] = device_args(video_encoder)
+    return _finish(command, options)
+
+
+def _finish(command: list[str], options: MediaToolOptions) -> list[str]:
     command += ["-progress", "pipe:1", "-nostats", str(options.destination)]
     return command
 

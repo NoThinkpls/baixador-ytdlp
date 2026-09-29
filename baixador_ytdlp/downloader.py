@@ -21,6 +21,7 @@ from .cookies import cookie_args
 from .processes import popen_isolated, terminate_process_tree
 from .tools import CREATE_NO_WINDOW, Toolchain, decode_external_output
 from .diagnostics import log_event
+from .gpu import UPLOAD_FILTER, backend_of, device_args, quality_args
 from .security import validate_media_url
 
 SEP = "\x1f"  # unit separator: nunca aparece em título de vídeo
@@ -508,7 +509,7 @@ def _to_float(value: str) -> float:
 
 # ------------------------------------------------------------- GPU encode
 class Transcoder:
-    """Reencoda via NVENC, AMD AMF ou VideoToolbox."""
+    """Reencoda via NVENC, AMD AMF, Intel Quick Sync, VAAPI ou VideoToolbox."""
 
     def __init__(self, tc: Toolchain, cfg: Settings):
         self.tc, self.cfg = tc, cfg
@@ -534,14 +535,28 @@ class Transcoder:
     def build_args(self, src: Path, dst: Path, hwaccel: bool = True) -> list[str]:
         codec = self.cfg.transcode_codec
         args = [str(self.tc.ffmpeg), "-hide_banner", "-loglevel", "error", "-y"]
-        is_nvenc = codec.endswith("_nvenc")
-        is_amf = codec.endswith("_amf")
-        is_videotoolbox = codec.endswith("_videotoolbox")
+        backend = backend_of(codec)
+        is_nvenc = backend == "nvenc"
+        is_amf = backend == "amf"
+        is_videotoolbox = backend == "videotoolbox"
+        is_qsv = backend == "qsv"
+        is_vaapi = backend == "vaapi"
         if hwaccel and is_nvenc:
             args += ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
         elif hwaccel and is_videotoolbox:
             args += ["-hwaccel", "videotoolbox"]
-        args += ["-i", str(src), "-c:v", codec]
+        elif hwaccel and is_qsv:
+            # Decodifica na iGPU/Arc; os quadros voltam à memória e o encoder QSV os recebe.
+            args += ["-hwaccel", "qsv"]
+        elif is_vaapi:
+            args += device_args(codec)
+            if hwaccel:
+                # Decodificar e codificar na GPU, sem passar os quadros pela CPU.
+                args += ["-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi"]
+        args += ["-i", str(src)]
+        if is_vaapi and not hwaccel:
+            args += ["-vf", UPLOAD_FILTER]   # sem decodificação por GPU, os quadros sobem aqui
+        args += ["-c:v", codec]
         if is_nvenc:
             args += [
                 "-preset", self.cfg.transcode_preset,
@@ -557,6 +572,8 @@ class Transcoder:
             quality = max(1, min(51, self.cfg.transcode_cq))
             args += ["-quality", "balanced", "-rc", "cqp",
                      "-qp_i", str(quality), "-qp_p", str(quality)]
+        elif is_qsv or is_vaapi:
+            args += quality_args(codec, max(1, min(51, self.cfg.transcode_cq)))
         else:
             raise DownloadError("O encoder acelerado selecionado não é suportado.")
         # Containers MP4 rejeitam PGS/ASS/WebVTT, anexos e streams de dados.
@@ -588,9 +605,12 @@ class Transcoder:
             "h264_nvenc": "h264", "hevc_nvenc": "hevc", "av1_nvenc": "av1",
             "h264_videotoolbox": "h264", "hevc_videotoolbox": "hevc",
             "h264_amf": "h264", "hevc_amf": "hevc", "av1_amf": "av1",
+            "h264_qsv": "h264", "hevc_qsv": "hevc", "av1_qsv": "av1",
+            "h264_vaapi": "h264", "hevc_vaapi": "hevc", "av1_vaapi": "av1",
         }
         dst = src.with_name(f"{src.stem} [{suffix.get(codec, 'acelerado')}]{src.suffix}")
-        attempts = (True, False) if codec.endswith("_nvenc") else (True,)
+        # NVENC, QSV e VAAPI tentam primeiro com decodificação por GPU e repetem sem ela.
+        attempts = (True, False) if backend_of(codec) in {"nvenc", "qsv", "vaapi"} else (True,)
         for attempt, hwaccel in enumerate(attempts):
             if self._cancelled.is_set():
                 raise DownloadError("Conversão cancelada.")
