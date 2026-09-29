@@ -1,20 +1,15 @@
 # Avaliação do Nuitka
 
-O Nuitka era o empacotador padrão das releases Windows. A distribuição standalone
+O Nuitka é o empacotador padrão das releases Windows. A distribuição standalone
 é normalizada para o layout usado pelo instalador e pela versão portátil. O
 PyInstaller continua disponível como rota de contingência local.
-
-Na v1.12.0, a rota Nuitka não passou no autoteste do ONNX Runtime. O pacote
-PyInstaller passou no autoteste do runtime, da GPU e do processo auxiliar do
-VAD. Por isso ele é o padrão temporário; as medições abaixo documentam as
-builds anteriores e não validam o binário desta versão contra antivírus.
 
 ## Gerar a candidata no Windows
 
 ```powershell
-.\build.ps1                         # PyInstaller (padrão desde v1.12.0)
-.\build.ps1 -Installer              # PyInstaller + instalador Inno Setup
-.\build.ps1 -Packager Nuitka        # rota alternativa
+.\build.ps1                         # Nuitka (padrão)
+.\build.ps1 -Installer              # Nuitka + instalador Inno Setup
+.\build.ps1 -Packager PyInstaller   # contingência
 ```
 
 O executável fica em `dist\baixador-ytdlp\baixador-ytdlp.exe`. A build usa o
@@ -96,10 +91,8 @@ A assinatura `Wacatac.B!ml` do Microsoft oscilou entre as duas builds do
 PyInstaller; por isso ela é uma evidência relevante, mas não deve ser tratada
 como determinística sem a prova em Defender ativo.
 
-**Decisão da avaliação original:** o Nuitka passou a ser o padrão de release
-Windows, com o PyInstaller preservado como contingência. A v1.12.0 acionou essa
-contingência porque o Nuitka não passou no autoteste do ONNX Runtime. Ainda
-falta executar o teste em
+**Decisão de segurança:** o Nuitka passou a ser o padrão de release Windows,
+com o PyInstaller preservado como contingência. Ainda falta executar o teste em
 máquina limpa sem Python e a análise dos instaladores em um canal que aceite o
 tamanho do artefato.
 
@@ -119,6 +112,16 @@ tamanho do artefato.
   públicos ao compartilhá-los com o serviço.
 - [x] Adaptar o Inno Setup e o CI para a nova estrutura de saída do Nuitka.
 
-O PyInstaller é o padrão atual. `build.ps1 -Packager Nuitka` preserva a rota
-alternativa para investigação e só deve ser usada em release após passar no
-mesmo autoteste de runtime e GPU.
+Se algum item falhar, `build.ps1 -Packager PyInstaller` permite gerar uma
+release de contingência enquanto a configuração do Nuitka é corrigida.
+
+## Atualização — 29/09/2026: causa do segfault e volta ao Nuitka
+
+Na v1.12.0 o autoteste do Nuitka morria com "segmentation fault" no
+`import onnxruntime`. Reproduzido em um mini-build só com `ctranslate2` e
+`onnxruntime`: o pacote levava um `msvcp140.dll` **14.29** ao lado de um
+`vcruntime140.dll` 14.42, e o onnxruntime 1.30 exige o runtime C++ mais novo.
+Trocar as DLLs pelas do sistema (14.51) resolveu. `scripts/refresh_vc_runtime.ps1`
+faz isso no `build.ps1` e no workflow, sem nunca rebaixar a versão. O
+`--include-package=onnxruntime` não era o problema. Build Nuitka completa com
+`-ValidateGpu` passou na RTX 4060.

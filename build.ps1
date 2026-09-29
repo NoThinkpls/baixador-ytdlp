@@ -2,8 +2,8 @@
     Compila o baixador-ytdlp e (opcionalmente) gera o instalador.
 
     Uso:
-        .\build.ps1                         # compila com PyInstaller
-        .\build.ps1 -Packager Nuitka        # rota experimental
+        .\build.ps1                         # compila com Nuitka
+        .\build.ps1 -Packager PyInstaller   # rota de contingência
         .\build.ps1 -Installer              # compila e gera o setup
         .\build.ps1 -Installer -InstallInnoSetup # instala o Inno Setup, se necessário
 #>
@@ -13,7 +13,7 @@ param(
     [switch]$InstallInnoSetup,
     [switch]$ValidateGpu,
     [ValidateSet('PyInstaller', 'Nuitka')]
-    [string]$Packager = 'PyInstaller'
+    [string]$Packager = 'Nuitka'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -162,6 +162,8 @@ if ($Packager -eq 'Nuitka') {
     Get-ChildItem -LiteralPath $cudnnSource -Filter 'cudnn*.dll' -File | ForEach-Object {
         Copy-Item -LiteralPath $_.FullName -Destination $cudnnDest -Force
     }
+    # O Nuitka pode trazer um msvcp140.dll antigo, que derruba o import do onnxruntime.
+    & (Join-Path $PSScriptRoot 'scripts\refresh_vc_runtime.ps1') -Bundle $releaseBundle -Python $python
 } else {
     Invoke-Python @('-m', 'PyInstaller', 'baixador_ytdlp.spec', '--noconfirm')
     $exe = Join-Path $PSScriptRoot 'dist\baixador-ytdlp\baixador-ytdlp.exe'

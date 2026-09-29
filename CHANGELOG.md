@@ -15,10 +15,12 @@ formato Keep a Changelog.
   codec; sem HLS equivalente, cai para o formato escolhido.
 - Removido o `--force-keyframes-at-cuts` (recodificava o trecho na CPU) e unificado
   o `-S` do yt-dlp num só argumento.
-- Documentado que o Nuitka, na configuração atual, fecha com falha de segmentação
-  ao importar o `onnxruntime` no autoteste da build (mesmo com as opções da
-  1.10.9). O PyInstaller segue como empacotador padrão do Windows até isso ser
-  resolvido; `build.ps1 -Packager Nuitka` continua disponível para investigação.
+- O Windows volta a ser compilado com Nuitka (1/70 detecções no VirusTotal contra
+  3–4/71 do PyInstaller). O autoteste caía com falha de segmentação no
+  `import onnxruntime` porque o pacote levava um `msvcp140.dll` 14.29, mais antigo
+  que o exigido pelo onnxruntime 1.30; `scripts/refresh_vc_runtime.ps1` troca as DLLs
+  do runtime C++ pelas mais novas antes do autoteste. PyInstaller segue como
+  contingência (`build.ps1 -Packager PyInstaller`).
 
 ## [1.12.1] - 2026-09-28
 

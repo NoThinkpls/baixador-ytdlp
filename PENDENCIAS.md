@@ -106,8 +106,9 @@ Ordem sugerida (do mais simples/seguro ao maior):
 
 ## Observações
 
-- O GitHub Actions voltou a executar em 28/09/2026. O workflow usa PyInstaller
-  no Windows, após o autoteste do ONNX Runtime falhar na rota Nuitka.
+- O GitHub Actions voltou a executar em 28/09/2026. O Windows compila com Nuitka;
+  o autoteste do ONNX Runtime falhava por um msvcp140.dll antigo no pacote
+  (`scripts/refresh_vc_runtime.ps1`).
 - Instalador ficará maior por causa do cuDNN 9. Depois de validar a GPU, dá
   para testar excluir `cudnn_adv64_9.dll` (282 MB, não usado pelo Whisper).
 - Os commits foram feitos com o autor "Nathan Ferraz", igual ao histórico.
