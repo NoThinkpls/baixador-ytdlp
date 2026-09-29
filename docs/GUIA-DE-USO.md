@@ -50,7 +50,15 @@ A qualidade escolhida vale por altura (ex.: até 1080p) para todos os itens.
 
 ## Ferramentas de mídia
 
-A página **Ferramentas** trabalha localmente com FFmpeg: recorte, extraia MP3, remuxe sem recomprimir, compacte, **faça caber num limite de tamanho** (Discord, WhatsApp, e-mail), converta para vertical com fundo desfocado e incorpore legendas. O percentual aparece na tela e, quando disponível, na barra de tarefas. Nenhum arquivo é enviado pelo aplicativo para executar essas operações.
+A página **Ferramentas** trabalha localmente com FFmpeg. As tarefas ficam em grupos:
+
+- **Cortar e ajustar:** recortar trecho (com corte rápido sem reencodar), ajustar velocidade (0,25x a 4x, som acompanhando), girar ou espelhar e criar versão vertical com fundo desfocado.
+- **Áudio:** extrair em MP3, M4A, Opus, FLAC ou WAV; nivelar volume (EBU R128, com alvos de -16, -14 ou -23 LUFS, sem recodificar a imagem); remover áudio (cópia sem som, sem perda).
+- **Converter e reduzir:** converter para MP4 (H.264) ou WebM (VP9), trocar contêiner sem recomprimir, reduzir tamanho e **fazer caber num limite** (Discord, WhatsApp, e-mail).
+- **Imagem e animação:** criar GIF de até 30 s com paleta própria e capturar um quadro como PNG, JPG ou WebP.
+- **Legendas e privacidade:** gravar legendas na imagem, extrair a legenda embutida (SRT, ASS ou VTT, salva ao lado do vídeo) e limpar metadados (localização, data, câmera e título) sem recodificar.
+
+O formato ou a extensão do resultado vale pelo nome escolhido em "Onde salvar": trocar `.mp3` por `.flac` muda o codec junto. O percentual aparece na tela e, quando disponível, na barra de tarefas. Nenhum arquivo é enviado pelo aplicativo para executar essas operações.
 
 ## Bandeja e segundo plano
 
