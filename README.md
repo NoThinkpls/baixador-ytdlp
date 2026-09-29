@@ -48,6 +48,8 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 
 > Os links usam os aliases estáveis da Release mais recente; a automação só cria ou atualiza a Release depois de validar todos os pacotes. Se a versão acabou de sair, aguarde a etapa **Publicar release** no [GitHub Actions](../../actions).
 
+> **Nota:** os artefatos distribuídos atualmente não possuem certificado de assinatura de código. Por isso, Windows, macOS ou ferramentas de segurança podem exibir um aviso de aplicativo/desenvolvedor não reconhecido. Os arquivos oficiais do projeto são os publicados diretamente na seção [Releases](../../releases).
+
 **Primeira abertura:** o app baixa yt-dlp, FFmpeg e Deno das fontes oficiais. Depois disso, cada componente só é baixado de novo quando existe versão nova (o FFmpeg, por exemplo, só quando sai um ramo estável mais recente).
 
 ## 🚀 Recursos
