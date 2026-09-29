@@ -5,7 +5,7 @@
 #define AppName "baixador-ytdlp"
 ; A versão pode vir da linha de comando: ISCC /DAppVersion=1.2.3 installer.iss
 #ifndef AppVersion
-#define AppVersion "1.12.4"
+#define AppVersion "1.12.5"
 #endif
 #define AppExe "baixador-ytdlp.exe"
 
@@ -25,7 +25,9 @@ PrivilegesRequiredOverridesAllowed=dialog
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+MinVersion=10.0
 ; O AppId é mantido desde a primeira versão: o Inno Setup encontra a instalação
 ; existente e atualiza a mesma pasta, sem criar um segundo programa no Windows.
 UsePreviousAppDir=yes

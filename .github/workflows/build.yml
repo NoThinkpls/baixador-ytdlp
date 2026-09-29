@@ -4,8 +4,18 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # Só documentação: não vale uma build de ~20 min por job. A release depende da
+    # versão do código, então um commit de texto nunca precisaria publicar nada.
+    paths-ignore: ['docs/**', '**/*.md', 'LICENSE']
   pull_request:
+    paths-ignore: ['docs/**', '**/*.md', 'LICENSE']
   workflow_dispatch:
+
+# Uma execução por ref: um push novo cancela o PR anterior, mas nunca uma execução
+# de main/tag (ela pode estar publicando uma release).
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -18,10 +28,13 @@ jobs:
   windows:
     name: Compilar no Windows
     runs-on: windows-latest
+    timeout-minutes: 75
 
     steps:
       - name: Baixar o código
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Preparar o Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -200,6 +213,8 @@ jobs:
         run: choco install innosetup -y --no-progress
 
       - name: Gerar o instalador
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           $candidates = @(
             "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
@@ -207,14 +222,16 @@ jobs:
           )
           $iscc = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
           if (-not $iscc) { throw "ISCC.exe não encontrado após instalar o Inno Setup" }
-          & $iscc "/DAppVersion=${{ steps.ver.outputs.version }}" installer.iss
+          & $iscc "/DAppVersion=$env:APP_VERSION" installer.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC falhou com código $LASTEXITCODE" }
           Get-ChildItem dist\installer
 
       - name: Empacotar a versão portátil
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           Set-Content -Path 'dist\baixador-ytdlp\portable.txt' -Value 'Dados mantidos nesta pasta.' -Encoding utf8
-          $archive = "dist\installer\BaixadorYtdlp-${{ steps.ver.outputs.version }}-portable-windows.zip"
+          $archive = "dist\installer\BaixadorYtdlp-$env:APP_VERSION-portable-windows.zip"
           Compress-Archive -Path 'dist\baixador-ytdlp\*' -DestinationPath $archive -CompressionLevel Optimal -Force
           if (-not (Test-Path $archive -PathType Leaf)) { throw "Arquivo portátil não gerado: $archive" }
 
@@ -257,13 +274,6 @@ jobs:
             "$hash  $($_.Name)" | Tee-Object -Append dist\installer\SHA256SUMS.txt
           }
 
-      - name: Publicar a versão portátil
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: baixador-ytdlp-portatil-${{ steps.ver.outputs.version }}
-          path: dist/baixador-ytdlp
-          retention-days: 30
-
       - name: Publicar o instalador
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -273,11 +283,12 @@ jobs:
             dist/installer/*.zip
             dist/installer/SHA256SUMS.txt
             dist/installer/sbom-windows.cdx.json
-          retention-days: 30
+          retention-days: 7
 
   macos:
     name: Compilar no macOS Apple Silicon
     runs-on: macos-14
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
@@ -285,6 +296,8 @@ jobs:
     steps:
       - name: Baixar o código
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Preparar o Python arm64
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -383,11 +396,13 @@ jobs:
           echo "OK: $app"
 
       - name: Empacotar o aplicativo
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           mkdir -p dist/installer
           app="dist/baixador-ytdlp.app"
-          archive="dist/installer/BaixadorYtdlp-${{ steps.ver.outputs.version }}-macos-arm64.zip"
-          dmg="dist/installer/BaixadorYtdlp-${{ steps.ver.outputs.version }}-macos-arm64.dmg"
+          archive="dist/installer/BaixadorYtdlp-${APP_VERSION}-macos-arm64.zip"
+          dmg="dist/installer/BaixadorYtdlp-${APP_VERSION}-macos-arm64.dmg"
           # O marcador fica AO LADO do .app: gravar dentro do pacote quebra a
           # assinatura e falha sob App Translocation (volume somente leitura).
           portable_root="build/portable/baixador-ytdlp-portable"
@@ -434,11 +449,12 @@ jobs:
             dist/installer/*.zip
             dist/installer/SHA256SUMS-macos.txt
             dist/installer/sbom-macos.cdx.json
-          retention-days: 30
+          retention-days: 7
 
   linux:
     name: Compilar no Linux (Ubuntu/Debian)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
@@ -446,6 +462,8 @@ jobs:
     steps:
       - name: Baixar o código
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Instalar bibliotecas gráficas do Linux
         run: |
@@ -512,8 +530,10 @@ jobs:
           echo "OK: $executable (bundle validado)"
 
       - name: Empacotar .deb e versão portátil
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          version="${{ steps.ver.outputs.version }}"
+          version="$APP_VERSION"
           root="build/linux-package"
           out="dist/installer"
           rm -rf "$root"
@@ -551,11 +571,12 @@ jobs:
             dist/installer/*.tar.gz
             dist/installer/SHA256SUMS-linux.txt
             dist/installer/sbom-linux.cdx.json
-          retention-days: 30
+          retention-days: 7
 
   release:
     name: Publicar release
     needs: [windows, macos, linux]
+    timeout-minutes: 30
     # Um push em main ou uma tag válida só publica depois que todos os
     # pacotes foram validados, evitando uma Release sem downloads.
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
@@ -573,6 +594,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Decidir a publicação automática
         id: release
@@ -650,8 +672,10 @@ jobs:
       - name: Validar os ativos da Release
         if: steps.release.outputs.publish == 'true'
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
-          version="${{ steps.release.outputs.version }}"
+          version="$RELEASE_VERSION"
           required=(
             "BaixadorYtdlp-${version}-setup.exe"
             "baixador-ytdlp-setup.exe"

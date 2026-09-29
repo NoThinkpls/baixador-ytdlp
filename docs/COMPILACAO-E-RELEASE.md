@@ -11,6 +11,19 @@ compila Windows, macOS e Linux e, somente se todas passarem, cria a tag `vX.Y.Z`
 compatível com `APP_VERSION` e publica a Release. Uma tag enviada manualmente
 continua compatível com o mesmo fluxo de validação.
 
+## Boas práticas do CI
+
+- Ações fixadas por SHA (Dependabot atualiza), permissões mínimas por job e ambiente
+  `release` protegido; `persist-credentials: false` em todos os checkouts.
+- `concurrency` por ref, `timeout-minutes` em cada job e `paths-ignore` para documentação.
+- O Nuitka usa `NUITKA_CACHE_DIR` restaurada por `actions/cache` (ccache): ~5 min com
+  cache contra ~17 min do zero.
+- O autoteste do executável (`main.py --self-test`) confere imports, VAD, PyAV e sobe o
+  servidor de transcrição como um processo `spawn`, como o app faz.
+- `security.yml` roda `pip-audit`, a checagem de assets upstream, `actionlint` e
+  `zizmor`; `codeql.yml` analisa o Python. A configuração do `zizmor` está em
+  `.github/zizmor.yml`.
+
 ## Arquivos de cada Release
 
 | Plataforma | Arquivo versionado | Link estável para o README |

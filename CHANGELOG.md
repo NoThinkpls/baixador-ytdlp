@@ -3,6 +3,30 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.12.5] - 2026-09-29
+
+### Corrigido
+
+- Legendar no Windows falhava com "O motor de transcrição encerrou inesperadamente"
+  nas versões 1.12.3 e 1.12.4 (build Nuitka): o processo do servidor de transcrição
+  usava `importlib.metadata` como atributo do pacote `importlib`, que não existe no
+  processo filho do Nuitka. Agora o módulo é importado direto. Isso também quebrava o
+  fluxo "Baixar e legendar". O autoteste da build passou a iniciar o servidor de
+  transcrição como o app faz, então essa queda derruba a build em vez de chegar ao usuário.
+- O instalador exige Windows 10 ou mais novo de 64 bits e diz isso com clareza, em vez
+  de abrir uma instalação que não funcionaria em 32 bits.
+
+### Alterado (CI e releases)
+
+- A release deixou de incluir um `baixador-ytdlp.exe` solto (o job de publicação baixava
+  a pasta inteira do app portátil, 1,4 GB, só para atestar e listar arquivos). O app
+  portátil já sai no ZIP.
+- Workflows: uma execução por ref (PR novo cancela o anterior, main/tag nunca), tempo
+  máximo por job, commits só de documentação não disparam build, checkout sem credenciais
+  persistidas, valores de etapas passados por variáveis de ambiente (sem injeção de
+  template), artefatos com retenção de 7 dias, `actionlint` e `zizmor` no CI e
+  análise CodeQL do Python (semanal e em cada push/PR).
+
 ## [1.12.4] - 2026-09-29
 
 ### Adicionado
