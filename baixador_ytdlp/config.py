@@ -116,7 +116,7 @@ class Settings:
     last_output_dir: str = ""        # última pasta escolhida por download
     container: str = "mp4"           # mp4 | mkv | webm | original
     audio_format: str = "mp3"        # mp3 | m4a | opus | flac | wav
-    prefer_h264: bool = False        # prioriza compatibilidade em vez de qualidade
+    prefer_h264: bool = True         # prioriza compatibilidade (editores, TVs) em vez de qualidade máxima
     embed_thumbnail: bool = True
     embed_metadata: bool = True
     embed_chapters: bool = True

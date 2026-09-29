@@ -10,6 +10,12 @@ updates:
       # peças sobe sozinha: a troca é manual e validada com o autoteste da
       # build numa máquina com GPU NVIDIA (ver CONTRIBUTING.md).
       - dependency-name: ctranslate2
+      # Atualizados à mão, com o lock regenerado e o autoteste em GPU/Apple Silicon: o
+      # Dependabot não regenera os .lock e o Qt/MLX/faster-whisper mudam o app inteiro.
+      - dependency-name: faster-whisper
+      - dependency-name: pyside6*
+      - dependency-name: shiboken6
+      - dependency-name: mlx*
       - dependency-name: nvidia-cudnn-cu12
       - dependency-name: nvidia-cublas-cu12
       - dependency-name: nvidia-cuda-runtime-cu12

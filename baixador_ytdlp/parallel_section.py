@@ -141,9 +141,13 @@ class ParallelSectionRunner:
         bounds = self._aligned_bounds(cfg, work)
         subs = []
         for index in range(count):
+            # O corte inclui o quadro do instante final: 20 ms a menos (menos de um quadro
+            # a 30 fps) evitam repetir, no fim de cada parte, o quadro-chave com que a
+            # seguinte começa.
+            end = bounds[index + 1] - (0.02 if index < count - 1 else 0.0)
             piece_opts = dataclasses.replace(
                 self.opts, output_dir=str(work / str(index)), repeat_index=0,
-                section_start=f"{bounds[index]:.3f}", section_end=f"{bounds[index + 1]:.3f}")
+                section_start=f"{bounds[index]:.3f}", section_end=f"{end:.3f}")
             subs.append(DownloadRunner(piece_opts, cfg, self.tc))
         with self._lock:
             self._subs = subs

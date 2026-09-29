@@ -161,11 +161,14 @@ def build_args(
                  else opts.selector]
         # Uma única ordenação: dois -S seguidos deixam a prioridade ambígua.
         sort_keys: list[str] = []
-        if _prefers_hls_section(opts):
+        hls_section = _prefers_hls_section(opts)
+        if hls_section:
             # Trecho no YouTube: o HLS é buscado por segmentos e chega a dezenas de
             # vezes o tempo real; o arquivo DASH comum sai numa conexão só, a ~2x.
             sort_keys.append("proto:m3u8")
-        if cfg.prefer_h264:
+        if cfg.prefer_h264 or hls_section:
+            # Um trecho costuma ir para um editor (DaVinci, Premiere): o VP9 do HLS do
+            # YouTube abre com partes "Media Offline" no DaVinci, o H.264 abre sempre.
             sort_keys.append("vcodec:h264,res,fps,acodec:aac")
         if sort_keys:
             args += ["-S", ",".join(sort_keys)]
