@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QBoxLayout, QFil
 from ..config import Settings
 from ..downloader import DownloadOptions
 from ..filename_preview import render_filename_preview
-from ..probe import MediaInfo, kill_running, playlist_selector
+from ..probe import MediaInfo, hls_section_selector, kill_running, playlist_selector
 from ..security import validate_media_url
 from ..workers import PlaylistEntriesWorker, ProbeWorker, ThumbnailWorker
 from .playlist_picker import PlaylistPickerDialog
@@ -1087,6 +1087,7 @@ class HomePage(QWidget):
 
         audio_only = self.audio_switch.isChecked()
         selector = "bv*+ba/b"
+        section_selector = ""
         row_index = self.table.currentRow()
         if not audio_only and row_index > 0:
             row = self.info.rows[row_index - 1]
@@ -1094,6 +1095,9 @@ class HomePage(QWidget):
                 audio_only = True
             else:
                 selector = playlist_selector(row) if self.info.is_playlist else row.selector
+                if start or end:
+                    section_selector = ("" if self.info.is_playlist
+                                        else hls_section_selector(self.info, row))
 
         if not self._has_space_for_download(
                 output_dir, audio_only=audio_only, selected_row=row_index):
@@ -1103,6 +1107,7 @@ class HomePage(QWidget):
             url=self._analyzed_url,
             output_dir=output_dir,
             selector=selector,
+            section_selector=section_selector,
             container=self.container_combo.currentData(),
             audio_only=audio_only,
             audio_format=self.audio_combo.currentData(),

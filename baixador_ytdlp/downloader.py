@@ -54,6 +54,7 @@ class DownloadOptions:
     playlist_items: str = ""         # ex.: "1-3,7" — vazio = playlist inteira
     repeat_index: int = 0          # sufixo (2), (3)… em repetição confirmada
     media_duration: float = 0.0    # segundos, da análise; dá % a trecho sem fim definido
+    section_selector: str = ""      # alternativa HLS equivalente para recortes
 
 
 @dataclass
@@ -155,9 +156,18 @@ def build_args(
         args += ["-f", "bestaudio/best", "-x",
                  "--audio-format", opts.audio_format, "--audio-quality", "0"]
     else:
-        args += ["-f", opts.selector]
+        args += ["-f", opts.section_selector if _section_range(opts) and opts.section_selector
+                 else opts.selector]
+        # Uma única ordenação: dois -S seguidos deixam a prioridade ambígua.
+        sort_keys: list[str] = []
+        if _prefers_hls_section(opts):
+            # Trecho no YouTube: o HLS é buscado por segmentos e chega a dezenas de
+            # vezes o tempo real; o arquivo DASH comum sai numa conexão só, a ~2x.
+            sort_keys.append("proto:m3u8")
         if cfg.prefer_h264:
-            args += ["-S", "vcodec:h264,res,fps,acodec:aac"]
+            sort_keys.append("vcodec:h264,res,fps,acodec:aac")
+        if sort_keys:
+            args += ["-S", ",".join(sort_keys)]
         if opts.container in ("mp4", "mkv", "webm"):
             # --merge-output-format já resolve o caso vídeo+áudio separados.
             # --remux-video só entra para o arquivo único que veio em outro container:
@@ -167,9 +177,8 @@ def build_args(
 
     section = _section_range(opts)
     if section:
-        # Só o --download-sections: o yt-dlp pede ao FFmpeg apenas o intervalo e
-        # copia os fluxos. Nada de --force-keyframes-at-cuts (recodifica o trecho
-        # inteiro na CPU) nem de seletores/protocolos especiais.
+        # O downloader FFmpeg busca apenas o intervalo e copia os fluxos. Forçar
+        # quadros-chave recodificaria todo o trecho, inclusive vídeos longos.
         args += ["--download-sections", section]
         if not opts.audio_only:
             # O FFmpeg usado como downloader não participa do progress-template
@@ -208,6 +217,20 @@ def build_args(
     # nunca poderá virar --exec/--batch-file para o yt-dlp.
     args += ["--", validate_media_url(opts.url)]
     return args
+
+
+def _prefers_hls_section(opts: DownloadOptions) -> bool:
+    """Trecho sem escolha explícita de formato, em vídeo do YouTube."""
+    return (bool(_section_range(opts)) and not opts.audio_only
+            and not opts.section_selector and opts.selector == "bv*+ba/b"
+            and _is_youtube_url(opts.url))
+
+
+def _is_youtube_url(url: str) -> bool:
+    from urllib.parse import urlsplit
+
+    host = (urlsplit(url).hostname or "").lower()
+    return host == "youtu.be" or host == "youtube.com" or host.endswith(".youtube.com")
 
 
 def _section_range(opts: DownloadOptions) -> str:

@@ -7,9 +7,14 @@ formato Keep a Changelog.
 
 ### Corrigido
 
-- Baixar só um trecho volta a usar apenas o `--download-sections` do yt-dlp. Foram
-  removidos o seletor HLS e o `-S proto:m3u8` da 1.12.1, que mudavam o formato
-  escolhido e o protocolo sem o usuário pedir. O corte segue sem recodificar.
+- Baixar só um trecho no YouTube ficou muito mais rápido. O corte pelo formato
+  DASH comum passa por uma única conexão do FFmpeg (~2x o tempo real: 82 min de
+  live levariam mais de 40 min). Agora o app prefere o formato HLS equivalente,
+  buscado por segmentos (~9x o tempo real medido: 82 min em ~10 min; 60 s em
+  5 s). Com um formato escolhido na tabela, usa o HLS de mesma resolução, FPS e
+  codec; sem HLS equivalente, cai para o formato escolhido.
+- Removido o `--force-keyframes-at-cuts` (recodificava o trecho na CPU) e unificado
+  o `-S` do yt-dlp num só argumento.
 - Documentado que o Nuitka, na configuração atual, fecha com falha de segmentação
   ao importar o `onnxruntime` no autoteste da build (mesmo com as opções da
   1.10.9). O PyInstaller segue como empacotador padrão do Windows até isso ser
