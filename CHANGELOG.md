@@ -10,10 +10,10 @@ formato Keep a Changelog.
 - Baixar só um trecho volta a usar apenas o `--download-sections` do yt-dlp. Foram
   removidos o seletor HLS e o `-S proto:m3u8` da 1.12.1, que mudavam o formato
   escolhido e o protocolo sem o usuário pedir. O corte segue sem recodificar.
-- O empacotador do Windows volta a ser o Nuitka, como decidido; a troca para
-  PyInstaller feita na 1.12.0 não estava prevista. O PyInstaller continua como
-  contingência (`build.ps1 -Packager PyInstaller`). O build Nuitka mantém os
-  ajustes da 1.12.0 para `onnxruntime` e para as DLLs do cuDNN.
+- Documentado que o Nuitka, na configuração atual, fecha com falha de segmentação
+  ao importar o `onnxruntime` no autoteste da build (mesmo com as opções da
+  1.10.9). O PyInstaller segue como empacotador padrão do Windows até isso ser
+  resolvido; `build.ps1 -Packager Nuitka` continua disponível para investigação.
 
 ## [1.12.1] - 2026-09-28
 
