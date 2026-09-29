@@ -15,8 +15,9 @@ candidata 1.12.0. A validação e a publicação estão em `PENDENCIAS.md`.
 - Sem assinatura Authenticode (não quer gastar com o projeto). Ed25519 das
   releases é gratuita e está no plano (A8).
 - GitHub Actions voltou a executar em 28/09/2026: o workflow compila as três
-  plataformas e publica após passar. A build Windows local usa PyInstaller
-  nesta rodada após falha do autoteste Nuitka.
+  plataformas e publica após passar. O empacotador do Windows é o Nuitka
+  (menos detecções no VirusTotal: 1/70 contra 3-4/71 do PyInstaller);
+  PyInstaller é só contingência.
 - A verificação de dependências do legendador continua bloqueante antes de
   liberar a interface; só cache é aceito.
 - Sugestões de funcionalidade são bem-vindas em revisões, sempre com a UI

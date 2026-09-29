@@ -1,7 +1,7 @@
 # Compilação e publicação de Releases
 
-> A v1.12.0 usa PyInstaller após a rota Nuitka falhar no autoteste do ONNX
-> Runtime. A comparação de desempenho e segurança está em
+> As releases Windows usam Nuitka. A comparação de desempenho e segurança, a
+> rota de contingência com PyInstaller e as validações pendentes estão em
 > [Avaliação do Nuitka](AVALIACAO-NUITKA.md).
 
 [Read this guide in English](BUILD-AND-RELEASE.en.md)
@@ -65,7 +65,7 @@ estiver indisponível. Em 28/09/2026, o workflow voltou a executar:
 ## Desenvolvimento local
 
 Os scripts `build.ps1` e `build.cmd` existem apenas como apoio ao desenvolvimento.
-No Windows, `build.ps1` usa PyInstaller por padrão; passe `-Packager Nuitka`
-para testar a rota alternativa. Para distribuição, use os artefatos produzidos
+No Windows, `build.ps1` usa Nuitka por padrão; passe `-Packager PyInstaller`
+para a rota de contingência. Para distribuição, use os artefatos produzidos
 pelo GitHub Actions.
 
