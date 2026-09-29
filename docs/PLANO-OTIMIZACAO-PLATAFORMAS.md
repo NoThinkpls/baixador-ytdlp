@@ -25,7 +25,7 @@ emendadas nos quadros-chave: 82 min em ~2,5 min. O downloader nativo do yt-dlp n
 aceita `--download-sections` com fragmentos concorrentes. Falta: sites fora do
 YouTube e áudio.
 
-### P2 — Encoders por vendor (Windows e Linux)
+### P2 — Encoders por vendor (Windows e Linux) — feito na 1.12.6 (sem hardware Intel/AMD para testar)
 - **Intel QSV** (`h264_qsv`, `hevc_qsv`, `av1_qsv`): iGPU Intel e Arc. Windows e Linux.
 - **VAAPI** (`h264_vaapi`, `hevc_vaapi`, `av1_vaapi`): AMD e Intel no Linux; é o
   caminho de AMD no Linux (AMF só existe no driver proprietário).
@@ -37,7 +37,7 @@ YouTube e áudio.
 - Risco: cada driver tem quirks de rate-control; manter fallback em camadas
   (GPU → outro backend → x264) como hoje.
 
-### P3 — Decodificação por hardware
+### P3 — Decodificação por hardware — feito na 1.12.6 para a conversão pós-download (QSV/VAAPI/CUDA/VideoToolbox)
 Hoje só o encoder usa GPU; decodificar 4K/HEVC na CPU limita a conversão.
 Usar `-hwaccel cuda|d3d11va|qsv|vaapi|videotoolbox` conforme o backend do encoder,
 com fallback sem `-hwaccel` se o filtro falhar. Ganho maior em vídeos grandes e em

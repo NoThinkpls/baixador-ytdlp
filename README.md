@@ -31,7 +31,7 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 
 - **Rápido de verdade.** Downloads com fragmentos em paralelo; trechos de vídeos longos do YouTube usam o formato HLS e são baixados em partes paralelas, emendadas sem recodificar: ~30× o tempo real (82 min de uma live em ~2,5 min).
 - **Tudo no seu computador.** Transcrição, conversão e cortes rodam localmente. Nenhum áudio ou vídeo sai da sua máquina.
-- **Usa a sua GPU.** NVIDIA (NVENC e CUDA), AMD (AMF) e Apple Silicon (VideoToolbox e MLX), com retorno automático para a CPU se a GPU recusar a mídia.
+- **Usa a sua GPU.** NVIDIA (NVENC e CUDA), AMD (AMF e VAAPI), Intel (Quick Sync) e Apple Silicon (VideoToolbox e MLX), com retorno automático para a CPU se a GPU recusar a mídia.
 - **Seguro por padrão.** yt-dlp, FFmpeg e Deno vêm das fontes oficiais com SHA-256 conferido; a validação de certificado TLS nunca é desligada.
 - **Bonito e leve de usar.** Tema claro e escuro, português e inglês, fila persistente e avisos que não atrapalham.
 
@@ -95,7 +95,7 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 
 | | Windows | macOS (Apple Silicon) | Linux |
 | --- | --- | --- | --- |
-| Conversão e cortes | NVIDIA NVENC · AMD AMF | VideoToolbox | encoder disponível no FFmpeg |
+| Conversão e cortes | NVIDIA NVENC · AMD AMF · Intel Quick Sync | VideoToolbox | NVENC · Intel Quick Sync · VAAPI (AMD/Intel) |
 | Transcrição | NVIDIA CUDA · CPU | MLX na GPU · CPU | CPU/int8 |
 
 O que vem a seguir (Intel QSV, VAAPI, decodificação por hardware, cortes em paralelo) está em [`docs/PLANO-OTIMIZACAO-PLATAFORMAS.md`](docs/PLANO-OTIMIZACAO-PLATAFORMAS.md).

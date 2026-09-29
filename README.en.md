@@ -31,7 +31,7 @@ and video tools. Free, open source, and nothing leaves your computer.
 
 - **Genuinely fast.** Parallel fragment downloads; clips from long YouTube videos use the HLS format and are downloaded in parallel parts joined losslessly: ~30× real time (82 minutes of a live stream in ~2.5 minutes).
 - **Everything stays local.** Transcription, conversion and cutting run on your machine. No audio or video is uploaded anywhere.
-- **Uses your GPU.** NVIDIA (NVENC and CUDA), AMD (AMF) and Apple Silicon (VideoToolbox and MLX), with an automatic CPU fallback if the GPU rejects a file.
+- **Uses your GPU.** NVIDIA (NVENC and CUDA), AMD (AMF and VAAPI), Intel (Quick Sync) and Apple Silicon (VideoToolbox and MLX), with an automatic CPU fallback if the GPU rejects a file.
 - **Secure by default.** yt-dlp, FFmpeg and Deno come from official sources with verified SHA-256; TLS certificate validation is never disabled.
 - **Pleasant to use.** Light and dark themes, Portuguese and English, a persistent queue, and unobtrusive notices.
 
@@ -95,7 +95,7 @@ and video tools. Free, open source, and nothing leaves your computer.
 
 | | Windows | macOS (Apple Silicon) | Linux |
 | --- | --- | --- | --- |
-| Conversion and cuts | NVIDIA NVENC · AMD AMF | VideoToolbox | encoder available in FFmpeg |
+| Conversion and cuts | NVIDIA NVENC · AMD AMF · Intel Quick Sync | VideoToolbox | NVENC · Intel Quick Sync · VAAPI (AMD/Intel) |
 | Transcription | NVIDIA CUDA · CPU | MLX on GPU · CPU | CPU/int8 |
 
 Planned next (Intel QSV, VAAPI, hardware decoding, parallel cuts): [`docs/PLANO-OTIMIZACAO-PLATAFORMAS.md`](docs/PLANO-OTIMIZACAO-PLATAFORMAS.md) (Portuguese).

@@ -3,6 +3,20 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.12.6] - não publicada
+
+### Adicionado
+
+- Conversão e cortes acelerados também em **Intel Quick Sync** (H.264, HEVC e AV1; iGPU
+  e Arc, Windows e Linux) e **VAAPI** (AMD e Intel no Linux). Um backend só aparece se
+  uma codificação real de 1 quadro passar na sua máquina; senão, tudo segue na CPU.
+- A conversão pós-download decodifica na GPU (`-hwaccel qsv`/`vaapi`, além do CUDA e do
+  VideoToolbox que já existiam) e repete sem isso se a GPU recusar a mídia.
+- Ferramentas de vídeo com VAAPI enviam os quadros à GPU depois dos filtros; o fundo
+  desfocado dos Shorts (grafo complexo) continua na CPU nesse backend.
+- O NVENC, o AMF e o VideoToolbox seguem como antes (verificado com uma compactação real).
+  QSV e VAAPI não puderam ser testados em hardware: cobertos por testes dos argumentos.
+
 ## [1.12.5] - 2026-09-29
 
 ### Corrigido

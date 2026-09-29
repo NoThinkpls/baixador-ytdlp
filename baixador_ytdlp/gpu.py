@@ -1,6 +1,7 @@
-"""Detecção de encoders acelerados: NVENC, AMD AMF e VideoToolbox."""
+"""Detecção de encoders acelerados: NVENC, AMD AMF, Intel Quick Sync, VAAPI e VideoToolbox."""
 from __future__ import annotations
 
+import glob
 import platform
 import re
 import sys
@@ -20,7 +21,55 @@ GPU_ENCODER_LABELS = {
     "h264_amf": "H.264 (AMD AMF) — compatível com tudo",
     "hevc_amf": "HEVC / H.265 (AMD AMF) — melhor qualidade por bit",
     "av1_amf": "AV1 (AMD AMF) — placas AMD compatíveis",
+    "h264_qsv": "H.264 (Intel Quick Sync) — compatível com tudo",
+    "hevc_qsv": "HEVC / H.265 (Intel Quick Sync) — melhor qualidade por bit",
+    "av1_qsv": "AV1 (Intel Quick Sync) — Arc e iGPUs recentes",
+    "h264_vaapi": "H.264 (VAAPI) — AMD e Intel no Linux",
+    "hevc_vaapi": "HEVC / H.265 (VAAPI) — AMD e Intel no Linux",
+    "av1_vaapi": "AV1 (VAAPI) — GPUs recentes no Linux",
 }
+
+BACKEND_NAMES = {
+    "nvenc": "NVENC", "amf": "AMD AMF", "qsv": "Intel Quick Sync",
+    "vaapi": "VAAPI", "videotoolbox": "VideoToolbox",
+}
+UPLOAD_FILTER = "format=nv12,hwupload"
+
+
+def backend_of(codec: str) -> str:
+    """``h264_nvenc`` → ``nvenc``; vazio quando não é um encoder de GPU conhecido."""
+    backend = codec.rsplit("_", 1)[-1]
+    return backend if backend in BACKEND_NAMES else ""
+
+
+def vaapi_device() -> str:
+    """Primeiro nó de renderização do Linux (``/dev/dri/renderD128``), ou vazio."""
+    if not sys.platform.startswith("linux"):
+        return ""
+    nodes = sorted(glob.glob("/dev/dri/renderD*"))
+    return nodes[0] if nodes else ""
+
+
+def device_args(codec: str) -> list[str]:
+    """Argumentos de entrada que o backend exige antes do ``-i`` (VAAPI precisa do dispositivo)."""
+    if backend_of(codec) == "vaapi":
+        device = vaapi_device()
+        return ["-vaapi_device", device] if device else []
+    return []
+
+
+def quality_args(codec: str, quality: int) -> list[str]:
+    """Qualidade constante equivalente ao CRF ``quality`` para cada backend."""
+    backend = backend_of(codec)
+    if backend == "nvenc":
+        return ["-cq", str(quality), "-b:v", "0"]
+    if backend == "videotoolbox":
+        return ["-q:v", "65"]
+    if backend == "qsv":
+        return ["-global_quality", str(quality)]
+    if backend == "vaapi":
+        return ["-rc_mode", "CQP", "-qp", str(quality)]
+    return ["-rc", "cqp", "-qp_i", str(quality), "-qp_p", str(quality)]
 
 # Mantemos apenas confirmações positivas. Uma negativa pode ser transitória
 # (driver ainda inicializando, notebook trocando de GPU, retorno do macOS), e
@@ -44,10 +93,14 @@ def _cache_key(ffmpeg: Path) -> tuple[str, int, int] | None:
 def _candidate_encoders() -> tuple[str, ...]:
     if is_macos(sys.platform):
         return "h264_videotoolbox", "hevc_videotoolbox"
-    return (
+    candidates = (
         "h264_nvenc", "hevc_nvenc", "av1_nvenc",
         "h264_amf", "hevc_amf", "av1_amf",
+        "h264_qsv", "hevc_qsv", "av1_qsv",
     )
+    if sys.platform.startswith("linux"):
+        candidates += ("h264_vaapi", "hevc_vaapi", "av1_vaapi")
+    return candidates
 
 
 def _advertised_encoders(advertised: str) -> list[str]:
@@ -64,11 +117,18 @@ def _encoder_probe(ffmpeg: Path, codec: str) -> tuple[bool, str]:
     placa/driver correspondente. O quadro sintético evita oferecer um backend
     que só falharia depois de começar um vídeo real.
     """
+    backend = backend_of(codec)
+    if backend == "vaapi" and not vaapi_device():
+        return False, "Nenhum dispositivo de renderização (/dev/dri/renderD*) disponível."
+    # QSV e VAAPI recebem quadros NV12 (o VAAPI, já enviados à GPU); os demais, YUV 4:2:0.
+    frame_args = (["-vf", UPLOAD_FILTER] if backend == "vaapi"
+                  else ["-vf", "format=nv12"] if backend == "qsv"
+                  else ["-pix_fmt", "yuv420p"])
     try:
         result = run_hidden([
-            str(ffmpeg), "-hide_banner", "-loglevel", "error",
+            str(ffmpeg), "-hide_banner", "-loglevel", "error", *device_args(codec),
             "-f", "lavfi", "-i", "color=size=256x256:rate=1",
-            "-frames:v", "1", "-an", "-pix_fmt", "yuv420p",
+            "-frames:v", "1", "-an", *frame_args,
             "-c:v", codec, "-f", "null", "-",
         ], timeout=20)
         if getattr(result, "returncode", 0) == 0:
@@ -144,14 +204,8 @@ class GpuInfo:
                 return f"{self.name} detectada, mas este FFmpeg não expõe um encoder utilizável."
             return "Nenhum encoder de GPU detectado — a conversão usaria a CPU."
         encoders = self.section_encoders
-        codecs = ", ".join(e.replace("_nvenc", "").replace("_videotoolbox", "").replace("_amf", "").upper()
-                           for e in encoders)
-        if any(e.endswith("_videotoolbox") for e in encoders):
-            backend = "VideoToolbox"
-        elif any(e.endswith("_amf") for e in encoders):
-            backend = "AMD AMF"
-        else:
-            backend = "NVENC"
+        codecs = ", ".join(e.rsplit("_", 1)[0].upper() for e in encoders)
+        backend = BACKEND_NAMES.get(backend_of(encoders[0]), "GPU")
         if self.encoders:
             return f"{self.name or 'GPU'} · {backend}: {codecs or 'indisponível'}"
         return (f"{self.name or 'GPU'} · {backend} anunciado pelo FFmpeg: {codecs}. "
@@ -232,7 +286,7 @@ def select_section_encoder(ffmpeg: Path, preferred: str = "") -> str:
     encoders = detect(ffmpeg, verify=True, query_device=False).section_encoders
     if preferred and preferred in encoders:
         return preferred
-    for codec in ("h264_nvenc", "h264_amf", "h264_videotoolbox"):
+    for codec in ("h264_nvenc", "h264_amf", "h264_qsv", "h264_vaapi", "h264_videotoolbox"):
         if codec in encoders:
             return codec
     return ""
