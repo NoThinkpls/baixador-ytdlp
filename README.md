@@ -76,7 +76,7 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 
 ### Ferramentas de vídeo
 
-- Recortar, extrair áudio, trocar contêiner sem perder qualidade, reduzir tamanho, **caber num limite** (Discord, WhatsApp, e-mail), criar versão vertical (Shorts/Reels) e adicionar legendas.
+- 16 ferramentas em cinco grupos: recortar, **ajustar velocidade**, girar/espelhar e criar versão vertical (Shorts/Reels); extrair áudio (MP3, M4A, Opus, FLAC, WAV), **nivelar volume** e remover áudio; **converter para MP4 ou WebM**, trocar contêiner sem perda, reduzir tamanho e **caber num limite** (Discord, WhatsApp, e-mail); **criar GIF** e **capturar imagem**; adicionar e **extrair legendas** e **limpar metadados** (GPS, título, câmera).
 - Conversão por **NVENC, AMF ou VideoToolbox** quando disponível, com retorno para a CPU se a GPU falhar. O arquivo original nunca é alterado.
 
 <div align="center">

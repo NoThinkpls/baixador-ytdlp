@@ -227,6 +227,113 @@ EN: dict[str, str] = {
         "YouTube rate limited this IP. Wait a few minutes before retrying, or configure a proxy.",
     "O site recusou o acesso (HTTP 403). Verifique os componentes em Configurações e tente novamente; cookies só são necessários se o site pedir login ou confirmar que você não é um robô.":
         "The site denied access (HTTP 403). Check components in Settings and retry; cookies are needed only when the site requires sign-in or bot confirmation.",
+    # Ferramentas: cartões, ajustes e mensagens de cada tarefa.
+    "Preparando": "Preparing",
+    "Comprimir": "Compress", "Comprimir para o limite": "Compress to the limit",
+    "Criar MKV": "Create MKV",
+    "Cortar e ajustar": "Trim and adjust", "Áudio": "Audio",
+    "Converter e reduzir": "Convert and shrink", "Imagem e animação": "Image and animation",
+    "Legendas e privacidade": "Captions and privacy",
+    "Crie um novo vídeo apenas com o intervalo escolhido.":
+        "Create a new video with only the chosen interval.",
+    "Use mm:ss ou hh:mm:ss. O vídeo será recodificado para começar e terminar nos pontos escolhidos.":
+        "Use mm:ss or hh:mm:ss. The video is re-encoded to start and end at the chosen points.",
+    "Ajustar velocidade": "Adjust speed",
+    "Deixe o vídeo em câmera lenta ou acelerado, com o som junto.":
+        "Slow the video down or speed it up, with the sound following.",
+    "Vale para imagem e som. Abaixo de 1x é câmera lenta.":
+        "Applies to picture and sound. Below 1x is slow motion.",
+    "0,25x — muito lento": "0.25x — very slow", "0,5x — câmera lenta": "0.5x — slow motion",
+    "0,75x — um pouco mais lento": "0.75x — a bit slower",
+    "1,25x — um pouco mais rápido": "1.25x — a bit faster", "1,5x — rápido": "1.5x — fast",
+    "2x — o dobro": "2x — double", "3x — três vezes": "3x — triple", "4x — timelapse": "4x — timelapse",
+    "Girar ou espelhar": "Rotate or flip",
+    "Corrija vídeos de celular tortos ou espelhe a imagem.":
+        "Fix sideways phone videos or mirror the picture.",
+    "Girar vídeo": "Rotate video", "Transformação": "Transformation",
+    "A imagem é recodificada; o som é mantido.": "The picture is re-encoded; the sound is kept.",
+    "Girar 90° para a direita": "Rotate 90° clockwise",
+    "Girar 90° para a esquerda": "Rotate 90° counterclockwise", "Girar 180°": "Rotate 180°",
+    "Espelhar na horizontal": "Flip horizontally", "Espelhar na vertical": "Flip vertically",
+    "Prepare um vídeo vertical para Shorts, Reels ou TikTok.":
+        "Prepare a vertical video for Shorts, Reels or TikTok.",
+    "Salve só o som de um vídeo ou converta entre formatos de áudio.":
+        "Save just the sound of a video or convert between audio formats.",
+    "MP3 toca em tudo; M4A e Opus rendem mais por megabyte; FLAC e WAV não perdem qualidade.":
+        "MP3 plays everywhere; M4A and Opus give more per megabyte; FLAC and WAV lose no quality.",
+    "MP3 — compatível com tudo": "MP3 — plays everywhere",
+    "M4A (AAC) — celulares e Apple": "M4A (AAC) — phones and Apple",
+    "Opus — menor tamanho": "Opus — smallest size", "FLAC — sem perda": "FLAC — lossless",
+    "WAV — sem compressão": "WAV — uncompressed",
+    "Nivelar volume": "Normalize volume",
+    "Iguale o volume de vídeos e músicas sem recodificar a imagem.":
+        "Even out the volume of videos and music without re-encoding the picture.",
+    "Volume alvo": "Target volume",
+    "Medido em LUFS. -16 serve para a maioria dos casos; -14 é o padrão do YouTube e do Spotify.":
+        "Measured in LUFS. -16 suits most cases; -14 is the YouTube and Spotify standard.",
+    "-16 LUFS — web e podcast": "-16 LUFS — web and podcasts",
+    "-14 LUFS — YouTube e Spotify": "-14 LUFS — YouTube and Spotify",
+    "-23 LUFS — TV (EBU R128)": "-23 LUFS — TV (EBU R128)",
+    "Remover áudio": "Remove audio",
+    "Crie uma cópia do vídeo sem som, sem recodificar a imagem.":
+        "Create a copy of the video without sound, without re-encoding the picture.",
+    "Converter formato": "Convert format",
+    "Reencode para MP4 (H.264) ou WebM (VP9) e abra em qualquer aparelho.":
+        "Re-encode to MP4 (H.264) or WebM (VP9) and play it on any device.",
+    "Converter": "Convert", "Formato de saída": "Output format",
+    "MP4 abre em qualquer lugar; WebM é ideal para sites e costuma ficar menor, mas demora mais.":
+        "MP4 opens anywhere; WebM suits websites and is often smaller, but takes longer.",
+    "MP4 — H.264 e AAC": "MP4 — H.264 and AAC", "WebM — VP9 e Opus (mais lento)": "WebM — VP9 and Opus (slower)",
+    "Converta para MKV sem mexer em imagem ou som.": "Convert to MKV without touching picture or sound.",
+    "Crie um MP4 menor, equilibrando tamanho e qualidade.": "Create a smaller MP4, balancing size and quality.",
+    "Comprima para caber no limite do Discord, WhatsApp ou e-mail.":
+        "Compress to fit the Discord, WhatsApp or email limit.",
+    "Criar GIF animado": "Create animated GIF", "Criar GIF": "Create GIF",
+    "Transforme um trecho curto em GIF leve, com as cores otimizadas.":
+        "Turn a short clip into a light GIF with optimized colors.",
+    "Trecho do GIF": "GIF clip",
+    "Use mm:ss ou hh:mm:ss, com até 30 s. Em branco, começa do zero.":
+        "Use mm:ss or hh:mm:ss, up to 30 s. Blank starts from zero.",
+    "Tamanho": "Size",
+    "Quanto maior a largura, maior o arquivo. O GIF nunca passa da largura original do vídeo.":
+        "The wider it is, the larger the file. The GIF never exceeds the video's original width.",
+    "Pequeno — 480 px, 12 quadros/s": "Small — 480 px, 12 frames/s",
+    "Médio — 640 px, 15 quadros/s": "Medium — 640 px, 15 frames/s",
+    "Grande — 800 px, 20 quadros/s": "Large — 800 px, 20 frames/s",
+    "Capturar imagem": "Capture image",
+    "Salve um quadro do vídeo como imagem, no momento que você escolher.":
+        "Save a video frame as an image, at the moment you choose.",
+    "Momento do quadro": "Frame time",
+    "Use mm:ss ou hh:mm:ss. Em branco, captura o primeiro quadro.":
+        "Use mm:ss or hh:mm:ss. Blank captures the first frame.",
+    "Formato da imagem": "Image format",
+    "PNG não perde qualidade; JPG e WebP ficam bem menores.":
+        "PNG loses no quality; JPG and WebP are much smaller.",
+    "PNG — sem perda": "PNG — lossless", "JPG — leve e compatível": "JPG — light and compatible",
+    "WebP — leve e moderno": "WebP — light and modern",
+    "Grave uma legenda SRT, VTT ou ASS na imagem do vídeo.":
+        "Burn an SRT, VTT or ASS caption into the video picture.",
+    "Adicionar legendas ao vídeo": "Add captions to the video", "Adicionar legendas": "Add captions",
+    "Extrair legendas": "Extract captions",
+    "Salve como arquivo a legenda que já vem dentro do vídeo.":
+        "Save the caption track already inside the video as a file.",
+    "Usa a primeira faixa de legenda em texto. O arquivo é salvo ao lado do vídeo, com o mesmo nome.":
+        "Uses the first text caption track. The file is saved next to the video, with the same name.",
+    "SRT — o mais compatível": "SRT — most compatible", "ASS — mantém o estilo": "ASS — keeps the style",
+    "VTT — para a web": "VTT — for the web",
+    "Limpar metadados": "Clean metadata",
+    "Apague localização, data, câmera e título do arquivo, sem recodificar.":
+        "Erase location, date, camera and title from the file, without re-encoding.",
+    "Este arquivo não tem legendas embutidas.": "This file has no embedded captions.",
+    "As legendas deste arquivo são imagens (PGS/DVD) e não podem virar texto.":
+        "This file's captions are images (PGS/DVD) and cannot become text.",
+    "Este arquivo não tem a faixa que a ferramenta precisa (por exemplo, imagem em um arquivo só de áudio). Escolha outro arquivo ou outra ferramenta.":
+        "This file lacks the track the tool needs (for example, picture in an audio-only file). Pick another file or tool.",
+    "Use .mp3, .m4a, .opus, .flac ou .wav como extensão de saída.":
+        "Use .mp3, .m4a, .opus, .flac or .wav as the output extension.",
+    "Use .mp4, .mkv ou .webm como extensão de saída.": "Use .mp4, .mkv or .webm as the output extension.",
+    "Use .png, .jpg ou .webp como extensão de saída.": "Use .png, .jpg or .webp as the output extension.",
+    "Use .srt, .ass ou .vtt como extensão de saída.": "Use .srt, .ass or .vtt as the output extension.",
 }
 
 

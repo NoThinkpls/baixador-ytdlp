@@ -18,8 +18,8 @@ from .downloader import (DownloadOptions, Progress, Transcoder, is_retryable_err
                          vp9_mp4_to_mkv)
 from .gpu import GpuInfo, detect, forget_negative_cache
 from .media_tools import (MediaToolError, MediaToolOptions, build_command,
-                          operation_duration, preferred_video_encoder, time_seconds,
-                          uses_gpu)
+                          operation_duration, preferred_video_encoder, resolve_options,
+                          time_seconds, uses_gpu)
 from .parallel_section import create_runner
 from .processes import attach_pid_to_kill_job, popen_isolated, release_job, terminate_process_tree
 from .probe import friendly_error, playlist_entries, probe
@@ -154,6 +154,8 @@ class MediaToolWorker(QThread):
         try:
             if self._cancelled.is_set():
                 raise MediaToolError("Operação cancelada.")
+            # O ffprobe decide o que a UI não sabe (faixa de legenda) e recusa cedo o impossível.
+            self.options = resolve_options(self.options, self.tc)
             duration = operation_duration(self.options, self.tc)
             self.options.destination.parent.mkdir(parents=True, exist_ok=True)
             if self.options.destination.exists():
