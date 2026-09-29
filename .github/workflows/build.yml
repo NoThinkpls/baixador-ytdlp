@@ -84,6 +84,14 @@ jobs:
           Write-Host "Versão: $v"
           "version=$v" >> $env:GITHUB_OUTPUT
 
+      - name: Restaurar a cache do Nuitka (ccache e componentes)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/baixador-ytdlp-nuitka-cache
+          key: nuitka-${{ runner.os }}-${{ hashFiles('requirements-windows.lock', 'requirements-build-windows.lock', 'nuitka-package.config.yml') }}-v1
+          restore-keys: |
+            nuitka-${{ runner.os }}-
+
       - name: Compilar com Nuitka
         run: |
           # Evita caminhos 8.3 da cache padrão de apps instalados pelo Windows.
@@ -107,7 +115,10 @@ jobs:
             --include-package=nvidia.cuda_runtime `
             --include-package=nvidia.cublas `
             --include-package=nvidia.cudnn `
-            --include-package=onnxruntime `
+            --nofollow-import-to=pip `
+            --nofollow-import-to=onnxruntime.tools `
+            --nofollow-import-to=onnxruntime.transformers `
+            --nofollow-import-to=onnxruntime.quantization `
             --include-package-data=faster_whisper `
             --include-package-data=ctranslate2 `
             --include-package-data=av `
