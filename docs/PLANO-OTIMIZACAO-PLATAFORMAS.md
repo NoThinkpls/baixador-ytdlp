@@ -9,11 +9,11 @@ aqui foi implementado ainda. Cada item traz o que existe hoje, a lacuna e o risc
 | --- | --- | --- | --- |
 | Codificar (Ferramentas, conversão pós-download) | NVENC e AMF (`gpu.py`) | VideoToolbox | NVENC e AMF (a lista é a mesma do Windows) |
 | Decodificar | detecta `cuda` e `d3d11va`, mas não usa | detecta `videotoolbox`, não usa | detecta, não usa |
-| Transcrição (Whisper) | CUDA via CTranslate2; senão CPU | só CPU | CUDA; senão CPU |
+| Transcrição (Whisper) | CUDA via CTranslate2; senão CPU | MLX na GPU integrada; senão CPU | CUDA; senão CPU |
 | Download | `--concurrent-fragments` por núcleos/RAM | idem | idem |
 
 Lacunas principais: **Intel (QSV) não existe em lugar nenhum; VAAPI (AMD e Intel no
-Linux) não existe; Whisper só acelera em NVIDIA**; decodificação por hardware é
+Linux) não existe; Whisper só acelera em NVIDIA (Windows/Linux) e no Apple Silicon (MLX)**; decodificação por hardware é
 detectada e ignorada; recortes/conversões rodam um por vez.
 
 ## Prioridades
@@ -53,15 +53,11 @@ com `N = min(sessões, núcleos/2)` trabalhos simultâneos por GPU (NVENC: 3 por
 padrão), e várias faixas do mesmo vídeo lado a lado. Ganho grande em lote (vários
 cortes de uma live). Risco: VRAM e I/O de disco; expor o número em Configurações.
 
-### P5 — Whisper fora da NVIDIA
-CTranslate2 só tem CUDA e CPU (sem ROCm/Metal). Opções:
-- **macOS Apple Silicon:** `mlx-whisper` (~30–40% mais rápido que whisper.cpp no
-  Apple Silicon, segundo as fontes abaixo) ou whisper.cpp com Metal/Core ML.
-- **AMD/Intel (Windows e Linux):** whisper.cpp com Vulkan (ou HIP no AMD).
-- Custo: segundo motor, empacotamento e testes por plataforma; a interface do
-  legendador já isola o motor, mas hoje assume faster-whisper.
-Recomendação: começar por macOS (base de usuários Apple Silicon grande e ganho
-claro), depois Vulkan como caminho único para AMD/Intel.
+### P5 — Whisper em AMD e Intel
+O macOS já usa MLX na GPU do Apple Silicon. Falta AMD e Intel no Windows/Linux:
+CTranslate2 só tem CUDA e CPU (sem ROCm). Caminho: whisper.cpp com Vulkan (ou HIP no
+AMD) como segundo motor. Custo: empacotamento e testes por plataforma; a interface do
+legendador já isola o motor. Ganho real só para quem não tem NVIDIA.
 
 ### P6 — Ajustes finos por plataforma
 - macOS: `--concurrent-fragments` e threads do Whisper usando só núcleos de
@@ -78,7 +74,7 @@ claro), depois Vulkan como caminho único para AMD/Intel.
 
 1. P2 (QSV + VAAPI) e P3 (decodificação): amplia a cobertura sem mexer no Whisper.
 2. P4 (paralelismo): maior ganho para quem faz lotes.
-3. P5 (Whisper em Metal, depois Vulkan).
+3. P5 (Whisper com Vulkan para AMD/Intel).
 4. P6 e a divisão paralela do trecho (P1) conforme a necessidade.
 
 Cada item entra como um commit com testes que falham no código antigo, como no plano
