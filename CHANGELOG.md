@@ -3,13 +3,14 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
-## [1.12.6] - não publicada
+## [1.12.6] - 2026-09-29
 
 ### Corrigido
 
 - Trechos do YouTube abriam no DaVinci Resolve com partes "Media Offline". Os primeiros
   60 s do arquivo eram idênticos, pacote por pacote, a um download sem nenhuma emenda:
   o problema era o VP9 1440p do HLS (o app escolhia o melhor formato), não a junção.
+  Confirmado no DaVinci: o VP9 falha; H.264 (HLS ou DASH, com ou sem emendas) abre.
   Trechos agora preferem H.264 (1080p, o formato que qualquer editor abre). "Priorizar
   compatibilidade (H.264)" passa a vir ligado em instalações novas, e o texto da opção
   cita os editores. Quem quiser VP9/AV1 desliga a opção nas Configurações.
