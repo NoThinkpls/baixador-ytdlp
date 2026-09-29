@@ -16,6 +16,11 @@ updates:
       - dependency-name: pyside6*
       - dependency-name: shiboken6
       - dependency-name: mlx*
+      - dependency-name: torch
+      - dependency-name: huggingface-hub
+      - dependency-name: setuptools
+      - dependency-name: send2trash
+      # (o CTranslate2 usa pkg_resources; torch/huggingface-hub andam com o motor de transcrição)
       - dependency-name: nvidia-cudnn-cu12
       - dependency-name: nvidia-cublas-cu12
       - dependency-name: nvidia-cuda-runtime-cu12
