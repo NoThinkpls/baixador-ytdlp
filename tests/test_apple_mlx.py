@@ -61,7 +61,7 @@ class AppleMlxTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary_dir, patch.dict(sys.modules, {
             "huggingface_hub": SimpleNamespace(snapshot_download=snapshot_download),
-        }), patch("baixador_ytdlp.transcription.MODEL_DIR", Path(temporary_dir)):
+        }), patch("baixador_ytdlp.models.MODEL_DIR", Path(temporary_dir)):
             path = Transcriber._pinned_model_path("medium", mlx=False)
 
         self.assertEqual(path, Path(temporary_dir) / "ctranslate2" / "model")

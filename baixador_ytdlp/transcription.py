@@ -8,31 +8,21 @@ restante do programa.
 from __future__ import annotations
 
 import gc
-import importlib.util
 import json
 import os
-import platform
-import queue
 import re
 import subprocess
-import sys
 import tempfile
 import threading
-import time
-import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
 
 from .config import MODEL_DIR
-from .diagnostics import install_diagnostics, log_event, report_exception
+from .diagnostics import log_event
 from .hardware import whisper_threads
 from .processes import popen_isolated, terminate_process_tree
 from .tools import CREATE_NO_WINDOW, Toolchain
 import contextlib
-
-StatusCB = Callable[[str], None]
-ProgressCB = Callable[[int], None]
 
 # Sequência padrão do Whisper: com uma temperatura só, o fallback que tira o
 # decodificador de laços de repetição ficava desligado.
@@ -46,7 +36,6 @@ _CUDA_ERROR_MARKERS = (
     "no cuda-capable device", "cuda driver", "out of memory",
 )
 
-MODEL_ORDER = ("tiny", "base", "small", "medium", "large-v3-turbo", "large-v3")
 
 FORMATS = {
     "srt": ("SRT — compatível com players", ".srt"),
@@ -57,37 +46,6 @@ FORMATS = {
     "json": ("JSON — segmentos e timestamps", ".json"),
 }
 
-# Repositórios e revisões imutáveis dos pesos. Usar ``main`` permitiria trocar
-# vários gigabytes de código/dados sem uma nova versão do aplicativo.
-FASTER_MODEL_SPECS = {
-    "tiny": ("Systran/faster-whisper-tiny", "d90ca5fe260221311c53c58e660288d3deb8d356"),
-    "base": ("Systran/faster-whisper-base", "ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66"),
-    "small": ("Systran/faster-whisper-small", "536b0662742c02347bc0e980a01041f333bce120"),
-    "medium": ("Systran/faster-whisper-medium", "08e178d48790749d25932bbc082711ddcfdfbc4f"),
-    "large": ("Systran/faster-whisper-large-v3", "edaa852ec7e145841d8ffdb056a99866b5f0a478"),
-    "large-v2": ("Systran/faster-whisper-large-v3", "edaa852ec7e145841d8ffdb056a99866b5f0a478"),
-    "large-v3": ("Systran/faster-whisper-large-v3", "edaa852ec7e145841d8ffdb056a99866b5f0a478"),
-    "large-v3-turbo": (
-        "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
-        "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
-    ),
-}
-
-# Pesos convertidos para MLX. Não usamos CTranslate2 no Mac quando o runtime MLX
-# está presente: a GPU integrada é mais rápida e compartilha memória com a CPU.
-MLX_MODEL_SPECS = {
-    "tiny": ("mlx-community/whisper-tiny-mlx", "b8e1517aa75d652c34086b8f5a47cee5b7edee3e"),
-    "base": ("mlx-community/whisper-base-mlx", "dbd18c08dc2a2e299c3f16b25902a785af158c9e"),
-    "small": ("mlx-community/whisper-small-mlx", "eb52dbc58f50f19eb8c87b54b7c621633c67b7e0"),
-    "medium": ("mlx-community/whisper-medium-mlx", "23bf35993c90e62837672b12d4d2e481d73db2da"),
-    "large": ("mlx-community/whisper-large-v3-mlx", "ac13a70a47c7176ba7b69b4f1ebe6877ccd460d0"),
-    "large-v2": ("mlx-community/whisper-large-v3-mlx", "ac13a70a47c7176ba7b69b4f1ebe6877ccd460d0"),
-    "large-v3": ("mlx-community/whisper-large-v3-mlx", "ac13a70a47c7176ba7b69b4f1ebe6877ccd460d0"),
-    "large-v3-turbo": (
-        "mlx-community/whisper-large-v3-turbo",
-        "a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb",
-    ),
-}
 
 
 class TranscriptionCancelled(RuntimeError):
@@ -151,230 +109,6 @@ class DecodedInfo:
 
     language: str
     language_probability: float = 0.0
-
-
-def preferred_model_backend() -> bool:
-    """Retorna ``True`` quando o gerenciador deve operar sobre pesos MLX."""
-    return _is_apple_silicon() and _mlx_available()
-
-
-def _model_cache_dir(mlx: bool) -> Path:
-    return MODEL_DIR / ("mlx" if mlx else "ctranslate2")
-
-
-def _repo_blob_size(cache: Path, repo: str) -> int:
-    blobs = cache / f"models--{repo.replace('/', '--')}" / "blobs"
-    total = 0
-    if not blobs.is_dir():
-        return 0
-    for path in blobs.iterdir():
-        try:
-            if path.is_file():
-                total += path.stat().st_size
-        except OSError:
-            continue
-    return total
-
-
-def cached_model_path(model_size: str, *, mlx: bool | None = None) -> Path | None:
-    """Localiza uma revisão completa sem abrir rede nem carregar o modelo."""
-    from huggingface_hub import snapshot_download
-
-    use_mlx = preferred_model_backend() if mlx is None else mlx
-    repo, revision = Transcriber._model_spec(model_size, mlx=use_mlx)
-    cache = _model_cache_dir(use_mlx)
-    try:
-        return Path(snapshot_download(
-            repo_id=repo,
-            revision=revision,
-            cache_dir=str(cache),
-            local_files_only=True,
-        ))
-    except Exception:
-        return None
-
-
-def _warm_huggingface_symlink_support(cache: Path, repo: str) -> None:
-    """Resolve antes das threads se este cache pode usar symlinks no Windows."""
-    from huggingface_hub.file_download import are_symlinks_supported
-
-    repo_cache = cache / f"models--{repo.replace('/', '--')}"
-    repo_cache.mkdir(parents=True, exist_ok=True)
-    try:  # noqa: SIM105 - o motivo está no comentário do except
-        are_symlinks_supported(repo_cache)
-    except OSError:
-        # O hub cai para cópia de arquivos quando symlink não é permitido.
-        pass
-
-
-def _snapshot_download_with_symlink_retry(snapshot_download, **kwargs) -> str:
-    """Repete uma vez o caso transitório de privilégio de symlink do Windows."""
-    try:
-        return snapshot_download(**kwargs)
-    except OSError as exc:
-        if getattr(exc, "winerror", None) != 1314:
-            raise
-        log_event("Hugging Face recusou symlink (WinError 1314); repetindo download em modo cópia")
-        return snapshot_download(**kwargs)
-
-
-def model_cache_size(model_size: str, *, mlx: bool | None = None) -> int:
-    use_mlx = preferred_model_backend() if mlx is None else mlx
-    repo, _revision = Transcriber._model_spec(model_size, mlx=use_mlx)
-    return _repo_blob_size(_model_cache_dir(use_mlx), repo)
-
-
-def remove_cached_model(model_size: str, *, mlx: bool | None = None) -> int:
-    """Remove somente a revisão fixada do modelo e devolve os bytes liberados."""
-    from huggingface_hub import scan_cache_dir
-
-    use_mlx = preferred_model_backend() if mlx is None else mlx
-    repo_id, revision = Transcriber._model_spec(model_size, mlx=use_mlx)
-    cache = _model_cache_dir(use_mlx)
-    before = model_cache_size(model_size, mlx=use_mlx)
-    if not cache.exists():
-        return 0
-    info = scan_cache_dir(cache)
-    revisions = [
-        item.commit_hash
-        for repo in info.repos if repo.repo_id == repo_id
-        for item in repo.revisions if item.commit_hash.startswith(revision)
-    ]
-    if revisions:
-        info.delete_revisions(*revisions).execute()
-    return max(0, before - model_cache_size(model_size, mlx=use_mlx))
-
-
-def download_model_snapshot(
-    model_size: str,
-    *,
-    mlx: bool | None = None,
-    status: StatusCB | None = None,
-    progress: ProgressCB | None = None,
-    progress_range: tuple[int, int] = (0, 100),
-) -> Path:
-    """Baixa uma revisão imutável e acompanha os bytes gravados no cache."""
-    from huggingface_hub import HfApi, snapshot_download
-
-    use_mlx = preferred_model_backend() if mlx is None else mlx
-    repo, revision = Transcriber._model_spec(model_size, mlx=use_mlx)
-    cache = _model_cache_dir(use_mlx)
-    cache.mkdir(parents=True, exist_ok=True)
-    existing = cached_model_path(model_size, mlx=use_mlx)
-    if existing is not None:
-        if progress:
-            progress(progress_range[1])
-        return existing
-
-    _warm_huggingface_symlink_support(cache, repo)
-
-    if status:
-        status(f"Baixando modelo Whisper {model_size}…")
-    low, high = progress_range
-    if progress:
-        progress(low)
-    try:
-        metadata = HfApi().model_info(repo, revision=revision, files_metadata=True)
-        total = sum(int(getattr(item, "size", 0) or 0) for item in metadata.siblings or ())
-    except Exception:
-        total = 0
-    before = _repo_blob_size(cache, repo)
-    outcome: dict[str, object] = {}
-
-    def fetch() -> None:
-        try:
-            outcome["path"] = _snapshot_download_with_symlink_retry(
-                snapshot_download,
-                repo_id=repo,
-                revision=revision,
-                cache_dir=str(cache),
-            )
-        except BaseException as exc:  # propagado na thread chamadora
-            outcome["error"] = exc
-
-    download = threading.Thread(target=fetch, name="whisper-model-download", daemon=True)
-    download.start()
-    while download.is_alive():
-        if progress and total > 0:
-            received = max(0, _repo_blob_size(cache, repo) - before)
-            progress(min(high - 1, low + round((high - low) * received / total)))
-        time.sleep(0.2)
-    download.join()
-    if "error" in outcome:
-        raise outcome["error"]  # type: ignore[misc]
-    if progress:
-        progress(high)
-    return Path(str(outcome["path"]))
-
-
-def migrate_legacy_model_cache(model_dir: Path = MODEL_DIR) -> list[str]:
-    """Move pesos baixados por versões ≤ 1.7 para o cache novo.
-
-    Até a 1.7 o faster-whisper gravava em ``models/models--*`` e o MLX em
-    ``models/mlx/hub/models--*``. Desde a 1.8 os caches são ``models/ctranslate2``
-    e ``models/mlx``; sem migrar, os gigabytes antigos ficavam invisíveis para
-    o gerenciador e os mesmos modelos eram baixados de novo. Mover dentro do
-    mesmo volume é instantâneo, e os blobs já existentes são reaproveitados
-    pela revisão fixada.
-    """
-    moved: list[str] = []
-    pairs = ((model_dir, model_dir / "ctranslate2"),
-             (model_dir / "mlx" / "hub", model_dir / "mlx"))
-    for legacy_root, new_root in pairs:
-        if not legacy_root.is_dir():
-            continue
-        for legacy in legacy_root.glob("models--*"):
-            target = new_root / legacy.name
-            if not legacy.is_dir() or target.exists():
-                continue
-            try:
-                new_root.mkdir(parents=True, exist_ok=True)
-                legacy.replace(target)
-                moved.append(legacy.name)
-            except OSError:
-                continue
-    return moved
-
-
-def legacy_model_cache_size(model_dir: Path = MODEL_DIR) -> int:
-    """Bytes que sobraram no formato antigo (duplicados já migrados etc.)."""
-    total = 0
-    for root in (model_dir, model_dir / "mlx" / "hub"):
-        if not root.is_dir():
-            continue
-        for legacy in root.glob("models--*"):
-            for path in legacy.rglob("*"):
-                try:
-                    if path.is_file() and not path.is_symlink():
-                        total += path.stat().st_size
-                except OSError:
-                    continue
-    return total
-
-
-def remove_legacy_model_cache(model_dir: Path = MODEL_DIR) -> int:
-    import shutil
-
-    freed = legacy_model_cache_size(model_dir)
-    for root in (model_dir, model_dir / "mlx" / "hub"):
-        if root.is_dir():
-            for legacy in root.glob("models--*"):
-                shutil.rmtree(legacy, ignore_errors=True)
-    return freed
-
-
-def _is_apple_silicon() -> bool:
-    from .plataforma import is_apple_silicon
-
-    return is_apple_silicon(sys.platform, platform.machine())
-
-
-def _mlx_available() -> bool:
-    """Evita importar MLX na abertura; o pacote só existe na build macOS."""
-    try:
-        return importlib.util.find_spec("mlx_whisper") is not None
-    except (ImportError, AttributeError, ValueError):
-        return False
 
 
 class Transcriber:
@@ -539,8 +273,7 @@ class Transcriber:
 
     @staticmethod
     def _model_spec(model_size: str, *, mlx: bool) -> tuple[str, str]:
-        specs = MLX_MODEL_SPECS if mlx else FASTER_MODEL_SPECS
-        return specs.get(model_size, specs["medium"])
+        return model_spec(model_size, mlx=mlx)
 
     @classmethod
     def _pinned_model_path(cls, model_size: str, *, mlx: bool) -> Path:
@@ -1106,176 +839,35 @@ class Transcriber:
         path.write_text(text, encoding="utf-8")
 
 
-def transcription_process_main(opts: TranscriptionOptions, toolchain: Toolchain, events,
-                               cancel_event, pause_event) -> None:
-    """Executa o motor nativo fora do processo da interface.
-
-    Esta função fica no nível do módulo para ser serializável pelo modo
-    ``spawn`` do Windows. Qualquer access violation de CTranslate2/CUDA encerra
-    apenas este processo auxiliar; o processo Qt detecta o exit code.
-    """
-    install_diagnostics("transcription-worker")
-    # O processo spawnado no Windows começa com um sys.path novo. Reativa o
-    # runtime validado pelo setup antes de importar CTranslate2/faster-whisper.
-    from .runtime import prepare_embedded_cuda
-    cuda_problem = prepare_embedded_cuda()
-
-    def send(kind: str, value=None) -> None:
-        try:
-            events.put((kind, value))
-        except Exception as exc:  # noqa: BLE001 - o processo pai pode ter fechado
-            report_exception("envio de evento da transcrição", exc)
-
-    try:
-        log_event("Transcrição auxiliar iniciada: entrada=%s saída=%s modelo=%s",
-                  opts.media_path, opts.output_path, opts.model_size)
-        transcriber = Transcriber(
-            toolchain, lambda message: send("status", message),
-            lambda percent: send("progress", percent), opts.aggressive_filter,
-            cancel_event=cancel_event, pause_event=pause_event, force_cpu=bool(cuda_problem),
-        )
-        if cuda_problem:
-            send("status", f"CUDA interno indisponível ({cuda_problem}). Usando CPU int8…")
-        transcriber.run(opts)
-    except TranscriptionCancelled:
-        log_event("Transcrição auxiliar cancelada pelo usuário")
-        send("cancelled")
-    except Exception as exc:  # noqa: BLE001 - precisa voltar à interface sem fechá-la
-        report_exception("transcrição auxiliar", exc)
-        send("error", {"message": str(exc), "traceback": traceback.format_exc()})
-    else:
-        log_event("Transcrição auxiliar concluída: %s", opts.output_path)
-        send("finished", str(opts.output_path))
+# O que mudou de módulo continua importável daqui (workers, UI e testes usam estes nomes).
+from .models import (  # noqa: E402, F401
+    FASTER_MODEL_SPECS,
+    MLX_MODEL_SPECS,
+    MODEL_ORDER,
+    ProgressCB,
+    StatusCB,
+    _is_apple_silicon,
+    _mlx_available,
+    _model_cache_dir,
+    _repo_blob_size,
+    _snapshot_download_with_symlink_retry,
+    _warm_huggingface_symlink_support,
+    cached_model_path,
+    download_model_snapshot,
+    legacy_model_cache_size,
+    migrate_legacy_model_cache,
+    model_cache_size,
+    model_spec,
+    preferred_model_backend,
+    remove_cached_model,
+    remove_legacy_model_cache,
+)
 
 
-def transcription_server_main(toolchain: Toolchain, commands, events) -> None:
-    """Mantém um único processo de Whisper para toda a fila de legendas.
+def __getattr__(name: str):
+    """Os processos de transcrição vivem em ``transcription_server`` (evita import circular)."""
+    if name in {"transcription_server_main", "transcription_process_main"}:
+        from . import transcription_server
 
-    O processo continua separado da interface para que uma falha nativa de
-    CUDA/CTranslate2 nunca derrube a janela. Diferente do worker antigo, ele
-    recebe vários trabalhos pela fila de comandos e preserva o ``Transcriber``
-    (e portanto os pesos já carregados) enquanto modelo e perfil de GPU não
-    mudarem.
-    """
-    install_diagnostics("transcription-server")
-    from .runtime import prepare_embedded_cuda
-
-    cuda_problem = prepare_embedded_cuda()
-    jobs: queue.Queue = queue.Queue()
-    cancel_event = threading.Event()
-    pause_event = threading.Event()
-    stop_event = threading.Event()
-    active_job: list[int | None] = [None]
-    pending_cancellations: set[int] = set()
-    pending_pauses: dict[int, bool] = {}
-    # Protege a troca de item ativo: sem ela, um cancelamento que chegasse entre
-    # "active_job = X" e "cancel_event.clear()" era apagado e o item seguia.
-    state_lock = threading.Lock()
-
-    def send(job_id: int, kind: str, value=None) -> None:
-        try:
-            events.put((job_id, kind, value))
-        except Exception as exc:  # noqa: BLE001 - o pai pode ter sido encerrado
-            report_exception("envio de evento do servidor de transcrição", exc)
-
-    def receive_commands() -> None:
-        """Escuta pausa/cancelamento enquanto o motor nativo está ocupado."""
-        while not stop_event.is_set():
-            try:
-                command = commands.get()
-            except (EOFError, OSError):
-                stop_event.set()
-                cancel_event.set()
-                return
-            if not command:
-                continue
-            kind = command[0]
-            target = command[1] if len(command) > 1 else None
-            if kind == "cancel":
-                with state_lock:
-                    if target == active_job[0]:
-                        cancel_event.set()
-                    elif isinstance(target, int):
-                        pending_cancellations.add(target)
-            elif kind == "pause":
-                paused = bool(command[2])
-                with state_lock:
-                    if target == active_job[0]:
-                        if paused:
-                            pause_event.set()
-                        else:
-                            pause_event.clear()
-                    elif isinstance(target, int):
-                        pending_pauses[target] = paused
-            elif kind == "shutdown":
-                stop_event.set()
-                cancel_event.set()
-                jobs.put(("shutdown",))
-                return
-            elif kind == "run":
-                jobs.put(command)
-
-    listener = threading.Thread(
-        target=receive_commands, name="whisper-command-listener", daemon=True,
-    )
-    listener.start()
-    transcriber: Transcriber | None = None
-
-    try:
-        while not stop_event.is_set():
-            command = jobs.get()
-            if not command or command[0] == "shutdown":
-                break
-            _kind, job_id, opts = command
-            with state_lock:
-                cancel_event.clear()
-                pause_event.clear()
-                active_job[0] = int(job_id)
-                if int(job_id) in pending_cancellations:
-                    pending_cancellations.discard(int(job_id))
-                    cancel_event.set()
-                if pending_pauses.pop(int(job_id), False):
-                    pause_event.set()
-            current_job = int(job_id)
-            try:
-                if transcriber is None:
-                    transcriber = Transcriber(
-                        toolchain,
-                        lambda message, jid=current_job: send(jid, "status", message),
-                        lambda percent, jid=current_job: send(jid, "progress", percent),
-                        opts.aggressive_filter,
-                        cancel_event=cancel_event,
-                        pause_event=pause_event,
-                        force_cpu=bool(cuda_problem),
-                    )
-                    if cuda_problem:
-                        send(current_job, "status",
-                             f"CUDA interno indisponível ({cuda_problem}). Usando CPU int8…")
-                else:
-                    # Os filtros são escolhas de cada item, não uma propriedade
-                    # permanente do modelo em memória.
-                    transcriber.aggressive_filter = opts.aggressive_filter
-                    transcriber.status = lambda message, jid=current_job: send(jid, "status", message)
-                    transcriber.progress = lambda percent, jid=current_job: send(jid, "progress", percent)
-
-                log_event("Transcrição persistente iniciada: entrada=%s saída=%s modelo=%s",
-                          opts.media_path, opts.output_path, opts.model_size)
-                transcriber.run(opts)
-            except TranscriptionCancelled:
-                log_event("Transcrição persistente cancelada pelo usuário")
-                send(int(job_id), "cancelled")
-            except Exception as exc:  # noqa: BLE001 - precisa voltar à interface
-                report_exception("transcrição persistente", exc)
-                send(int(job_id), "error", {
-                    "message": friendly_transcription_error(exc), "traceback": traceback.format_exc(),
-                })
-            else:
-                log_event("Transcrição persistente concluída: %s", opts.output_path)
-                send(int(job_id), "finished", str(opts.output_path))
-            finally:
-                active_job[0] = None
-                pause_event.clear()
-    finally:
-        if transcriber is not None:
-            transcriber.close()
-
+        return getattr(transcription_server, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -26,8 +26,8 @@ from .probe import friendly_error, playlist_entries, probe
 from .security import validate_media_url
 from .tools import ToolManager, Toolchain, USER_AGENT, _verified_ssl_context
 from .updater import AppUpdater, ReleaseInfo
-from .transcription import (TranscriptionOptions, transcription_process_main,
-                            transcription_server_main)
+from .transcription import TranscriptionOptions
+from .transcription_server import transcription_process_main, transcription_server_main
 
 
 class SetupWorker(QThread):
@@ -297,7 +297,7 @@ class ModelCacheWorker(QThread):
 
     def run(self) -> None:
         try:
-            from .transcription import download_model_snapshot, model_cache_size, remove_cached_model
+            from .models import download_model_snapshot, model_cache_size, remove_cached_model
 
             if self.action == "download":
                 download_model_snapshot(

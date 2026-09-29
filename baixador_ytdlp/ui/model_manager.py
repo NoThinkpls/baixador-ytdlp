@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QMessageBox, QVBoxLayout, QWidget
 
-from ..transcription import (MODEL_ORDER, cached_model_path, model_cache_size,
+from ..models import (MODEL_ORDER, cached_model_path, model_cache_size,
                              preferred_model_backend)
 from ..workers import ModelCacheWorker
 from .components import Button, Headline, InsetGroup, Muted, ProgressBar, SettingRow
@@ -99,14 +99,14 @@ class ModelManagerDialog(QDialog):
         root.addLayout(actions)
 
     def _remove_legacy(self) -> None:
-        from ..transcription import remove_legacy_model_cache
+        from ..models import remove_legacy_model_cache
 
         freed = remove_legacy_model_cache()
         self.status.setText(f"{_size_label(freed)} liberados de modelos antigos.")
         self._refresh()
 
     def _refresh(self) -> None:
-        from ..transcription import legacy_model_cache_size
+        from ..models import legacy_model_cache_size
 
         legacy = legacy_model_cache_size()
         self.legacy_label.setText(f"Modelos de versões anteriores: {_size_label(legacy)}")

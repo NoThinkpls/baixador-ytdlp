@@ -3,6 +3,32 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [Próxima versão] - não publicada
+
+### Corrigido
+
+- Erros do FFmpeg chegam em português: "ffmpeg exited with code 3199971767" (dados inválidos
+  na entrada), disco cheio, caminho longo demais e falta de permissão têm mensagem própria; as
+  Ferramentas e a conversão pós-download também passam pelo tradutor de erros.
+- Falhas do servidor de transcrição sem traceback deixam a mensagem no `crash.log` (antes,
+  uma linha em branco).
+- Foco inicial no campo do link (antes, no botão de minimizar: Enter ou Espaço minimizava a
+  janela). Botões de moldura não recebem foco.
+- Descrições das Ferramentas quebram em até 3 linhas em vez de terminar em "…".
+- Botões desabilitados ficam esmaecidos (Pausar tudo / Limpar finalizados com a fila vazia).
+- "container" virou "contêiner" na interface; a página Baixar não repete mais o mesmo termo
+  no título e no subtítulo.
+
+### Alterado
+
+- Configurações: o caminho da subpágina ("Configurações › Rede e desempenho") segue o estilo do
+  Windows: pai em cinza, seta forte e item atual em negrito.
+- Lint: ruff com as regras B (bugbear), UP e SIM, e pyright em modo básico no CI (só erros
+  novos). O B023 apontou um caso real na transcrição (id do item lido da variável do laço).
+- A cache do Nuitka saiu da pasta de dados do app para `%LOCALAPPDATA%\BaixadorYtdlp-build`.
+- `transcription.py` dividido: pesos e cache em `models.py`, processos em `transcription_server.py`.
+- Testes e scripts de captura rodam num perfil descartável (`BAIXADOR_YTDLP_DATA_DIR`).
+
 ## [1.12.7] - 2026-09-29
 
 ### Corrigido
