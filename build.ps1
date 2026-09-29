@@ -117,7 +117,13 @@ if ($Packager -eq 'Nuitka') {
         '--user-package-configuration-file=nuitka-package.config.yml',
         '--include-package=nvidia.cuda_runtime', '--include-package=nvidia.cublas',
         '--include-package=nvidia.cudnn',
-        '--include-package=onnxruntime',
+        # Menos código para compilar (o tempo do Nuitka cai pela metade): o pip só
+        # serve ao modo de desenvolvimento (BAIXADOR_DEV_RUNTIME) e as partes de
+        # ferramentas/transformers/quantização do onnxruntime o app nunca importa.
+        '--nofollow-import-to=pip',
+        '--nofollow-import-to=onnxruntime.tools',
+        '--nofollow-import-to=onnxruntime.transformers',
+        '--nofollow-import-to=onnxruntime.quantization',
         # Dados carregados dinamicamente não aparecem na análise de imports do
         # Nuitka. Incluímos os pacotes do motor por inteiro, como fazia a
         # coleta do PyInstaller, e validamos os assets do VAD após a build.

@@ -125,3 +125,13 @@ Trocar as DLLs pelas do sistema (14.51) resolveu. `scripts/refresh_vc_runtime.ps
 faz isso no `build.ps1` e no workflow, sem nunca rebaixar a versão. O
 `--include-package=onnxruntime` não era o problema. Build Nuitka completa com
 `-ValidateGpu` passou na RTX 4060.
+
+### Tempo de compilação
+
+Dos 1.172 arquivos C que o Nuitka compilava, 335 vinham do `pip` (usado só no modo
+de desenvolvimento `BAIXADOR_DEV_RUNTIME`) e ~295 de partes do `onnxruntime` que o
+app nunca importa (`tools`, `transformers`, `quantization`, arrastadas pelo
+`--include-package=onnxruntime`). Excluí esses módulos com `--nofollow-import-to`:
+**493 arquivos C** (-58%), build local completa do zero em ~8 min. No Actions, a
+pasta `NUITKA_CACHE_DIR` (ccache) passa a ser restaurada entre execuções, então só o
+código alterado recompila.
