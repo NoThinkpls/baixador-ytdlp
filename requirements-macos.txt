@@ -12,7 +12,7 @@ mlx-whisper==0.4.3
 # Correções de segurança da cadeia transitive do mlx-whisper.
 mlx==0.29.4
 mlx-metal==0.29.4
-torch==2.13.0
+torch==2.14.0
 setuptools==83.0.0
 # O meta-pacote pyobjc exige esta extensão no macOS; listá-la garante que o
 # lock contenha o hash mesmo quando o resolvedor a trata como condicional.
