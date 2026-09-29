@@ -17,6 +17,7 @@ from pathlib import Path
 from collections.abc import Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from typing import Any
 
 from .config import APP_ID, APP_VERSION, IS_WINDOWS, UPDATE_DIR
 from .tools import _verified_ssl_context, require_https
@@ -68,7 +69,8 @@ def version_key(value: str) -> tuple[int, int, int] | None:
     match = _VERSION_RE.match((value or "").strip())
     if not match:
         return None
-    return tuple(int(part) for part in match.groups())
+    major, minor, patch = (int(part) for part in match.groups())
+    return major, minor, patch
 
 
 class AppUpdater:
@@ -229,7 +231,7 @@ class AppUpdater:
         if not installer.is_file():
             raise UpdateError("O instalador validado não foi encontrado.")
 
-        kwargs: dict[str, object] = {}
+        kwargs: dict[str, Any] = {}
         if sys.platform.startswith("win"):
             kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:

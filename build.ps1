@@ -98,7 +98,15 @@ $appVersion = $Matches[1]
 # sua cache fica sob ``AppData\Local\Packages`` e recebe um caminho 8.3. Uma
 # cache própria também evita depender da estrutura do host que executa a build.
 $nuitkaCacheBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [System.IO.Path]::GetTempPath() }
-$env:NUITKA_CACHE_DIR = Join-Path $nuitkaCacheBase 'BaixadorYtdlp\nuitka-cache'
+# Pasta de build própria: a cache do compilador (gigabytes) não pertence ao perfil do
+# usuário (%LOCALAPPDATA%\BaixadorYtdlp guarda configurações, histórico, logs e modelos).
+$env:NUITKA_CACHE_DIR = Join-Path $nuitkaCacheBase 'BaixadorYtdlp-build\nuitka-cache'
+$legacyCache = Join-Path $nuitkaCacheBase 'BaixadorYtdlp\nuitka-cache'
+if ((Test-Path -LiteralPath $legacyCache) -and -not (Test-Path -LiteralPath $env:NUITKA_CACHE_DIR)) {
+    # Migra a cache antiga em vez de recompilar tudo do zero.
+    New-Item -ItemType Directory -Path (Split-Path -Parent $env:NUITKA_CACHE_DIR) -Force | Out-Null
+    Move-Item -LiteralPath $legacyCache -Destination $env:NUITKA_CACHE_DIR
+}
 Write-Host "> Cache Nuitka: $env:NUITKA_CACHE_DIR" -ForegroundColor DarkGray
 
 Write-Host "> Compilando com $Packager" -ForegroundColor Cyan

@@ -43,6 +43,7 @@ candidata 1.12.0. A validação e a publicação estão em `PENDENCIAS.md`.
 set QT_QPA_PLATFORM=offscreen
 python -m unittest discover -s tests
 ruff check .
+python scripts/pyright_check.py     # tipos (pyright básico, só erros novos; --update encolhe a linha de base)
 ```
 
 A suíte roda num perfil descartável: `tests/test_00_isolar_perfil.py` define

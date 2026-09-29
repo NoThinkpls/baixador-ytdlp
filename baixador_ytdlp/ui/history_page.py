@@ -141,12 +141,12 @@ class HistoryPage(QWidget):
             "O que você baixar ou transcrever aparece nesta lista, só na sua máquina.", self)
         root.addWidget(self.empty, 1)
 
-        self.scroll = ScrollColumn(self, spacing=8)
-        self.cards = self.scroll.column
+        self.scroll_area = ScrollColumn(self, spacing=8)
+        self.cards = self.scroll_area.column
         self.cards.addStretch(1)
-        self.container = self.scroll.body
-        self.scroll.hide()
-        root.addWidget(self.scroll, 4)
+        self.container = self.scroll_area.body
+        self.scroll_area.hide()
+        root.addWidget(self.scroll_area, 4)
 
     # ------------------------------------------------------------- dados
     def invalidate(self) -> None:
@@ -183,7 +183,7 @@ class HistoryPage(QWidget):
             partes.append(f"{legendas} transcriç{'ões' if legendas > 1 else 'ão'}")
         self.summary.setText(" · ".join(partes))
 
-        self.scroll.setVisible(bool(entries))
+        self.scroll_area.setVisible(bool(entries))
         self.empty.setVisible(not entries)
 
     def _forget(self, entry: HistoryEntry) -> None:

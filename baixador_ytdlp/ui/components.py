@@ -752,12 +752,12 @@ class PageHeader(QWidget):
         texts.addWidget(self.subtitle)
         layout.addLayout(texts, 1)
 
-        self.actions = QHBoxLayout()
-        self.actions.setSpacing(8)
-        layout.addLayout(self.actions, 0)
+        self.action_row = QHBoxLayout()
+        self.action_row.setSpacing(8)
+        layout.addLayout(self.action_row, 0)
 
     def add_action(self, widget: QWidget) -> QWidget:
-        self.actions.addWidget(widget, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.action_row.addWidget(widget, 0, Qt.AlignmentFlag.AlignVCenter)
         return widget
 
     def follow(self, scroll_area) -> None:

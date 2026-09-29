@@ -126,6 +126,11 @@ faz isso no `build.ps1` e no workflow, sem nunca rebaixar a versão. O
 `--include-package=onnxruntime` não era o problema. Build Nuitka completa com
 `-ValidateGpu` passou na RTX 4060.
 
+A cache do compilador fica em `%LOCALAPPDATA%\BaixadorYtdlp-build
+uitka-cache`, fora da pasta de
+dados do app (o `build.ps1` migra a cache antiga de `BaixadorYtdlp
+uitka-cache`).
+
 ### Tempo de compilação
 
 Dos 1.172 arquivos C que o Nuitka compilava, 335 vinham do `pip` (usado só no modo
