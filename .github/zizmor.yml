@@ -1,0 +1,11 @@
+rules:
+  # As caches (pip por hash e ccache do Nuitka) só são escritas por execuções de main,
+  # tags e branches do próprio repositório; forks não gravam cache. O risco aceito é
+  # o de um colaborador com escrita, que já poderia alterar o workflow.
+  cache-poisoning:
+    ignore:
+      - build.yml
+  # softprops/action-gh-release cria a release com notas geradas e ativos em uma etapa.
+  superfluous-actions:
+    ignore:
+      - build.yml

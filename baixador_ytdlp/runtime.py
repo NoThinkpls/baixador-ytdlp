@@ -9,8 +9,6 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import importlib
-import importlib.metadata
-import importlib.util
 import io
 import json
 import os
@@ -19,6 +17,11 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
+# ``from … import`` liga o módulo direto ao nome: ``importlib.metadata`` como atributo do
+# pacote não existia no processo filho do Nuitka (o servidor de transcrição caía ao iniciar).
+from importlib import metadata as importlib_metadata
+from importlib import util as importlib_util
 
 from .config import IS_WINDOWS, RUNTIME_DIR, ensure_dirs
 from .plataforma import pasta_do_executavel
@@ -84,8 +87,8 @@ def required_cudnn_major(ct2_version: str | None = None) -> int:
     """
     if ct2_version is None:
         try:
-            ct2_version = importlib.metadata.version("ctranslate2")
-        except importlib.metadata.PackageNotFoundError:
+            ct2_version = importlib_metadata.version("ctranslate2")
+        except importlib_metadata.PackageNotFoundError:
             return 9
     try:
         major, minor = (int(part) for part in ct2_version.split(".")[:2])
@@ -308,14 +311,14 @@ def _has_nvidia_driver() -> bool:
 def _versions(path: Path | None = None) -> dict[str, str]:
     """Lê versões sem supor que há um diretório externo instalado.
 
-    ``importlib.metadata.distributions(path=None)`` não é válido em algumas
+    ``importlib_metadata.distributions(path=None)`` não é válido em algumas
     versões do Python; a chamada sem argumento é obrigatória para o ambiente
     embutido. Essa era a origem do erro ``'NoneType' object is not iterable``.
     """
     result: dict[str, str] = {}
     try:
-        distributions = (importlib.metadata.distributions()
-                         if path is None else importlib.metadata.distributions(path=[str(path)]))
+        distributions = (importlib_metadata.distributions()
+                         if path is None else importlib_metadata.distributions(path=[str(path)]))
         tracked = set(PACKAGE_NAMES) | set(CUDA_PACKAGE_NAMES)
         for dist in distributions:
             name = (dist.metadata.get("Name") or "").lower().replace("_", "-")
@@ -401,7 +404,7 @@ class RuntimeManager:
     def _available_packages() -> bool:
         module_names = ("faster_whisper", "ctranslate2")
         try:
-            return all(importlib.util.find_spec(name) is not None for name in module_names)
+            return all(importlib_util.find_spec(name) is not None for name in module_names)
         except (ImportError, AttributeError, ValueError):
             return False
 

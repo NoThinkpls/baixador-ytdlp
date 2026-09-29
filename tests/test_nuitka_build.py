@@ -65,5 +65,16 @@ class NuitkaBuildTests(unittest.TestCase):
         self.assertIn("Move-Item -LiteralPath $nuitkaBundle -Destination $releaseBundle", build_script)
 
 
+    def test_autoteste_sobe_o_servidor_de_transcricao(self) -> None:
+        # A 1.12.4 caía ao legendar: o servidor (processo spawn) usava importlib.metadata
+        # sem o pacote ter o atributo no filho do Nuitka, e o autoteste não cobria isso.
+        root = Path(__file__).resolve().parents[1]
+        entrypoint = (root / "main.py").read_text(encoding="utf-8")
+        self.assertIn("spawn_transcription_server", entrypoint)
+        self.assertIn("_self_test_server_child", entrypoint)
+        runtime = (root / "baixador_ytdlp" / "runtime.py").read_text(encoding="utf-8")
+        self.assertNotIn("importlib.metadata.", runtime)
+        self.assertNotIn("importlib.util.", runtime)
+
 if __name__ == "__main__":
     unittest.main()

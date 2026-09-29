@@ -55,6 +55,61 @@ def _self_test_vad_child(events) -> None:
         events.put({"ok": True})
 
 
+def _self_test_server_child(toolchain, commands, events) -> None:
+    """Executa o servidor de transcrição e devolve ao pai o erro de uma queda."""
+    try:
+        from baixador_ytdlp.transcription import transcription_server_main
+
+        transcription_server_main(toolchain, commands, events)
+    except BaseException:  # o pai só vê o código de saída sem isto
+        events.put(("crash", traceback.format_exc()))
+        raise
+
+
+def _self_test_transcription_server(context) -> None:
+    """Inicia o servidor de transcrição como o app faz (processo ``spawn``) e o encerra.
+
+    A interface só descobria uma queda nesse processo quando o usuário legendava algo
+    ("O motor de transcrição encerrou inesperadamente"); aqui ela derruba a build.
+    """
+    import time
+
+    from baixador_ytdlp.tools import Toolchain
+
+    root = Path(tempfile.gettempdir())
+    toolchain = Toolchain(ytdlp=root / "yt-dlp", ffmpeg=root / "ffmpeg",
+                          ffprobe=root / "ffprobe", bin_dir=root)
+    commands, events = context.Queue(), context.Queue()
+    child = context.Process(target=_self_test_server_child,
+                            args=(toolchain, commands, events))
+    inherited_report = os.environ.pop(_SELF_TEST_ENV, None)
+    try:
+        child.start()
+    finally:
+        if inherited_report is not None:
+            os.environ[_SELF_TEST_ENV] = inherited_report
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline:
+        if not child.is_alive():
+            detail = ""
+            try:
+                kind, detail = events.get(timeout=2)
+            except Exception:  # noqa: BLE001 - sem detalhe, fica só o código de saída
+                pass
+            raise RuntimeError(
+                f"O servidor de transcrição encerrou com código {child.exitcode} ao iniciar. "
+                f"{detail}")
+        time.sleep(0.25)
+    commands.put(("shutdown",))
+    child.join(30)
+    if child.is_alive():
+        child.terminate()
+        child.join()
+        raise RuntimeError("O servidor de transcrição não encerrou após o pedido de shutdown.")
+    if child.exitcode != 0:
+        raise RuntimeError(f"O servidor de transcrição encerrou com código {child.exitcode}.")
+
+
 def _run_self_test(report_path: Path) -> int:
     """Valida o runtime embarcado sem abrir Qt nem baixar pesos do Whisper."""
     report: dict[str, object] = {"ok": False}
@@ -162,6 +217,8 @@ def _run_self_test(report_path: Path) -> int:
         child_result = events.get(timeout=5)
         if not child_result.get("ok"):
             raise RuntimeError(str(child_result.get("error", "Falha desconhecida no VAD filho.")))
+        checkpoint("spawn_transcription_server")
+        _self_test_transcription_server(context)
         report["ok"] = True
         checkpoint("completed")
     except BaseException as exc:
