@@ -33,6 +33,15 @@ não sejam o YouTube e ao áudio (`-x`), se o teto por conexão também for baix
 Ordem sugerida em `docs/PLANO-OTIMIZACAO-PLATAFORMAS.md`: QSV e VAAPI, decodificação
 por hardware, paralelismo de cortes, Whisper com Vulkan para AMD/Intel.
 
+## PRs do Dependabot em espera
+
+- #26 (`actions/attest-build-provenance` 4.2.2) e #27 (`actions/download-artifact` 8.0.1): só rodam
+  no job de release. Mesclar (após `@dependabot rebase` e CI verde) junto com a próxima release;
+  se a publicação falhar por causa deles, reverter o commit.
+- torch, huggingface-hub, setuptools, send2trash, PySide6, faster-whisper e MLX são atualizados
+  à mão (o Dependabot não os propõe mais): regenerar os `.lock` com `scripts/update_locks.sh` e
+  passar o autoteste com GPU.
+
 ## Publicação
 
 O fluxo normal é `git push` na `main`: o Actions valida Windows, macOS e Linux e
