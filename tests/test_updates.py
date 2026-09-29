@@ -102,13 +102,34 @@ class ToolCheckTests(unittest.TestCase):
             manager._get_json = Mock(return_value={"assets": [asset]})
             manager._download = Mock(side_effect=AssertionError("não deveria baixar"))
             manager._save_state = Mock()
-            manager.state["ffmpeg_stamp"] = "99:2026-09-05T00:00:00Z"
+            manager.state["ffmpeg_branch"] = "8.1"
+            # A release "latest" é reenviada todo dia: outro ID no mesmo ramo
+            # não é atualização.
+            asset["id"] = 100
+            asset["updated_at"] = "2026-09-06T00:00:00Z"
 
             with patch("baixador_ytdlp.tools.IS_WINDOWS", True), \
                     patch("baixador_ytdlp.tools.sys.platform", "win32"):
                 manager.ensure_ffmpeg(Mock(), check_now=True)
 
             manager._download.assert_not_called()
+
+    def test_ffmpeg_downloads_only_when_a_newer_stable_branch_appears(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = ToolManager(bin_dir=Path(tmp))
+            asset = {"name": "ffmpeg-n9.1-latest-win64-gpl-9.1.zip", "id": 1,
+                     "browser_download_url": "https://example.invalid/ffmpeg.zip"}
+            manager.local_ffmpeg_version = Mock(return_value="n9.0.2-14-gabc-20260928")
+            manager._get_json = Mock(return_value={"assets": [asset]})
+            manager._download = Mock(side_effect=RuntimeError("baixou"))
+            manager._save_state = Mock()
+            (Path(tmp) / FFMPEG_EXE).touch()
+
+            with patch("baixador_ytdlp.tools.IS_WINDOWS", True), \
+                    patch("baixador_ytdlp.tools.sys.platform", "win32"):
+                with self.assertRaises(RuntimeError):
+                    manager.ensure_ffmpeg(Mock(), check_now=True)
+            manager._download.assert_called_once()
 
     def test_manual_deno_check_does_not_redownload_current_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

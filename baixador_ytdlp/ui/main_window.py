@@ -853,7 +853,6 @@ class MainWindow(AppShell):
 
     def _check_all_updates(self) -> None:
         self.run_setup(check_now=True)
-        self._check_app_update(force=True)
 
     def _export_diagnostics(self) -> None:
         from PySide6.QtWidgets import QFileDialog
