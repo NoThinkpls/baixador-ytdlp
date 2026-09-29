@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import threading
 from dataclasses import dataclass, field
@@ -362,6 +363,36 @@ def _friendly_error_pt(detail: str) -> str:
     no erro de DPAPI. O aplicativo empurrava para o caminho quebrado.
     """
     low = detail.lower()
+
+    # Falhas do disco e do sistema de arquivos valem para qualquer etapa (yt-dlp, FFmpeg,
+    # conversão), por isso vêm antes das mensagens específicas de site.
+    if any(marker in low for marker in (
+            "no space left on device", "not enough space on the disk", "disk full",
+            "winerror 112", "errno 28", "espaço insuficiente", "não há espaço")):
+        return ("O disco ou a pasta de destino está sem espaço. Libere espaço ou escolha outra "
+                "pasta em Configurações e tente de novo.")
+
+    if any(marker in low for marker in (
+            "file name too long", "filename too long", "path too long", "winerror 206",
+            "errno 36", "the filename or extension is too long")):
+        return ("O caminho do arquivo ficou longo demais para o sistema. Escolha uma pasta mais "
+                "curta ou simplifique o modelo do nome do arquivo em Configurações.")
+
+    if "permission denied" in low or "access is denied" in low or "winerror 5" in low:
+        return ("Sem permissão para gravar na pasta de destino. Escolha outra pasta ou feche o "
+                "programa que está usando o arquivo.")
+
+    # FFmpeg: o yt-dlp repassa "ffmpeg exited with code N" com o código de saída sem sinal;
+    # 3199971767 (0xBEBBB1B7) é o AVERROR_INVALIDDATA do FFmpeg.
+    if ("invalid data found when processing input" in low or "moov atom not found" in low
+            or re.search(r"ffmpeg exited with code (3199971767|-1094995529)", low)):
+        return ("O FFmpeg encontrou dados inválidos no arquivo (parte danificada ou download "
+                "incompleto). Baixe de novo ou escolha outro formato.")
+
+    code = re.search(r"ffmpeg exited with code (-?\d+)", low)
+    if code:
+        return (f"O FFmpeg terminou com erro (código {code.group(1)}). Tente de novo; se repetir, "
+                "exporte o diagnóstico em Configurações e anexe a uma issue.")
 
     if "dpapi" in low or ("decrypt" in low and "cookie" in low):
         return ("Não foi possível ler os cookies do Chrome ou do Edge. Desde o Chrome 127 "

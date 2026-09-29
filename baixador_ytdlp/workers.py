@@ -22,7 +22,7 @@ from .media_tools import (MediaToolError, MediaToolOptions, build_command,
                           uses_gpu)
 from .parallel_section import create_runner
 from .processes import attach_pid_to_kill_job, popen_isolated, release_job, terminate_process_tree
-from .probe import playlist_entries, probe
+from .probe import friendly_error, playlist_entries, probe
 from .security import validate_media_url
 from .tools import ToolManager, Toolchain, USER_AGENT, _verified_ssl_context
 from .updater import AppUpdater, ReleaseInfo
@@ -121,6 +121,14 @@ class AppUpdateDownloadWorker(QThread):
             self.finished_ok.emit(str(path))
 
 
+def _failure_log_text(message, trace) -> str:
+    """Mensagem e traceback juntos: erros como "encerrou inesperadamente" chegam sem traceback
+    e o log ficava com uma linha em branco."""
+    text = str(message or "").strip()
+    detail = str(trace or "").rstrip()
+    return f"{text}\n{detail}" if detail and text else (detail or text or "(sem detalhe)")
+
+
 class MediaToolWorker(QThread):
     """Executa FFmpeg para edição local e permite cancelamento sem bloquear a UI."""
 
@@ -193,7 +201,7 @@ class MediaToolWorker(QThread):
             self.progress_value.emit(100)
         except Exception as exc:  # noqa: BLE001
             report_exception("ferramenta local de mídia", exc)
-            self.failed.emit(str(exc))
+            self.failed.emit(friendly_error(str(exc)))
         else:
             self.finished_ok.emit(str(self.options.destination))
         finally:
@@ -628,7 +636,8 @@ class TranscriptionWorker(QThread):
             elif kind == "error":
                 message = value.get("message", "Falha desconhecida no motor de transcrição")
                 trace = value.get("traceback", "")
-                get_logger().error("Falha recebida do processo de transcrição:\n%s", trace.rstrip())
+                get_logger().error("Falha recebida do processo de transcrição:\n%s",
+                                   _failure_log_text(message, trace))
                 self.failed.emit(message)
             else:
                 self.finished_ok.emit(str(value))
@@ -731,7 +740,8 @@ class PersistentTranscriptionWorker(QThread):
         elif kind == "error":
             message = value.get("message", "Falha desconhecida no motor de transcrição")
             trace = value.get("traceback", "")
-            get_logger().error("Falha recebida do servidor de transcrição:\n%s", trace.rstrip())
+            get_logger().error("Falha recebida do servidor de transcrição:\n%s",
+                               _failure_log_text(message, trace))
             self.failed.emit(str(message))
         else:
             self.finished_ok.emit(str(value))

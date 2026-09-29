@@ -678,9 +678,12 @@ class Transcoder:
                 dst.unlink(missing_ok=True)
                 raise DownloadError("Conversão cancelada.")
             if attempt == len(attempts) - 1:
+                from .probe import friendly_error
+
                 err = "\n".join(errors)
                 dst.unlink(missing_ok=True)
-                raise DownloadError(f"Falha na conversão acelerada: {err.strip()[:300]}")
+                raise DownloadError(
+                    f"Falha na conversão acelerada: {friendly_error(err.strip()[:300])}")
         on_progress(100.0)
         output_duration = self.duration(dst)
         tolerance = max(1.0, total * 0.02)

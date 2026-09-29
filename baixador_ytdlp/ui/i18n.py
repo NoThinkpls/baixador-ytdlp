@@ -189,6 +189,22 @@ EN: dict[str, str] = {
     "Vídeo privado ou exclusivo para membros. Só com cookies de uma conta com acesso.":
         "Private or members-only video. Provide cookies from an account with access.",
     "Esse site não é suportado pelo yt-dlp.": "This site is not supported by yt-dlp.",
+    "O disco ou a pasta de destino está sem espaço. Libere espaço ou escolha outra pasta em "
+    "Configurações e tente de novo.":
+        "The disk or destination folder is out of space. Free some space or pick another "
+        "folder in Settings and try again.",
+    "O caminho do arquivo ficou longo demais para o sistema. Escolha uma pasta mais curta ou "
+    "simplifique o modelo do nome do arquivo em Configurações.":
+        "The file path is too long for the system. Pick a shorter folder or simplify the "
+        "file name template in Settings.",
+    "Sem permissão para gravar na pasta de destino. Escolha outra pasta ou feche o programa "
+    "que está usando o arquivo.":
+        "No permission to write to the destination folder. Pick another folder or close the "
+        "program using the file.",
+    "O FFmpeg encontrou dados inválidos no arquivo (parte danificada ou download incompleto). "
+    "Baixe de novo ou escolha outro formato.":
+        "FFmpeg found invalid data in the file (damaged part or incomplete download). "
+        "Download it again or pick another format.",
     "Vídeo bloqueado na sua região. Um proxy em outro país resolveria.":
         "This video is blocked in your region. A proxy in another country may help.",
     "A transmissão ainda não começou. Tente novamente quando o evento estiver ao vivo.":
