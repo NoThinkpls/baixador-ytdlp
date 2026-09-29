@@ -58,7 +58,7 @@ Em **Configurações → Comportamento**, escolha se conclusões devem gerar not
 
 ## Atualizações
 
-Em **Configurações → Atualizações do aplicativo**, você pode desligar a checagem ao abrir ou verificar manualmente. No Windows, quando há uma versão nova, a faixa inferior oferece atualizar ou dispensar o aviso. O instalador é conferido com SHA-256 antes de ser aberto.
+Em **Configurações → Nova versão do aplicativo**, você vê a última checagem e pode verificar manualmente (a checagem ao abrir pode ser desligada). O botão **Verificar componentes** consulta yt-dlp, FFmpeg e Deno: o FFmpeg só é baixado de novo quando sai um ramo estável mais novo, não a cada checagem. No Windows, quando há uma versão nova, a faixa inferior oferece atualizar ou dispensar o aviso. O instalador é conferido com SHA-256 antes de ser aberto.
 
 ## Quando um site para de funcionar
 
