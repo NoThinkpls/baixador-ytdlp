@@ -12,7 +12,7 @@ from .plataforma import is_macos, is_windows, pasta_dados_usuario, pasta_do_exec
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.12.6"
+APP_VERSION = "1.12.7"
 IS_WINDOWS = is_windows()
 
 
@@ -116,7 +116,8 @@ class Settings:
     last_output_dir: str = ""        # última pasta escolhida por download
     container: str = "mp4"           # mp4 | mkv | webm | original
     audio_format: str = "mp3"        # mp3 | m4a | opus | flac | wav
-    prefer_h264: bool = True         # prioriza compatibilidade (editores, TVs) em vez de qualidade máxima
+    prefer_h264: bool = False        # prioriza compatibilidade em vez de qualidade
+    vp9_in_mkv: bool = True          # VP9 em MP4 abre com partes offline no DaVinci; em MKV, não
     embed_thumbnail: bool = True
     embed_metadata: bool = True
     embed_chapters: bool = True

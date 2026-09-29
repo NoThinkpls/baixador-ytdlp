@@ -3,6 +3,19 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.12.7] - 2026-09-29
+
+### Corrigido
+
+- O problema no DaVinci era o **VP9 dentro de MP4**, não o codec (testado: VP9 em MKV, AV1 em
+  MP4 e H.264 abrem inteiros; VP9 em MP4 abre com partes "Media Offline"). Por isso a 1.12.6
+  limitar os trechos a H.264 1080p foi desnecessário e custava resolução. Agora o app volta a
+  baixar a melhor qualidade (VP9 até 4K) e, quando o arquivo é VP9 em MP4, troca o contêiner
+  para **MKV sem recodificar** (1 s para 20 min de vídeo; qualidade intacta). Nova opção em
+  Configurações → "Trocar VP9 em MP4 por MKV" (ligada). "Priorizar compatibilidade (H.264)"
+  volta a vir desligada. Medido: 20 min em 1440p, em partes paralelas, em 47 s, 36.000 quadros
+  exatos e sem erro de decodificação.
+
 ## [1.12.6] - 2026-09-29
 
 ### Corrigido

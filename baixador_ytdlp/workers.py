@@ -14,8 +14,8 @@ from PySide6.QtCore import QThread, Signal
 
 from .config import Settings
 from .diagnostics import get_logger, log_event, report_exception
-from .downloader import (DownloadOptions, Progress, Transcoder,
-                         is_retryable_error)
+from .downloader import (DownloadOptions, Progress, Transcoder, is_retryable_error,
+                         vp9_mp4_to_mkv)
 from .gpu import GpuInfo, detect, forget_negative_cache
 from .media_tools import (MediaToolError, MediaToolOptions, build_command,
                           operation_duration, preferred_video_encoder, time_seconds,
@@ -433,6 +433,11 @@ class DownloadWorker(QThread):
             if self._cancelled.is_set() or self.runner.cancelled:
                 self.failed.emit(self.job_id, "Cancelado", "")
                 return
+
+            if self.cfg.vp9_in_mkv and not self.opts.audio_only and files:
+                self.progress.emit(self.job_id, Progress(
+                    status="processing", percent=99.0, stage="Ajustando o contêiner para MKV…"))
+                files = [vp9_mp4_to_mkv(path, self.tc) for path in files]
 
             # O FFmpeg baixa o trecho e copia os fluxos sem recodificar. A
             # conversão opcional em GPU continua reservada a vídeos completos.
