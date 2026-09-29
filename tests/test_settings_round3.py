@@ -34,6 +34,20 @@ class SettingsRound3Tests(unittest.TestCase):
         page._save_timer.stop()
         page.deleteLater()
 
+    def test_app_and_component_checks_have_their_own_buttons(self) -> None:
+        from PySide6.QtWidgets import QAbstractButton as QPushButton
+
+        page = SettingsPage(Settings())
+        texts = [button.text().strip() for button in page.findChildren(QPushButton)]
+        self.assertIn("Verificar agora", texts)
+        self.assertIn("Verificar componentes", texts)
+        emitted = []
+        page.app_update_requested.connect(lambda: emitted.append("app"))
+        next(b for b in page.findChildren(QPushButton) if b.text().strip() == "Verificar agora").click()
+        self.assertEqual(emitted, ["app"])
+        page._save_timer.stop()
+        page.deleteLater()
+
     def test_channel_change_waits_for_next_component_check(self) -> None:
         window = Mock()
         window.manager = SimpleNamespace(ytdlp_channel="stable")

@@ -783,7 +783,7 @@ class ToolManager:
 
         self._mark_checked("ffmpeg")
         stamp = f"{asset['id']}:{asset.get('updated_at', '')}"
-        if current and self.state.get("ffmpeg_stamp") == stamp:
+        if current and self._ffmpeg_branch_current(current, asset):
             progress(f"FFmpeg {current} já está atualizado", 100)
             self._save_state()
             return
@@ -818,8 +818,41 @@ class ToolManager:
         # O id/timestamp complementa a conferência de hash e indica ao cache
         # local quando uma nova build foi publicada.
         self.state["ffmpeg_stamp"] = stamp
+        self.state["ffmpeg_branch"] = self._btbn_branch(asset)
         self._save_state()
         progress("FFmpeg para Linux instalado", 100)
+
+    @staticmethod
+    def _btbn_branch(asset: dict) -> str:
+        """Ramo estável (ex.: ``9.0``) que o nome do pacote BtbN anuncia."""
+        match = re.match(r"^ffmpeg-n(\d+)\.(\d+)-", str(asset.get("name") or ""))
+        return f"{match.group(1)}.{match.group(2)}" if match else ""
+
+    def _ffmpeg_branch_current(self, current: str, asset: dict) -> bool:
+        """O FFmpeg instalado já é do ramo estável mais novo publicado?
+
+        A release ``latest`` do BtbN é reenviada todo dia com um pacote novo do
+        mesmo ramo; comparar data/ID baixava ~100 MB a cada checagem. Só uma
+        troca de ramo (n9.0 → n9.1) conta como atualização.
+        """
+        wanted = self._btbn_branch(asset)
+        if not wanted:
+            return False
+        installed = str(self.state.get("ffmpeg_branch") or "")
+        if not installed:
+            match = re.match(r"^n(\d+)\.(\d+)", current)
+            installed = f"{match.group(1)}.{match.group(2)}" if match else ""
+        if not installed:
+            return False  # build de desenvolvimento (N-…): migra uma vez para o ramo estável
+
+        def key(branch: str) -> tuple[int, int]:
+            major, minor = branch.split(".")
+            return int(major), int(minor)
+
+        if installed != self.state.get("ffmpeg_branch"):
+            self.state["ffmpeg_branch"] = installed
+            self._state_dirty = True
+        return key(installed) >= key(wanted)
 
     def ensure_ffmpeg(self, progress: ProgressCB, check_now: bool = False) -> None:
         # Versões anteriores extraíam ffplay, que nenhuma função do app usa.
@@ -854,7 +887,7 @@ class ToolManager:
 
         self._mark_checked("ffmpeg")
         stamp = f"{asset['id']}:{asset.get('updated_at', '')}"
-        if current and self.state.get("ffmpeg_stamp") == stamp:
+        if current and self._ffmpeg_branch_current(current, asset):
             progress(f"FFmpeg {current} já está atualizado", 100)
             self._save_state()
             return
@@ -876,6 +909,7 @@ class ToolManager:
                         self._record_integrity(name, self.bin_dir / name)
 
         self.state["ffmpeg_stamp"] = stamp
+        self.state["ffmpeg_branch"] = self._btbn_branch(asset)
         self._save_state()
         progress("FFmpeg atualizado", 100)
 
