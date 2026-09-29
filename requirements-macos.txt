@@ -3,7 +3,7 @@ PySideSix-Frameless-Window==0.8.2
 faster-whisper==1.1.1
 ctranslate2==4.8.2
 huggingface-hub==0.29.3
-send2trash==1.8.3
+send2trash==2.1.0
 # Cadeia de CAs incluída no .app para downloads HTTPS via urllib.
 certifi==2025.8.3
 # MLX Whisper executa o modelo na GPU integrada do Apple Silicon. O
