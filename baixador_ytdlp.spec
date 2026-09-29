@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """Receita do PyInstaller. Uso: pyinstaller baixador_ytdlp.spec --noconfirm"""
-from PyInstaller.utils.hooks import collect_all, copy_metadata
+from PyInstaller.utils.hooks import collect_all
 
 # O faster-whisper roda sobre CTranslate2. As bibliotecas CUDA entram no
 # instalador: o usuário precisa apenas do driver NVIDIA, não do toolkit CUDA.
@@ -10,10 +10,6 @@ av_datas, av_binaries, av_hidden = collect_all('av')
 cudart_datas, cudart_binaries, cudart_hidden = collect_all('nvidia.cuda_runtime')
 cublas_datas, cublas_binaries, cublas_hidden = collect_all('nvidia.cublas')
 cudnn_datas, cudnn_binaries, cudnn_hidden = collect_all('nvidia.cudnn')
-metadata_datas = [item for name in (
-    'faster-whisper', 'ctranslate2', 'av', 'onnxruntime', 'tokenizers',
-    'huggingface-hub', 'nvidia-cuda-runtime-cu12', 'nvidia-cublas-cu12',
-    'nvidia-cudnn-cu12') for item in copy_metadata(name)]
 
 import os
 
@@ -32,7 +28,7 @@ a = Analysis(
     datas=([('assets/icon.ico', 'assets'), ('THIRD_PARTY_NOTICES.md', '.')]
            + LICENSE_DATAS
            + fw_datas + ct_datas + av_datas
-           + cudart_datas + cublas_datas + cudnn_datas + metadata_datas),
+           + cudart_datas + cublas_datas + cudnn_datas),
     hiddenimports=(['qframelesswindow', 'PySide6.QtSvg'] + fw_hidden + ct_hidden + av_hidden
                    + cudart_hidden + cublas_hidden + cudnn_hidden),
     hookspath=[],

@@ -144,19 +144,12 @@ def _run_self_test(report_path: Path) -> int:
         context = multiprocessing.get_context("spawn")
         events = context.Queue()
         child = context.Process(target=_self_test_vad_child, args=(events,))
-        # A variável de relatório só pertence ao pai. No executável congelado,
-        # herdá-la faz o filho entrar novamente no fluxo do autoteste.
-        inherited_report = os.environ.pop(_SELF_TEST_ENV, None)
-        try:
-            child.start()
-        finally:
-            if inherited_report is not None:
-                os.environ[_SELF_TEST_ENV] = inherited_report
-        child.join(90)
+        child.start()
+        child.join(30)
         if child.is_alive():
             child.terminate()
             child.join()
-            raise RuntimeError("O processo filho do VAD excedeu 90 segundos.")
+            raise RuntimeError("O processo filho do VAD excedeu 30 segundos.")
         if child.exitcode != 0:
             raise RuntimeError(f"O processo filho do VAD encerrou com código {child.exitcode}.")
         child_result = events.get(timeout=5)
@@ -276,11 +269,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    # No PyInstaller, o despacho precisa vir depois da definição do alvo do
-    # processo filho e antes do fluxo de autoteste. O filho herda o ambiente
-    # do pai, mas deve executar somente _self_test_vad_child.
-    if getattr(sys, "_MEIPASS", None):
-        multiprocessing.freeze_support()
+    # O processo principal do autoteste não cria filhos antes de executar
+    # suas verificações. Evitar ``freeze_support`` aqui impede que Nuitka
+    # interprete esse argumento interno como um processo ``spawn``. O filho
+    # criado pelo autoteste não recebe ``--self-test`` e continua passando
+    # pelo fluxo abaixo.
     if _SELF_TEST_REQUESTED:
         if not _SELF_TEST_REPORT:
             raise SystemExit(2)
@@ -288,6 +281,5 @@ if __name__ == "__main__":
 
     # Obrigatório para que o modo spawn no Windows execute somente o alvo do
     # processo auxiliar, sem abrir uma segunda janela Qt.
-    if not getattr(sys, "_MEIPASS", None):
-        multiprocessing.freeze_support()
+    multiprocessing.freeze_support()
     raise SystemExit(main())

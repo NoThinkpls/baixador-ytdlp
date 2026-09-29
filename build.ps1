@@ -2,8 +2,8 @@
     Compila o baixador-ytdlp e (opcionalmente) gera o instalador.
 
     Uso:
-        .\build.ps1                         # compila com PyInstaller
-        .\build.ps1 -Packager Nuitka        # rota experimental
+        .\build.ps1                         # compila com Nuitka
+        .\build.ps1 -Packager PyInstaller   # usa a rota de contingência
         .\build.ps1 -Installer              # compila e gera o setup
         .\build.ps1 -Installer -InstallInnoSetup # instala o Inno Setup, se necessário
 #>
@@ -13,7 +13,7 @@ param(
     [switch]$InstallInnoSetup,
     [switch]$ValidateGpu,
     [ValidateSet('PyInstaller', 'Nuitka')]
-    [string]$Packager = 'PyInstaller'
+    [string]$Packager = 'Nuitka'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -191,9 +191,7 @@ $fasterWhisperAssets = & $python -c "from pathlib import Path; from faster_whisp
 if ($LASTEXITCODE -ne 0) {
     throw 'Não foi possível listar os assets do faster-whisper instalados para validar a build.'
 }
-$bundleRoot = Split-Path -Parent $exe
-if ($Packager -eq 'PyInstaller') { $bundleRoot = Join-Path $bundleRoot '_internal' }
-$bundleAssets = Join-Path $bundleRoot 'faster_whisper\assets'
+$bundleAssets = Join-Path (Split-Path -Parent $exe) 'faster_whisper\assets'
 $missingRuntimeFiles = @($fasterWhisperAssets | Where-Object {
     $_ -and -not (Test-Path -LiteralPath (Join-Path $bundleAssets $_) -PathType Leaf)
 })
