@@ -125,7 +125,7 @@ class MainWindow(AppShell):
         hints = QGuiApplication.styleHints()
         signal = getattr(hints, "colorSchemeChanged", None)
         if signal is not None:
-            try:
+            try:  # noqa: SIM105 - o motivo está no comentário do except
                 signal.connect(lambda *_: self._refresh_appearance())
             except Exception:  # noqa: BLE001 - Qt sem o sinal
                 pass
@@ -379,11 +379,10 @@ class MainWindow(AppShell):
                                     "O arquivo em processamento será descartado; o original "
                                     "não é alterado."):
                 self.media_tools.cancel_current()
-        elif current is self.queue and self.queue.has_pending_work():
-            if self._confirm_cancel(
-                    "Cancelar a fila?",
-                    "Deseja cancelar e remover todos os downloads pendentes ou em andamento?"):
-                self.queue.cancel_all()
+        elif current is self.queue and self.queue.has_pending_work() and self._confirm_cancel(
+                "Cancelar a fila?",
+                "Deseja cancelar e remover todos os downloads pendentes ou em andamento?"):
+            self.queue.cancel_all()
 
     def _wire(self) -> None:
         self.home.enqueue.connect(self._on_enqueue)
@@ -666,7 +665,7 @@ class MainWindow(AppShell):
 
         try:
             for leftover in UPDATE_DIR.glob("*.exe"):
-                try:
+                try:  # noqa: SIM105 - o motivo está no comentário do except
                     leftover.unlink()
                 except OSError:
                     pass  # ainda aberto pelo instalador que acabou de rodar

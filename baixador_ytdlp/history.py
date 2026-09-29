@@ -86,7 +86,7 @@ class History:
         self._dirty = False
 
     # ------------------------------------------------------------------ disco
-    def load(self) -> "History":
+    def load(self) -> History:
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):

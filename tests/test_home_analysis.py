@@ -18,7 +18,7 @@ if HAS_QT:
     from baixador_ytdlp.ui.home_page import HomePage
 
 
-def _info(url: str) -> "MediaInfo":
+def _info(url: str) -> MediaInfo:
     return MediaInfo(title="Vídeo A", uploader="Canal", duration="1:00", thumbnail="",
                      webpage_url=url, is_playlist=False, playlist_count=0, rows=[], raw={})
 

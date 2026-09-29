@@ -20,6 +20,7 @@ import time
 import weakref
 
 from .config import IS_WINDOWS
+import contextlib
 
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WINDOWS else 0
@@ -30,7 +31,7 @@ POSIX_GRACE_SECONDS = 2.0
 
 # Popen -> handle do Job Object. WeakKeyDictionary: o job é fechado quando o
 # Popen deixa de existir (ver _close_job), e o dicionário não segura objetos.
-_JOBS: "weakref.WeakKeyDictionary[subprocess.Popen, int]" = weakref.WeakKeyDictionary()
+_JOBS: weakref.WeakKeyDictionary[subprocess.Popen, int] = weakref.WeakKeyDictionary()
 _JOBS_LOCK = threading.Lock()
 
 
@@ -106,10 +107,8 @@ def _create_kill_on_close_job() -> int:  # pragma: no cover - somente Windows
 
 
 def _close_job(job: int) -> None:  # pragma: no cover - somente Windows
-    try:
+    with contextlib.suppress(OSError):
         _kernel32().CloseHandle(job)
-    except OSError:
-        pass
 
 
 def attach_kill_job(process: subprocess.Popen) -> bool:
@@ -118,7 +117,7 @@ def attach_kill_job(process: subprocess.Popen) -> bool:
         return False
     try:  # pragma: no cover - somente Windows
         job = _create_kill_on_close_job()
-        handle = int(getattr(process, "_handle"))
+        handle = int(process._handle)
         if not _kernel32().AssignProcessToJobObject(job, handle):
             _close_job(job)
             return False
@@ -178,7 +177,7 @@ def popen_isolated(args, **kwargs) -> subprocess.Popen:
 
 
 def _taskkill(pid: int) -> None:  # pragma: no cover - somente Windows
-    system_root = os.environ.get("SystemRoot", r"C:\Windows")
+    system_root = os.environ.get("SYSTEMROOT", r"C:\Windows")
     subprocess.Popen(
         [os.path.join(system_root, "System32", "taskkill.exe"), "/T", "/F", "/PID", str(pid)],
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -206,7 +205,7 @@ def terminate_process_tree(process: subprocess.Popen, *, force: bool = True) -> 
         if force:
             def force_group_later() -> None:
                 time.sleep(POSIX_GRACE_SECONDS)
-                try:
+                try:  # noqa: SIM105 - o motivo está no comentário do except
                     os.killpg(process.pid, signal.SIGKILL)
                 except OSError:
                     pass  # grupo já terminou
@@ -215,7 +214,5 @@ def terminate_process_tree(process: subprocess.Popen, *, force: bool = True) -> 
                 target=force_group_later, name="process-group-stop", daemon=True
             ).start()
     except (OSError, subprocess.SubprocessError, ValueError):
-        try:
+        with contextlib.suppress(OSError):
             process.kill() if force else process.terminate()
-        except OSError:
-            pass

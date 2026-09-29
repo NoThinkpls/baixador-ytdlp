@@ -7,7 +7,6 @@ import subprocess
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from .cookies import is_cookie_source_failure
 from .processes import popen_isolated, terminate_process_tree
@@ -15,6 +14,7 @@ from .tools import decode_external_output
 from .diagnostics import log_event
 from .security import validate_media_url
 from .ui.i18n import tr
+import contextlib
 
 VCODEC_NAMES = {
     "avc1": "H.264", "h264": "H.264", "vp9": "VP9", "vp09": "VP9",
@@ -30,7 +30,7 @@ def _codec_label(codec: str, table: dict[str, str]) -> str:
     return table.get(base, base.upper())
 
 
-def human_size(num: Optional[float]) -> str:
+def human_size(num: float | None) -> str:
     if not num:
         return "—"
     for unit in ("B", "KB", "MB", "GB"):
@@ -40,7 +40,7 @@ def human_size(num: Optional[float]) -> str:
     return f"{num:.2f} TB"
 
 
-def human_duration(seconds: Optional[float]) -> str:
+def human_duration(seconds: float | None) -> str:
     if not seconds:
         return "—"
     seconds = int(seconds)
@@ -145,10 +145,8 @@ def _popen(args: list[str], env: dict | None) -> subprocess.Popen:
 
 def _drain(proc: subprocess.Popen) -> None:
     """Espera o processo morto liberar as pipes, sem bloquear para sempre."""
-    try:
+    with contextlib.suppress(subprocess.TimeoutExpired, ValueError, OSError):
         proc.communicate(timeout=5)
-    except (subprocess.TimeoutExpired, ValueError, OSError):
-        pass
 
 
 def kill_running() -> None:
@@ -204,7 +202,7 @@ _COOKIE_FALLBACK_NOTE = (
     "sem cookies. Use o Firefox ou um arquivo cookies.txt em Configurações.")
 
 
-def _flat_entries(data: dict) -> list["PlaylistEntry"]:
+def _flat_entries(data: dict) -> list[PlaylistEntry]:
     result: list[PlaylistEntry] = []
     for position, entry in enumerate(data.get("entries") or [], start=1):
         if not isinstance(entry, dict):
@@ -219,7 +217,7 @@ def _flat_entries(data: dict) -> list["PlaylistEntry"]:
 
 
 def _playlist_count(ytdlp: Path, base: list[str], url: str, timeout: int,
-                    env: dict | None = None) -> tuple[int, list["PlaylistEntry"]]:
+                    env: dict | None = None) -> tuple[int, list[PlaylistEntry]]:
     """Conta e lista os itens com --flat-playlist numa única requisição."""
     try:
         data = _run_json(base + ["-J", "--flat-playlist", "--", url], timeout, env)

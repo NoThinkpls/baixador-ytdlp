@@ -52,9 +52,8 @@ class TranscriptionFailureTests(unittest.TestCase):
                     patch.object(transcriber, "_extract_audio", return_value=audio), \
                     patch.object(transcriber, "_duration", return_value=0), \
                     patch.object(transcriber, "_decode", side_effect=error), \
-                    patch.object(transcriber, "_switch_to_cpu") as fallback:
-                with self.assertRaises(type(error)):
-                    transcriber.run(opts)
+                    patch.object(transcriber, "_switch_to_cpu") as fallback, self.assertRaises(type(error)):
+                transcriber.run(opts)
         fallback.assert_not_called()
 
     def test_falha_cuda_na_decodificacao_dispara_fallback(self) -> None:

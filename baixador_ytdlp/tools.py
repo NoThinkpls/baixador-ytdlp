@@ -28,7 +28,7 @@ import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from collections.abc import Callable
 
 try:
     import certifi
@@ -39,6 +39,7 @@ from .config import APP_NAME, APP_VERSION, BIN_DIR, DATA_DIR, IS_WINDOWS, STATE_
 from .diagnostics import get_logger
 from .plataforma import asset_deno, asset_ytdlp, is_macos, nome_binario, pasta_do_executavel
 from .runtime import RuntimeInfo, RuntimeManager
+import contextlib
 
 YTDLP_EXE = nome_binario("yt-dlp")
 FFMPEG_EXE = nome_binario("ffmpeg")
@@ -144,10 +145,8 @@ def pick_deno_release(releases: list[dict], major: int = DENO_SUPPORTED_MAJOR) -
 
 def _quiet_unlink(path: Path) -> None:
     """Remove sem propagar erro — arquivo em uso não é motivo para abortar."""
-    try:
+    with contextlib.suppress(OSError):
         path.unlink(missing_ok=True)
-    except OSError:
-        pass
 
 
 def run_hidden(args: list[str], timeout: int = 60) -> subprocess.CompletedProcess:
@@ -563,7 +562,7 @@ class ToolManager:
         self.state[f"{key}_checked_at"] = time.time()
 
     # ----------------------------------------------------------------- yt-dlp
-    def local_ytdlp_version(self, path: Optional[Path] = None) -> str:
+    def local_ytdlp_version(self, path: Path | None = None) -> str:
         path = path or self._resolve_ytdlp()
         return self._cached_version(path, self._read_ytdlp_version)
 
@@ -665,7 +664,7 @@ class ToolManager:
         progress(f"yt-dlp atualizado para {tag}", 100)
 
     # ----------------------------------------------------------------- FFmpeg
-    def local_ffmpeg_version(self, path: Optional[Path] = None) -> str:
+    def local_ffmpeg_version(self, path: Path | None = None) -> str:
         path = path or self._resolve(FFMPEG_EXE)
         return self._cached_version(path, self._read_ffmpeg_version)
 
@@ -914,7 +913,7 @@ class ToolManager:
         progress("FFmpeg atualizado", 100)
 
     # ------------------------------------------------------------------- Deno
-    def local_deno_version(self, path: Optional[Path] = None) -> str:
+    def local_deno_version(self, path: Path | None = None) -> str:
         path = path or self._resolve(DENO_EXE)
         return self._cached_version(path, self._read_deno_version)
 
@@ -1015,7 +1014,7 @@ class ToolManager:
         get_logger().info("Deno %s instalado em %s", tag, target)
         progress(f"Runtime JavaScript instalado: Deno {tag}", 100)
 
-    def _remote_sha256(self, asset: Optional[dict]) -> str:
+    def _remote_sha256(self, asset: dict | None) -> str:
         """Lê o .sha256sum publicado ao lado do artefato."""
         if not asset:
             return ""

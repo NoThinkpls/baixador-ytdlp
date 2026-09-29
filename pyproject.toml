@@ -3,4 +3,14 @@ target-version = "py312"
 line-length = 110
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F"]
+# E/F: erros de sintaxe e nomes; B: armadilhas do bugbear; UP: sintaxe moderna do Python 3.12;
+# SIM: simplificações que não mudam o comportamento.
+select = ["E4", "E7", "E9", "F", "B", "UP", "SIM"]
+ignore = [
+    "B008",  # chamadas em argumento padrão: usadas de propósito com dataclass field()
+    "SIM108",  # o operador ternário nem sempre deixa o código mais claro
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Nos testes, vários "with patch(...)" aninhados agrupam os dublês por assunto.
+"tests/**" = ["SIM117"]

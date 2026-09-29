@@ -74,7 +74,7 @@ def _enable_fault_handler(filename: str = FAULT_LOG_NAME) -> None:
     global _fault_file
     try:
         # O arquivo precisa continuar aberto até o encerramento do processo.
-        _fault_file = open(log_path(filename), "a", encoding="utf-8")
+        _fault_file = open(log_path(filename), "a", encoding="utf-8")  # noqa: SIM115 - aberto até o fim do processo
         faulthandler.enable(file=_fault_file, all_threads=True)
     except (OSError, RuntimeError):
         # Diagnóstico nunca pode impedir a abertura do aplicativo.

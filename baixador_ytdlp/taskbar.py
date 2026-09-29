@@ -12,6 +12,7 @@ from ctypes.wintypes import BOOL, DWORD, HWND, UINT
 from pathlib import Path
 
 from .config import IS_WINDOWS
+import contextlib
 
 # TBPFLAG (ITaskbarList3)
 TBPF_NOPROGRESS = 0
@@ -266,8 +267,6 @@ class TaskbarProgress:
         self._ptr = None
         self._vtable = None
         if self._com_initialized:
-            try:
+            with contextlib.suppress(Exception):
                 ctypes.windll.ole32.CoUninitialize()
-            except Exception:
-                pass
         self._com_initialized = False

@@ -22,13 +22,14 @@ import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 from .config import MODEL_DIR
 from .diagnostics import install_diagnostics, log_event, report_exception
 from .hardware import whisper_threads
 from .processes import popen_isolated, terminate_process_tree
 from .tools import CREATE_NO_WINDOW, Toolchain
+import contextlib
 
 StatusCB = Callable[[str], None]
 ProgressCB = Callable[[int], None]
@@ -199,7 +200,7 @@ def _warm_huggingface_symlink_support(cache: Path, repo: str) -> None:
 
     repo_cache = cache / f"models--{repo.replace('/', '--')}"
     repo_cache.mkdir(parents=True, exist_ok=True)
-    try:
+    try:  # noqa: SIM105 - o motivo está no comentário do except
         are_symlinks_supported(repo_cache)
     except OSError:
         # O hub cai para cópia de arquivos quando symlink não é permitido.
@@ -765,7 +766,8 @@ class Transcriber:
             return 0.0
 
     def _extract_audio(self, media: Path) -> Path:
-        handle = tempfile.NamedTemporaryFile(prefix="baixador-ytdlp-whisper-", suffix=".wav", delete=False)
+        handle = tempfile.NamedTemporaryFile(  # noqa: SIM115 - fechado logo abaixo; o arquivo fica (delete=False)
+            prefix="baixador-ytdlp-whisper-", suffix=".wav", delete=False)
         handle.close()
         target = Path(handle.name)
         self.status("Preparando áudio em 16 kHz mono…")
@@ -784,10 +786,8 @@ class Transcriber:
                     self._check_interrupt()
         except BaseException:
             terminate_process_tree(proc)
-            try:
+            with contextlib.suppress(subprocess.TimeoutExpired, OSError, ValueError):
                 proc.communicate(timeout=3)
-            except (subprocess.TimeoutExpired, OSError, ValueError):
-                pass
             target.unlink(missing_ok=True)
             raise
         if proc.returncode:
@@ -1236,26 +1236,27 @@ def transcription_server_main(toolchain: Toolchain, commands, events) -> None:
                     cancel_event.set()
                 if pending_pauses.pop(int(job_id), False):
                     pause_event.set()
+            current_job = int(job_id)
             try:
                 if transcriber is None:
                     transcriber = Transcriber(
                         toolchain,
-                        lambda message: send(int(job_id), "status", message),
-                        lambda percent: send(int(job_id), "progress", percent),
+                        lambda message, jid=current_job: send(jid, "status", message),
+                        lambda percent, jid=current_job: send(jid, "progress", percent),
                         opts.aggressive_filter,
                         cancel_event=cancel_event,
                         pause_event=pause_event,
                         force_cpu=bool(cuda_problem),
                     )
                     if cuda_problem:
-                        send(int(job_id), "status",
+                        send(current_job, "status",
                              f"CUDA interno indisponível ({cuda_problem}). Usando CPU int8…")
                 else:
                     # Os filtros são escolhas de cada item, não uma propriedade
                     # permanente do modelo em memória.
                     transcriber.aggressive_filter = opts.aggressive_filter
-                    transcriber.status = lambda message: send(int(job_id), "status", message)
-                    transcriber.progress = lambda percent: send(int(job_id), "progress", percent)
+                    transcriber.status = lambda message, jid=current_job: send(jid, "status", message)
+                    transcriber.progress = lambda percent, jid=current_job: send(jid, "progress", percent)
 
                 log_event("Transcrição persistente iniciada: entrada=%s saída=%s modelo=%s",
                           opts.media_path, opts.output_path, opts.model_size)
