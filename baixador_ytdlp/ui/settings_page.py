@@ -24,7 +24,7 @@ from ..filename_preview import render_filename_preview
 from ..gpu import GPU_ENCODER_LABELS, GpuInfo
 from ..hardware import default_fragments, default_parallel_downloads, usable_cores
 from . import icons, theme
-from .components import (Button, Headline, InsetGroup, Muted, PageHeader, PrimaryButton,
+from .components import (BreadcrumbChevron, BreadcrumbCurrent, BreadcrumbLink, Button, Headline, InsetGroup, Muted, PageHeader, PrimaryButton,
                          ScrollColumn, SectionLabel, Select, SettingRow, Stepper, Switch,
                          TextField)
 
@@ -109,6 +109,8 @@ class SettingsPage(QWidget):
     def __init__(self, cfg: Settings, parent=None):
         super().__init__(parent)
         self.setObjectName("settingsPage")
+        # Recebe o foco ao trocar de subpágina, para o primeiro controle não ficar com o anel.
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.cfg = cfg
         self.gpu = GpuInfo()
         self._gpu_requested = False
@@ -165,7 +167,7 @@ class SettingsPage(QWidget):
         self._section("Arquivo")
         self._filename_template_row()
         self._combo_row("Formato padrão do vídeo",
-                        "Container usado quando você não muda nada na página Baixar.",
+                        "Contêiner usado quando você não muda nada na página Baixar.",
                         [("MP4", "mp4"), ("MKV", "mkv"), ("WebM", "webm"),
                          ("Manter original", "original")],
                         "container")
@@ -364,14 +366,16 @@ class SettingsPage(QWidget):
         layout = QVBoxLayout(detail)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
+        # Caminho no estilo do Windows (Sistema › Tela): pai em cor secundária, seta forte e
+        # o item atual em negrito, todos no mesmo tamanho.
         breadcrumb = QHBoxLayout()
-        breadcrumb.setSpacing(8)
-        back = Button("Configurações", "chevron-left", "ghost", detail)
+        breadcrumb.setSpacing(4)
+        back = BreadcrumbLink("Configurações", detail)
         back.setAccessibleName("Voltar para Configurações")
         back.clicked.connect(self._show_landing)
         breadcrumb.addWidget(back)
-        breadcrumb.addWidget(Muted("›", detail))
-        breadcrumb.addWidget(Headline(title, detail), 1)
+        breadcrumb.addWidget(BreadcrumbChevron(detail))
+        breadcrumb.addWidget(BreadcrumbCurrent(title, detail), 1)
         layout.addLayout(breadcrumb)
         layout.addWidget(Muted(description, detail))
         self.page = ScrollColumn(detail, spacing=10)
@@ -383,11 +387,13 @@ class SettingsPage(QWidget):
     def _show_landing(self) -> None:
         self._refresh_summaries()
         self.pages.setCurrentWidget(self.landing)
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _show_category(self, index: int, row: QWidget | None = None) -> None:
         if index < 0 or index >= len(self._categories):
             return
         self.pages.setCurrentIndex(index + 1)
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
         if row is not None:
             if (self.conversion_group.isAncestorOf(row) and
                     not self.cfg.transcode_enabled):

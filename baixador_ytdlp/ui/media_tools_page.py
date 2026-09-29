@@ -31,7 +31,7 @@ OPERATIONS = {
         "action": "Extrair áudio",
     },
     "remux": {
-        "title": "Trocar container", "icon": "media", "tag": "Sem perda",
+        "title": "Trocar contêiner", "icon": "media", "tag": "Sem perda",
         "summary": "Converta para MKV sem mexer em imagem ou som.",
         "action": "Criar MKV",
     },
@@ -52,10 +52,33 @@ OPERATIONS = {
     },
     "burn": {
         "title": "Adicionar legendas ao vídeo", "icon": "captions", "tag": "Legenda fixa",
-        "summary": "Adicione um arquivo SRT, VTT ou ASS diretamente à imagem do vídeo.",
+        "summary": "Grave uma legenda SRT, VTT ou ASS na imagem do vídeo.",
         "action": "Adicionar legendas",
     },
 }
+
+
+def wrap_lines(text: str, metrics: QFontMetrics, width: int, max_lines: int = 2) -> list[str]:
+    """Quebra ``text`` em palavras para caber em ``width``; a última linha vira reticências
+    só se ainda sobrar texto depois de ``max_lines``."""
+    lines: list[str] = []
+    current = ""
+    words = text.split()
+    for position, word in enumerate(words):
+        candidate = f"{current} {word}".strip()
+        if not current or metrics.horizontalAdvance(candidate) <= width:
+            current = candidate
+            continue
+        lines.append(current)
+        current = word
+        if len(lines) == max_lines - 1:
+            current = " ".join(words[position:])
+            break
+    lines.append(current)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+    lines[-1] = metrics.elidedText(lines[-1], Qt.TextElideMode.ElideRight, width)
+    return lines
 
 
 class ToolCard(QAbstractButton):
@@ -68,7 +91,7 @@ class ToolCard(QAbstractButton):
         self.setText(self.data["title"])
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumHeight(78)
+        self.setMinimumHeight(84)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setToolTip(self.data["summary"])
         self.setAccessibleName(self.data["title"])
@@ -79,7 +102,7 @@ class ToolCard(QAbstractButton):
         self.released.connect(self.update)
 
     def sizeHint(self) -> QSize:
-        return QSize(250, 78)
+        return QSize(250, 84)
 
     def paintEvent(self, _event):  # noqa: N802 - assinatura do Qt
         painter = QPainter(self)
@@ -95,12 +118,12 @@ class ToolCard(QAbstractButton):
         painter.setBrush(fill)
         painter.drawRoundedRect(rect, theme.RADIUS_CARD, theme.RADIUS_CARD)
 
-        icon_rect = QRectF(12, 19, 34, 34)
+        icon_rect = QRectF(12, 25, 34, 34)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(theme.qcolor("accent_soft" if not active else "accent"))
         painter.drawRoundedRect(icon_rect, 10, 10)
         icon_tone = "accent" if not active else "on_accent"
-        painter.drawPixmap(20, 27, icons.pixmap(self.data["icon"], theme.color(icon_tone), 18))
+        painter.drawPixmap(20, 33, icons.pixmap(self.data["icon"], theme.color(icon_tone), 18))
 
         title_x = 56
         painter.setFont(theme.headline())
@@ -112,10 +135,13 @@ class ToolCard(QAbstractButton):
         painter.setFont(theme.footnote())
         painter.setPen(QPen(theme.qcolor("text_secondary")))
         metrics = QFontMetrics(painter.font())
-        summary = metrics.elidedText(self.data["summary"], Qt.TextElideMode.ElideRight,
-                                     max(40, self.width() - title_x - 12))
-        painter.drawText(QRectF(title_x, 39, self.width() - title_x - 12, 20),
-                         int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), summary)
+        text_width = max(40, self.width() - title_x - 12)
+        # Até três linhas: a descrição não termina mais em "…" no meio da frase.
+        lines = wrap_lines(self.data["summary"], metrics, text_width, max_lines=3)
+        line_height = metrics.height() + 1
+        for index, line in enumerate(lines):
+            painter.drawText(QRectF(title_x, 37 + index * line_height, text_width, line_height),
+                             int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), line)
         if self.hasFocus():
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(QPen(theme.qcolor("accent_text"), 2))

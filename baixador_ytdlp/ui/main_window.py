@@ -341,6 +341,10 @@ class MainWindow(AppShell):
         if self.stackedWidget.currentWidget() is self.home and self.home.download_btn.isEnabled():
             self.home.download_btn.click()
 
+    def _focus_link_initially(self) -> None:
+        if self.stackedWidget.currentWidget() is self.home:
+            self.home.url_edit.setFocus(Qt.FocusReason.OtherFocusReason)
+
     def _shortcut_focus_link(self) -> None:
         self.switchTo(self.home)
         self.home.url_edit.setFocus(Qt.FocusReason.ShortcutFocusReason)
@@ -414,6 +418,8 @@ class MainWindow(AppShell):
         # A tela aparece imediatamente; a consulta de rede começa depois, em thread própria.
         QTimer.singleShot(700, self._check_app_update)
         QTimer.singleShot(5000, self._cleanup_old_installers)
+        # O foco começa no campo do link: é a primeira coisa que se faz no app.
+        QTimer.singleShot(0, self._focus_link_initially)
         self._update_timer = QTimer(self)
         self._update_timer.setInterval(3 * 60 * 60 * 1000)
         self._update_timer.timeout.connect(self._periodic_update_check)

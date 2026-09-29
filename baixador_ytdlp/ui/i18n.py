@@ -109,8 +109,8 @@ EN: dict[str, str] = {
     "Atualizar": "Update", "Atualização disponível": "Update available",
     "Baixar legendas": "Download subtitles", "Canal": "Channel",
     "Canal do yt-dlp": "yt-dlp channel", "Caracteres por linha": "Characters per line",
-    "Caber em um limite": "Fit within a size limit", "Container do vídeo final. MKV nunca reconverte.":
-        "Final video container. MKV is never re-encoded.",
+    "Caber em um limite": "Fit within a size limit", "MP4 abre em qualquer lugar; MKV nunca reconverte o vídeo.":
+        "MP4 opens anywhere; MKV never re-encodes the video.",
     "Criar versão vertical": "Create vertical version", "Data": "Date", "DESTINO": "DESTINATION",
     "Desligado, o arquivo vai direto para a pasta padrão das configurações.":
         "When off, the file goes directly to the default folder in Settings.",
@@ -128,7 +128,7 @@ EN: dict[str, str] = {
     "Recortar trecho": "Trim clip", "Reduzir tamanho": "Reduce size",
     "Resolução": "Resolution", "Salvar perfil": "Save profile", "Salvar resultado": "Save result",
     "Tamanho máximo": "Maximum size", "Tarefa": "Task", "Título": "Title",
-    "Trocar container": "Change container",
+    "Trocar contêiner": "Change container",
     "Vídeo legendado concluído": "Captioned video complete", "ÁUDIO": "AUDIO",
     "LEGENDAS": "SUBTITLES", "QUALIDADE": "QUALITY", "SAÍDA": "OUTPUT",
     # Configurações: títulos de controles e seções que aparecem sem contexto.

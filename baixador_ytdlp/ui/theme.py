@@ -273,6 +273,7 @@ def stylesheet() -> str:
     /* --------------------------------------------------------- textos */
     QLabel {{ background: transparent; color: {p.text}; }}
     QLabel#muted, QLabel#caption {{ color: {p.text_secondary}; }}
+    QLabel#breadcrumbCurrent {{ color: {p.text}; }}
     QLabel#hint {{ color: {p.text_tertiary}; }}
     QLabel#sectionLabel {{ color: {p.text_tertiary}; }}
     QLabel#pageSubtitle {{ color: {p.text_secondary}; }}

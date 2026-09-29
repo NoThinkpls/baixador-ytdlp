@@ -365,7 +365,7 @@ class HomePage(QWidget):
         # desabilitadas sem explicação: a lista encolhe e cada opção à vista vale.
         self.container_row = SettingRow(
             "Formato do arquivo",
-            "Container do vídeo final. MKV nunca reconverte.",
+            "MP4 abre em qualquer lugar; MKV nunca reconverte o vídeo.",
             self.container_combo, group)
         group.add_row(self.container_row)
 
