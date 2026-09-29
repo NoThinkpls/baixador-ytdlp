@@ -1,7 +1,7 @@
 # Pendências
 
-Estado em 29/09/2026: versão **1.12.3**. As rodadas 1 a 3 do
-`docs/PLANO-DE-CORRECOES.md` estão feitas e publicadas (1.12.0 a 1.12.3). O
+Estado em 29/09/2026: versão **1.12.4**. As rodadas 1 a 3 do
+`docs/PLANO-DE-CORRECOES.md` estão feitas e publicadas (1.12.0 a 1.12.4). O
 Windows compila com Nuitka; o PyInstaller é só contingência. O GitHub Actions
 compila as três plataformas e publica a release quando todas passam.
 

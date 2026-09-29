@@ -14,12 +14,13 @@ from PySide6.QtCore import QThread, Signal
 
 from .config import Settings
 from .diagnostics import get_logger, log_event, report_exception
-from .downloader import (DownloadOptions, DownloadRunner, Progress, Transcoder,
+from .downloader import (DownloadOptions, Progress, Transcoder,
                          is_retryable_error)
 from .gpu import GpuInfo, detect, forget_negative_cache
 from .media_tools import (MediaToolError, MediaToolOptions, build_command,
                           operation_duration, preferred_video_encoder, time_seconds,
                           uses_gpu)
+from .parallel_section import create_runner
 from .processes import attach_pid_to_kill_job, popen_isolated, release_job, terminate_process_tree
 from .probe import playlist_entries, probe
 from .security import validate_media_url
@@ -368,7 +369,7 @@ class DownloadWorker(QThread):
                  tc: Toolchain, parent=None):
         super().__init__(parent)
         self.job_id, self.opts, self.cfg, self.tc = job_id, opts, cfg, tc
-        self.runner = DownloadRunner(opts, cfg, tc)
+        self.runner = create_runner(opts, cfg, tc)
         self.transcoder: Transcoder | None = None
         self._cancelled = threading.Event()
 
@@ -391,7 +392,7 @@ class DownloadWorker(QThread):
                 # Uma nova execução é importante: o processo do yt-dlp que
                 # recebeu erro de rede não deve ser reutilizado. Os .part ficam
                 # no destino e --continue começa exatamente de onde parou.
-                self.runner = DownloadRunner(self.opts, self.cfg, self.tc)
+                self.runner = create_runner(self.opts, self.cfg, self.tc)
                 # cancel() pode ocorrer entre a verificação no início do laço e
                 # esta nova instância. Reaplicar o estado impede que um yt-dlp
                 # nasça depois de o usuário já ter removido o item da fila.

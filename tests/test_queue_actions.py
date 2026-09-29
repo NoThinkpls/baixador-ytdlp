@@ -37,7 +37,7 @@ class TranscodeFailureTests(unittest.TestCase):
             transcoder = MagicMock()
             transcoder.run.side_effect = DownloadError("Falha na conversão acelerada: driver")
             cfg = Settings(transcode_enabled=True, auto_retry_attempts=0)
-            with patch("baixador_ytdlp.workers.DownloadRunner", return_value=runner), \
+            with patch("baixador_ytdlp.workers.create_runner", return_value=runner), \
                     patch("baixador_ytdlp.workers.Transcoder", return_value=transcoder):
                 worker = DownloadWorker(1, DownloadOptions("https://x", folder), cfg, MagicMock())
                 done, failed, warnings = [], [], []
