@@ -21,14 +21,12 @@ Contexto: `docs/PLANO-DE-CORRECOES.md` (auditoria e status), `CLAUDE.md`
 - [ ] Abrir o pacote Nuitka em máquina limpa sem Python nem VC++ instalado (o
       `scripts/refresh_vc_runtime.ps1` embute o runtime C++ mais novo).
 
-## Trecho mais rápido (ideias medidas em 29/09)
+## Trecho em partes paralelas (feito na 1.12.4)
 
-O HLS já leva 82 min de live a ~10 min (~9× o tempo real, limite do FFmpeg em uma
-conexão). Para ir além, testar quando o YouTube não estiver pedindo captcha:
-- dividir o intervalo em N partes com N FFmpeg e juntar com `-c copy` (conferir
-  continuidade nas emendas);
-- ver se o downloader HLS nativo do yt-dlp aceita `--download-sections` com
-  `--concurrent-fragments`.
+82 min de live em ~2,5 min (`baixador_ytdlp/parallel_section.py`). O downloader nativo
+do yt-dlp ignora `--concurrent-fragments` com `--download-sections` (sempre usa o
+FFmpeg), então o ganho vem de várias conexões. Pendente: aplicar o mesmo a sites que
+não sejam o YouTube e ao áudio (`-x`), se o teto por conexão também for baixo lá.
 
 ## Melhorias por plataforma
 
