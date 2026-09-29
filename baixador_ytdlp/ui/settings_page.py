@@ -676,9 +676,10 @@ class SettingsPage(QWidget):
     def _cookies_file_row(self) -> None:
         """Arquivo cookies.txt: caminho, seletor e o passo a passo de exportação."""
         row, column = self._custom_row(
-            "Arquivo cookies.txt (recomendado)",
-            "É o caminho que o YouTube aceita de forma confiável. Tem prioridade sobre o "
-            "navegador e o conteúdo nunca é copiado para os logs.")
+            "Arquivo cookies.txt (só se o YouTube pedir)",
+            "Necessário apenas quando o YouTube exibir \"confirme que você não é um robô\" "
+            "(bloqueio temporário do IP, mais comum após muitos downloads seguidos). "
+            "Tem prioridade sobre o navegador e o conteúdo nunca é copiado para os logs.")
 
         line = QHBoxLayout()
         line.setSpacing(10)
