@@ -3,7 +3,7 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
-## [1.12.2] - não publicada
+## [1.12.3] - 2026-09-29
 
 ### Corrigido
 
@@ -13,14 +13,36 @@ formato Keep a Changelog.
   buscado por segmentos (~9x o tempo real medido: 82 min em ~10 min; 60 s em
   5 s). Com um formato escolhido na tabela, usa o HLS de mesma resolução, FPS e
   codec; sem HLS equivalente, cai para o formato escolhido.
-- Removido o `--force-keyframes-at-cuts` (recodificava o trecho na CPU) e unificado
-  o `-S` do yt-dlp num só argumento.
+- O botão "Verificar agora" da versão do aplicativo voltou; o card de componentes
+  ficou com "Verificar componentes".
+- O FFmpeg deixou de ser baixado a cada checagem: a release "latest" do BtbN é
+  reenviada todo dia e o app comparava ID/data. Agora só um ramo estável mais
+  novo (ex.: n9.0 → n9.1) conta como atualização.
+- O texto do cookies.txt passou de "recomendado" para "só se o YouTube pedir": o
+  bloqueio de robô é intermitente e temporário, e continua sendo o caminho
+  recomendado pelo yt-dlp quando aparece.
+
+### Alterado
+
 - O Windows volta a ser compilado com Nuitka (1/70 detecções no VirusTotal contra
   3–4/71 do PyInstaller). O autoteste caía com falha de segmentação no
   `import onnxruntime` porque o pacote levava um `msvcp140.dll` 14.29, mais antigo
-  que o exigido pelo onnxruntime 1.30; `scripts/refresh_vc_runtime.ps1` troca as DLLs
-  do runtime C++ pelas mais novas antes do autoteste. PyInstaller segue como
+  que o exigido pelo onnxruntime 1.30; `scripts/refresh_vc_runtime.ps1` troca as
+  DLLs do runtime C++ pelas mais novas antes do autoteste. PyInstaller segue como
   contingência (`build.ps1 -Packager PyInstaller`).
+- Compilação bem mais rápida: 493 arquivos C em vez de 1.172 (sem o `pip`, usado só
+  no modo de desenvolvimento, e sem as partes do `onnxruntime` que o app não usa),
+  com a cache do ccache guardada entre execuções no GitHub Actions.
+- README repaginado, com capturas de tela, e guias atualizados.
+
+## [1.12.2] - 2026-09-29
+
+### Corrigido
+
+- Baixar só um trecho usa apenas o `--download-sections` do yt-dlp, sem o seletor HLS
+  e o `-S proto:m3u8` da 1.12.1. O corte segue sem recodificar e sem
+  `--force-keyframes-at-cuts`.
+- Build do Windows com PyInstaller mantida nesta versão.
 
 ## [1.12.1] - 2026-09-28
 

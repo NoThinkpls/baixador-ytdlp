@@ -12,7 +12,7 @@ from .plataforma import is_macos, is_windows, pasta_dados_usuario, pasta_do_exec
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.12.2"
+APP_VERSION = "1.12.3"
 IS_WINDOWS = is_windows()
 
 
