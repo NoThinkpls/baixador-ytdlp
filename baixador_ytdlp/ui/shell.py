@@ -27,6 +27,9 @@ class CaptionButton(QAbstractButton):
     def __init__(self, action: str, parent=None):
         super().__init__(parent)
         self.action = action
+        # Botões de moldura não entram na ordem do Tab: sem isto a janela abria com o
+        # foco (contorno azul) no minimizar, e Enter ou Espaço a minimizava.
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setFixedSize(self.WIDTH, theme.TITLEBAR_HEIGHT)
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.setToolTip(tr({"minimize": "Minimizar", "maximize": "Maximizar", "close": "Fechar"}[action]))
@@ -341,6 +344,7 @@ class AppShell(_Base):
         for name in ("minBtn", "maxBtn", "closeBtn"):
             button = getattr(title_bar, name, None)
             if button is not None:
+                button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
                 button.setFixedHeight(theme.TITLEBAR_HEIGHT)
                 button.setFixedWidth(46)
                 button.show()

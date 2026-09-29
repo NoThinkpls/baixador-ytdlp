@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import (Property, QEasingCurve, QEvent, QPropertyAnimation, QRectF,
                             QSize, Qt, QTimer, Signal)
-from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (QAbstractButton, QComboBox, QFrame, QGraphicsOpacityEffect,
                                QHBoxLayout, QLabel, QLineEdit, QListView, QPlainTextEdit,
                                QProgressBar, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout,
@@ -85,6 +85,85 @@ _VARIANTS = {
 }
 
 
+def _breadcrumb_font():
+    return theme.font(24, 600, -0.3)
+
+
+class BreadcrumbLink(QAbstractButton):
+    """Item pai do caminho de navegação (como "Sistema" em Sistema › Tela, no Windows).
+
+    Mesmo tamanho do item atual, mas em cor secundária; ao passar o mouse, ganha o destaque.
+    """
+
+    def __init__(self, text: str, parent=None):
+        super().__init__(parent)
+        self.setText(tr(text))
+        self.setAccessibleName(tr(text))
+        self.setFont(_breadcrumb_font())
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Só pelo Tab: o anel de foco não aparece ao abrir a categoria com o mouse.
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+
+    def sizeHint(self) -> QSize:
+        metrics = QFontMetrics(self.font())
+        return QSize(metrics.horizontalAdvance(self.text()) + 6, metrics.height() + 6)
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - assinatura do Qt
+        # O caminho pode encolher com a janela; ele nunca define a largura mínima da página.
+        return QSize(40, self.sizeHint().height())
+
+    def paintEvent(self, _event):  # noqa: N802 - assinatura do Qt
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        active = self.underMouse() or self.isDown()
+        painter.setPen(QPen(theme.qcolor("text" if active else "text_secondary")))
+        painter.setFont(self.font())
+        painter.drawText(self.rect(), int(Qt.AlignmentFlag.AlignCenter), self.text())
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(theme.qcolor("accent"), 2))
+            painter.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1), 6, 6)
+
+    def enterEvent(self, event):  # noqa: N802 - assinatura do Qt
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):  # noqa: N802 - assinatura do Qt
+        self.update()
+        super().leaveEvent(event)
+
+
+class BreadcrumbChevron(QWidget):
+    """O ``›`` entre os itens do caminho: traço grosso e legível, na altura do texto."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        metrics = QFontMetrics(_breadcrumb_font())
+        self.setFixedSize(22, metrics.height() + 6)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
+    def paintEvent(self, _event):  # noqa: N802 - assinatura do Qt
+        painter = QPainter(self)
+        size = 20
+        pixmap = icons.pixmap("chevron-right", theme.color("text_secondary"), size, 2.6)
+        painter.drawPixmap((self.width() - size) // 2, (self.height() - size) // 2, pixmap)
+
+
+class BreadcrumbCurrent(QLabel):
+    """Item atual do caminho: o mesmo corpo do pai, em negrito e cor principal."""
+
+    def __init__(self, text: str, parent=None):
+        super().__init__(tr(text), parent)
+        font = _breadcrumb_font()
+        font.setWeight(QFont.Weight.Bold)
+        self.setFont(font)
+        self.setObjectName("breadcrumbCurrent")
+        self.setAccessibleName(tr(text))
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+
+
 class Button(QAbstractButton):
     """Botão de texto com ícone opcional. O visual todo vem do QSS por objectName."""
 
@@ -121,6 +200,10 @@ class Button(QAbstractButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setPen(Qt.PenStyle.NoPen)
+        if not self.isEnabled():
+            # Desabilitado precisa parecer desabilitado: só as cores "apagadas" quase não
+            # se distinguiam do botão ativo (ex.: "Pausar tudo" com a fila vazia).
+            painter.setOpacity(0.45)
 
         fill, text_color = self._colors()
         if fill is not None:
@@ -155,6 +238,12 @@ class Button(QAbstractButton):
             painter.setPen(QPen(theme.qcolor("accent"), 2))
             painter.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1),
                                     theme.RADIUS_CONTROL, theme.RADIUS_CONTROL)
+
+    def changeEvent(self, event):  # noqa: N802 - assinatura do Qt
+        if event.type() == QEvent.Type.EnabledChange:
+            self.setCursor(Qt.CursorShape.PointingHandCursor if self.isEnabled()
+                           else Qt.CursorShape.ArrowCursor)
+        super().changeEvent(event)
 
     def _colors(self):
         name = self.objectName()
