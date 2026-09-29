@@ -65,7 +65,8 @@ def main() -> int:
             print("  -", item)
         return 1
     if fixed:
-        print("Dica: rode `python scripts/pyright_check.py --update` para encolher a linha de base.")
+        print("Dica: a linha de base reúne o que o ambiente local e o do CI enxergam (o CI vê mais "
+              "erros de tipos do Qt). Só encolha com --update usando a lista do próprio CI.")
     return 0
 
 
