@@ -5,12 +5,15 @@ Uso: python scripts/capture_screenshots.py
 """
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+# Perfil descartável: nada aqui pode tocar nas configurações reais.
+os.environ["BAIXADOR_YTDLP_DATA_DIR"] = tempfile.mkdtemp(prefix="baixador-capturas-")
 
 WANTED = {("dark", "baixar"), ("light", "ferramentas"), ("dark", "legendar"),
           ("dark", "configuracoes")}

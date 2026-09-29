@@ -45,7 +45,12 @@ python -m unittest discover -s tests
 ruff check .
 ```
 
-Testes que instanciam `MainWindow` não podem gravar no perfil real: substitua
+A suíte roda num perfil descartável: `tests/test_00_isolar_perfil.py` define
+`BAIXADOR_YTDLP_DATA_DIR` antes de qualquer import do app (o mesmo vale para
+`scripts/window_smoke.py` e `scripts/capture_screenshots.py`). Sem isso, em 29/09/2026 os
+testes gravaram `history_enabled=false` e uma pasta temporária como pasta de downloads no
+`settings.json` real. Nunca rode testes com essa variável apontando para o perfil real.
+Testes que instanciam `MainWindow` também não podem gravar no perfil real: substitua
 `cfg.save`, `queue.stop_all` e `history.flush` por mocks (ver
 `tests/test_update_flow.py`). Cada correção vem com teste que falha no código
 antigo.

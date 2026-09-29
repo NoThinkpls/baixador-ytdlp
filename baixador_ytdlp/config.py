@@ -63,6 +63,11 @@ PORTABLE_FALLBACK_REASON = ""
 
 def _data_root() -> Path:
     global PORTABLE_FALLBACK_REASON
+    # Testes e scripts de captura usam uma pasta descartável: sem isto, rodar a suíte
+    # gravava configurações de teste (pasta temporária, histórico desligado) no perfil real.
+    override = os.environ.get("BAIXADOR_YTDLP_DATA_DIR", "").strip()
+    if override:
+        return Path(override)
     portable = _portable_root()
     if portable is not None:
         if _writable(portable):

@@ -11,12 +11,15 @@ Uso no CI (runner windows-latest tem sessão gráfica):
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+# Perfil descartável: o teste de fumaça nunca deve tocar nas configurações reais.
+os.environ["BAIXADOR_YTDLP_DATA_DIR"] = tempfile.mkdtemp(prefix="baixador-smoke-")
 
 
 def main() -> int:
