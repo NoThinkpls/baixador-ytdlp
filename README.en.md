@@ -1,10 +1,41 @@
+<div align="center">
+
+<img src="assets/icon.png" alt="Baixador YT-DLP" width="112" height="112">
+
 # Baixador YT-DLP
 
-[Leia em português](README.md)
+**Download, transcribe and edit video and audio — fully local, GPU accelerated.**
 
-Download video and audio, transcribe media locally, and edit files in an Apple + Discord inspired interface for Windows, macOS on Apple Silicon, and Linux.
+A modern interface for [yt-dlp](https://github.com/yt-dlp/yt-dlp) with local Whisper transcription
+and video tools. Free, open source, and nothing leaves your computer.
 
-## Download
+[![Version](https://img.shields.io/github/v/release/NoThinkpls/baixador-ytdlp?display_name=tag&label=version&color=5865F2)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/NoThinkpls/baixador-ytdlp/total?label=downloads&color=3BA55D)](https://github.com/NoThinkpls/baixador-ytdlp/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/NoThinkpls/baixador-ytdlp/build.yml?branch=main&label=build)](https://github.com/NoThinkpls/baixador-ytdlp/actions)
+[![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-0078D4)](#-download)
+[![MIT License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
+
+[**Download**](#-download) ·
+[Features](#-features) ·
+[Usage guide](docs/USAGE-GUIDE.en.md) ·
+[Changelog](CHANGELOG.md) ·
+[Português](README.md)
+
+<br>
+
+<img src="docs/images/baixar-dark.png" alt="Baixador YT-DLP download page" width="860">
+
+</div>
+
+## ✨ Why use it
+
+- **Genuinely fast.** Parallel fragment downloads; clips from long YouTube videos use the HLS format and run at ~9× real time (82 minutes of a live stream in ~10 minutes).
+- **Everything stays local.** Transcription, conversion and cutting run on your machine. No audio or video is uploaded anywhere.
+- **Uses your GPU.** NVIDIA (NVENC and CUDA), AMD (AMF) and Apple Silicon (VideoToolbox and MLX), with an automatic CPU fallback if the GPU rejects a file.
+- **Secure by default.** yt-dlp, FFmpeg and Deno come from official sources with verified SHA-256; TLS certificate validation is never disabled.
+- **Pleasant to use.** Light and dark themes, Portuguese and English, a persistent queue, and unobtrusive notices.
+
+## 📥 Download
 
 | Platform | Recommended package | Download |
 | --- | --- | --- |
@@ -15,35 +46,91 @@ Download video and audio, transcribe media locally, and edit files in an Apple +
 | Ubuntu 22.04+/Debian 12+ x86_64 | `.deb` package | [Download `.deb`](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-linux-amd64.deb) |
 | Linux x86_64 | Portable archive | [Download portable edition](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-portable-linux-x86_64.tar.gz) |
 
-The links use stable aliases for the latest approved release. If a version was just published, wait for the **Publish release** GitHub Actions job to finish before downloading it.
+> The links use stable aliases for the latest approved release. If a version was just published, wait for the **Publish release** GitHub Actions job to finish.
 
-## What it does
+**First launch:** the app downloads yt-dlp, FFmpeg and Deno from their official sources. After that each component is downloaded again only when a newer version exists (FFmpeg, for example, only when a newer stable branch is released).
 
-- Downloads video, audio, playlists, and clips with format and quality choices.
-- Previews metadata, estimated output name, formats, audio languages, and available subtitles before starting.
-- Queues work, resumes partial downloads, retries temporary errors, and accepts a batch of pasted URLs.
-- Creates local captions with faster-whisper in SRT, WebVTT, ASS, karaoke ASS, TXT, or JSON; it can translate speech into English.
-- Keeps the transcription process alive between queued media files, reusing an already loaded Whisper model when the model and GPU memory profile are unchanged.
-- Can send a completed download to the caption queue and embed the resulting subtitles as a selectable media track without re-encoding.
-- Provides local FFmpeg tools for trimming, audio extraction, remuxing, compression, vertical video, and subtitle embedding.
-- Offers an optional nightly yt-dlp channel, model manager, diagnostics export with sensitive data redacted, taskbar progress, tray notifications, and optional background operation.
-- Uses CUDA with compatible NVIDIA GPUs, MLX on Apple Silicon, and a safe CPU/int8 fallback. Video conversion can use NVENC, AMD AMF, or VideoToolbox when available.
+## 🚀 Features
 
-## Interface language
+### Downloading
 
-Open **Settings → Appearance → Interface language**, choose **English**, and restart the app. The setting is applied at the next startup so downloads, conversions, and captioning jobs are never interrupted.
+- Video, audio, playlists and **clips** with format and quality choices. Clips are not re-encoded; the start may shift to the nearest keyframe.
+- Metadata preview with thumbnail, estimated file name, sizes, codecs, audio languages and available subtitles.
+- Batch URLs, one-click sending from the browser through the `baixador://` protocol, and playlist item picking.
+- Persistent queue with **pause and resume**, partial-file resume and automatic retries.
+- Cover, metadata and chapters also for audio; optional music organisation by channel/artist.
+- Optional nightly yt-dlp channel for site fixes ahead of the stable release.
 
-## Documentation
+### Captions and transcription
 
-- [Usage guide](docs/USAGE-GUIDE.en.md)
-- [Platforms, performance, and security](docs/PLATFORMS-AND-SECURITY.en.md)
-- [Build and release](docs/BUILD-AND-RELEASE.en.md)
-- [Portuguese documentation](README.md#documentação)
-- [Changelog](CHANGELOG.md)
-- [Security policy](SECURITY.md)
-- [Contributing](CONTRIBUTING.md)
+- Local Whisper up to **Large v3 Turbo**, translation to English and context vocabulary.
+- SRT, VTT, ASS, karaoke ASS, TXT and JSON output, for several files and folders at once.
+- **Download and caption** flow: when a download finishes, the file joins the Whisper queue and can get the subtitles as a track, without re-encoding.
+- CUDA on NVIDIA GPUs, **MLX** on Apple Silicon, optimised CPU elsewhere.
 
-## License and responsible use
+<div align="center">
+<img src="docs/images/legendar-dark.png" alt="Captions page" width="720">
+</div>
 
-Baixador YT-DLP uses [yt-dlp](https://github.com/yt-dlp/), [FFmpeg](https://ffmpeg.org/), and their respective licenses. Download only content you have the right to access and use. This repository is licensed under the [MIT License](LICENSE).
+### Video tools
 
+- Trim, extract audio, remux without quality loss, shrink, **fit under a size limit** (Discord, WhatsApp, email), create vertical video and add subtitles.
+- Conversion through **NVENC, AMF or VideoToolbox** when available, falling back to the CPU if the GPU fails. The original file is never modified.
+
+<div align="center">
+<img src="docs/images/ferramentas-light.png" alt="Tools page (light theme)" width="720">
+</div>
+
+### Interface
+
+- Light and dark themes, **Portuguese and English** (Settings → Appearance), compact sidebar and custom icons.
+- Windows taskbar progress, tray notifications and optional background operation.
+- In-app updates on Windows, verified by SHA-256 (and Ed25519 signature on signed releases) before installing.
+
+<div align="center">
+<img src="docs/images/configuracoes-dark.png" alt="Settings" width="720">
+</div>
+
+## ⚙️ Acceleration by platform
+
+| | Windows | macOS (Apple Silicon) | Linux |
+| --- | --- | --- | --- |
+| Conversion and cuts | NVIDIA NVENC · AMD AMF | VideoToolbox | encoder available in FFmpeg |
+| Transcription | NVIDIA CUDA · CPU | MLX on GPU · CPU | CPU/int8 |
+
+Planned next (Intel QSV, VAAPI, hardware decoding, parallel cuts): [`docs/PLANO-OTIMIZACAO-PLATAFORMAS.md`](docs/PLANO-OTIMIZACAO-PLATAFORMAS.md) (Portuguese).
+
+## 🔒 Privacy and security
+
+- Nothing is sent to third-party services beyond requests to the source site, GitHub releases and the official component sources.
+- Components are installed only when the vendor publishes a valid SHA-256, which is checked again before each run.
+- Cookies, history and settings stay local and are stripped from exported diagnostics, along with proxy passwords and URL tokens.
+- Cancelling or closing the app ends the whole process tree (yt-dlp, FFmpeg, Deno).
+- See [Platforms, performance and security](docs/PLATFORMS-AND-SECURITY.en.md) and the [security policy](SECURITY.md).
+
+## 📚 Documentation
+
+| | |
+| --- | --- |
+| [Usage guide](docs/USAGE-GUIDE.en.md) | From the first download to tools and captions |
+| [Platforms and security](docs/PLATFORMS-AND-SECURITY.en.md) | Performance, GPU and security model |
+| [Build and release](docs/BUILD-AND-RELEASE.en.md) | Nuitka build, CI and publishing |
+| [Changelog](CHANGELOG.md) | Version history |
+| [Contributing](CONTRIBUTING.md) | Environment, tests and conventions |
+| [Portuguese documentation](README.md#-documentação) | Full documentation set |
+
+## 🛠️ Development
+
+```bash
+python -m venv .venv
+.venv/Scripts/pip install -r requirements-windows.lock   # or requirements-macos/linux
+python main.py                                            # run the app
+python -m unittest discover -s tests                      # tests (QT_QPA_PLATFORM=offscreen)
+ruff check .
+```
+
+On Windows, `.\build.ps1` builds the executable with Nuitka (`-Installer` creates the installer). See [Build and release](docs/BUILD-AND-RELEASE.en.md).
+
+## ⚖️ License and responsible use
+
+Baixador YT-DLP uses [yt-dlp](https://github.com/yt-dlp/) and [FFmpeg](https://ffmpeg.org/) under their respective licenses. Download only content you have the right to access and use. This repository is licensed under the [MIT License](LICENSE).

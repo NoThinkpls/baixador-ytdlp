@@ -1,118 +1,136 @@
+<div align="center">
+
+<img src="assets/icon.png" alt="Baixador YT-DLP" width="112" height="112">
+
 # Baixador YT-DLP
 
-[Read this documentation in English](README.en.md)
+**Baixe, transcreva e edite vídeos e áudios — tudo local, com aceleração por GPU.**
 
-Baixe vídeos e áudios, transcreva localmente e faça ajustes de mídia em uma interface Apple + Discord para Windows, macOS Apple Silicon e Linux.
+Interface moderna para o [yt-dlp](https://github.com/yt-dlp/yt-dlp), com transcrição por Whisper
+e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuvem.
 
-[![Última versão](https://img.shields.io/github/v/release/NoThinkpls/baixador-ytdlp?display_name=tag&label=vers%C3%A3o)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
-[![Windows, macOS e Linux](https://img.shields.io/badge/plataformas-Windows%20%7C%20macOS%20Apple%20Silicon%20%7C%20Linux-0078D4)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
+[![Versão](https://img.shields.io/github/v/release/NoThinkpls/baixador-ytdlp?display_name=tag&label=vers%C3%A3o&color=5865F2)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/NoThinkpls/baixador-ytdlp/total?label=downloads&color=3BA55D)](https://github.com/NoThinkpls/baixador-ytdlp/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/NoThinkpls/baixador-ytdlp/build.yml?branch=main&label=build)](https://github.com/NoThinkpls/baixador-ytdlp/actions)
+[![Plataformas](https://img.shields.io/badge/plataformas-Windows%20%7C%20macOS%20%7C%20Linux-0078D4)](#-download)
 [![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-lightgrey)](LICENSE)
 
-## Download
+[**Download**](#-download) ·
+[Recursos](#-recursos) ·
+[Guia de uso](docs/GUIA-DE-USO.md) ·
+[Changelog](CHANGELOG.md) ·
+[English](README.en.md)
 
-| Seu caso | Escolha | Download |
+<br>
+
+<img src="docs/images/baixar-dark.png" alt="Página Baixar do Baixador YT-DLP" width="860">
+
+</div>
+
+## ✨ Por que usar
+
+- **Rápido de verdade.** Downloads com fragmentos em paralelo; trechos de vídeos longos do YouTube usam o formato HLS e chegam a ~9× o tempo real (82 min de uma live em ~10 min).
+- **Tudo no seu computador.** Transcrição, conversão e cortes rodam localmente. Nenhum áudio ou vídeo sai da sua máquina.
+- **Usa a sua GPU.** NVIDIA (NVENC e CUDA), AMD (AMF) e Apple Silicon (VideoToolbox e MLX), com retorno automático para a CPU se a GPU recusar a mídia.
+- **Seguro por padrão.** yt-dlp, FFmpeg e Deno vêm das fontes oficiais com SHA-256 conferido; a validação de certificado TLS nunca é desligada.
+- **Bonito e leve de usar.** Tema claro e escuro, português e inglês, fila persistente e avisos que não atrapalham.
+
+## 📥 Download
+
+| Seu sistema | Como usar | Download |
 | --- | --- | --- |
 | Windows 10/11 | Instalação normal, com atalho e atualização pelo app | [Baixar instalador](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-setup.exe) |
-| Windows 10/11 | Usar sem instalar: dados e binários permanecem dentro da pasta extraída | [Baixar versão portable](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-portable-windows.zip) |
-| Mac com M1, M2, M3 ou M4 | Instalação normal: abra o DMG e arraste para Aplicativos | [Baixar instalador para macOS](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-macos-arm64.dmg) |
-| Mac com M1, M2, M3 ou M4 | Usar sem instalar: descompacte e abra o app | [Baixar versão portable para macOS](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-macos-arm64.zip) |
-| Ubuntu 22.04+/Debian 12+ (x86_64) | Instalação integrada ao sistema | [Baixar pacote `.deb`](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-linux-amd64.deb) |
-| Linux x86_64 | Usar sem instalar: dados e binários permanecem dentro da pasta extraída | [Baixar versão portable](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-portable-linux-x86_64.tar.gz) |
+| Windows 10/11 | Sem instalar: dados e binários ficam na pasta extraída | [Baixar versão portable](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-portable-windows.zip) |
+| Mac com M1, M2, M3 ou M4 | Abra o DMG e arraste para Aplicativos | [Baixar instalador para macOS](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-macos-arm64.dmg) |
+| Mac com M1, M2, M3 ou M4 | Sem instalar: descompacte e abra o app | [Baixar versão portable para macOS](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-macos-arm64.zip) |
+| Ubuntu 22.04+ / Debian 12+ (x86_64) | Instalação integrada ao sistema | [Baixar pacote `.deb`](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-linux-amd64.deb) |
+| Linux x86_64 | Sem instalar: dados e binários ficam na pasta extraída | [Baixar versão portable](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest/download/baixador-ytdlp-portable-linux-x86_64.tar.gz) |
 
-> Os seis links acima usam os aliases estáveis da Release mais recente. A automação só cria ou atualiza a Release após validar todos os pacotes obrigatórios.
+> Os links usam os aliases estáveis da Release mais recente; a automação só cria ou atualiza a Release depois de validar todos os pacotes. Se a versão acabou de sair, aguarde a etapa **Publicar release** no [GitHub Actions](../../actions).
 
-Se uma versão acabou de ser publicada, aguarde a etapa **Publicar release** no [GitHub Actions](../../actions) terminar antes de baixar: é ela que anexa os arquivos à Release.
+**Primeira abertura:** o app baixa yt-dlp, FFmpeg e Deno das fontes oficiais. Depois disso, cada componente só é baixado de novo quando existe versão nova (o FFmpeg, por exemplo, só quando sai um ramo estável mais recente).
 
-Configurações abre em oito cartões por assunto, com resumo das escolhas atuais.
-A busca localiza uma opção pelo nome e abre diretamente a página correspondente;
-os ajustes de conversão aparecem quando o recurso está ativo.
+## 🚀 Recursos
 
-## O que o aplicativo oferece
+### Download
 
-- Download de vídeo, áudio, playlists e trechos com escolha de qualidade e formato. O trecho é baixado com o `--download-sections` do yt-dlp, sem recodificar; o início pode variar até o quadro-chave próximo. No YouTube o app prefere o formato HLS equivalente, que é muitas vezes mais rápido em trechos longos (82 min de uma live em ~10 min, contra mais de 40 min pelo formato comum). O progresso aparece na fila.
-- Análise prévia com miniatura, nome final estimado, tamanhos aproximados, codecs, formatos, idiomas de áudio e legendas manuais/automáticas disponíveis.
-- Entrada em lote pela própria tela: cole vários links, um por linha, e envie todos à fila.
-- Envio direto do navegador pelo protocolo `baixador://` (favorito de um clique) e escolha dos itens de uma playlist.
-- Canal *nightly* do yt-dlp opcional para receber correções de sites antes da versão estável.
-- Compactação para caber num limite (Discord, WhatsApp, e-mail) e versão vertical com fundo desfocado.
-- Exportação de diagnóstico já redigido, sem cookies, senhas ou tokens.
-- Fila persistente, retomada de arquivos parciais e retentativas automáticas para falhas transitórias. Itens podem ser removidos mesmo durante a inicialização. O histórico não impede baixar novamente um arquivo apagado; quando o arquivo ainda existe, o aplicativo confirma outra cópia e acrescenta (2), (3)… ao nome.
-- Capa, metadados e capítulos incorporados também em áudio; opção de organizar músicas por canal/artista.
-- Transcrição local com modelos até Large v3 Turbo, tradução para inglês, vocabulário de contexto e legendas SRT, VTT, ASS, karaoke, TXT e JSON; no Apple Silicon ela usa MLX na GPU integrada. A fila reutiliza o processo e o modelo já carregado entre mídias compatíveis.
-- Fluxo **Baixar e legendar**: ao concluir o download, o arquivo pode entrar automaticamente na fila do Whisper e receber uma faixa de legenda sem reencodificação.
-- Conversão por GPU com NVIDIA NVENC, AMD AMF ou VideoToolbox no Apple Silicon.
-- Ferramentas locais com progresso real para recortar com precisão via FFmpeg, extrair áudio, compactar, criar Shorts e adicionar legendas ao vídeo. Recorte, compactação, Shorts, legenda gravada na imagem e tamanho alvo tentam NVENC, AMF ou VideoToolbox quando disponível e repetem na CPU se a GPU falhar. Extração de áudio, troca de contêiner e legenda como faixa não recodificam vídeo, portanto não usam encoder de vídeo. O recorte começa no ponto escolhido, mesmo entre quadros-chave.
-- Gerenciador de modelos Whisper, notificações pela bandeja do sistema e opção de continuar tarefas em segundo plano.
-- Atualização opcional no Windows, conferida por SHA-256 antes de abrir o instalador.
-- Componentes de runtime só são instalados quando o fornecedor publica um SHA-256 válido; a conexão TLS nunca desliga a validação de certificado.
-- Uma segunda abertura traz a janela existente para frente e encaminha o link recebido, em vez de descartá-lo.
+- Vídeo, áudio, playlists e **trechos** com escolha de qualidade e formato. O trecho não é recodificado; o início pode variar até o quadro-chave mais próximo.
+- Análise prévia com miniatura, nome final estimado, tamanhos, codecs, idiomas de áudio e legendas manuais/automáticas.
+- Vários links de uma vez, envio direto do navegador pelo protocolo `baixador://` e escolha dos itens de uma playlist.
+- Fila persistente com **pausar e retomar**, retomada de arquivos parciais e novas tentativas automáticas.
+- Capa, metadados e capítulos também em áudio; organização de músicas por canal/artista.
+- Canal *nightly* do yt-dlp opcional, para correções de sites antes da versão estável.
 
-## Interface
+### Legendas e transcrição
 
-A partir da versão 1.4.5 a interface tem linguagem visual própria, sem o Fluent
-Design da Microsoft — inclusive no Windows.
+- Whisper local até o **Large v3 Turbo**, tradução para inglês e vocabulário de contexto.
+- Saídas SRT, VTT, ASS, karaoke, TXT e JSON, para um ou vários arquivos e pastas de uma vez.
+- Fluxo **Baixar e legendar**: ao terminar o download, o arquivo entra na fila do Whisper e pode receber a legenda como faixa, sem recodificar.
+- CUDA nas placas NVIDIA; **MLX** na GPU do Apple Silicon; CPU otimizada nas demais.
 
-- **Estrutura Discord.** Barra lateral com seções em caixa alta, indicador do
-  item ativo na borda e modo compacto com ícones e tooltips.
-- **Controles Apple.** Interruptores em cápsula, listas agrupadas (um bloco
-  arredondado por assunto, com fios finos entre as linhas) e a hierarquia
-  tipográfica das Human Interface Guidelines.
-- **Ícones próprios.** Conjunto de traço fino desenhado para o projeto e
-  colorido em tempo de execução, então nada some no tema claro ou no escuro.
-- **Tema claro e escuro** com troca imediata, acompanhando o sistema quando a
-  opção é “Seguir o sistema”.
-- **Português e inglês.** Em **Configurações → Aparência**, escolha o idioma da
-  interface; a troca entra na próxima abertura para não interromper tarefas.
-- **Análise legível.** A prévia separa formatos, áudio e legendas em cartões curtos; a tabela deixa FPS junto da qualidade e destaca tamanhos aproximados.
-- **Nome antes de baixar.** A tela mostra uma prévia do template configurado e oferece atalhos para inserir título, canal, data, ID e resolução.
-- **Ferramentas guiadas.** As edições locais seguem quatro passos claros:
-  escolher a tarefa, selecionar a origem, ajustar apenas o necessário e salvar.
-- **Avisos que não atrapalham:** aparecem no alto do conteúdo, longe dos botões
-  do cabeçalho, e somem sozinhos.
-- **Barra de tarefas do Windows.** O ícone do aplicativo é mantido mesmo com a
-  janela sem moldura; ele exibe o andamento dos downloads, transcrições e ferramentas.
-  Ao concluir, o botão fica em 100% por instantes e pisca para avisar mesmo com
-  a janela minimizada.
-- **Bandeja do sistema.** Conclusões podem gerar avisos nativos; opcionalmente, fechar a janela mantém downloads, transcrições e edições em execução.
-- **Cookies sem adivinhação:** o app mostra o passo a passo, abre o guia do
-  yt-dlp e indica uma extensão de exportação que processa o arquivo localmente.
+<div align="center">
+<img src="docs/images/legendar-dark.png" alt="Página Legendar" width="720">
+</div>
 
-AMD é acelerada pelo AMF do FFmpeg na conversão no Windows. A transcrição usa CUDA
-nas placas NVIDIA, MLX na GPU integrada de Macs Apple Silicon e CPU otimizada nas
-placas AMD, pois o motor de transcrição atual não possui backend AMD para Windows.
-No Linux da primeira versão, a transcrição usa CPU/int8 e a conversão por GPU fica
-desativada quando o FFmpeg não oferecer um encoder compatível. No Mac, o primeiro
-uso de cada modelo do Whisper precisa baixá-lo para o perfil local do usuário;
-esse download pode ser antecipado e acompanhado no gerenciador de modelos, e os
-usos seguintes reaproveitam o cache. A build do macOS inclui sua própria
-cadeia atualizada de certificados para que a preparação do ambiente consiga baixar
-o yt-dlp e o FFmpeg com validação TLS completa, sem aceitar certificados inválidos.
+### Ferramentas de vídeo
 
-Os nomes de arquivos e os textos da interface usam UTF-8 de ponta a ponta,
-preservando acentos e caracteres especiais compatíveis com o sistema de arquivos.
+- Recortar, extrair áudio, trocar contêiner sem perder qualidade, reduzir tamanho, **caber num limite** (Discord, WhatsApp, e-mail), criar versão vertical (Shorts/Reels) e adicionar legendas.
+- Conversão por **NVENC, AMF ou VideoToolbox** quando disponível, com retorno para a CPU se a GPU falhar. O arquivo original nunca é alterado.
 
-Downloads, análises, conversões e preparação de áudio rodam em grupos de processos
-isolados. Ao cancelar ou fechar o aplicativo, o processo principal e seus filhos
-(como FFmpeg e Deno) são encerrados juntos no Windows, macOS e Linux, evitando
-processamento órfão em segundo plano.
+<div align="center">
+<img src="docs/images/ferramentas-light.png" alt="Página Ferramentas (tema claro)" width="720">
+</div>
 
-No Windows, a tipografia usa Segoe UI Variable com hinting completo para manter
-o texto nítido inclusive em telas de resolução mais baixa; no macOS, prioriza a
-SF Pro nativa. O projeto não distribui fontes proprietárias. As cores, os raios
-e a escala tipográfica ficam em `baixador_ytdlp/ui/theme.py`, que é a única
-fonte de verdade visual do aplicativo.
+### Interface
 
-## Documentação
+- Tema claro e escuro, **português e inglês**, barra lateral compacta e ícones próprios.
+- Progresso na barra de tarefas do Windows, bandeja do sistema e opção de continuar em segundo plano.
+- Atualização do app no Windows, com SHA-256 (e assinatura Ed25519 nas releases assinadas) conferido antes de instalar.
 
-- [Guia de uso](docs/GUIA-DE-USO.md)
-- [Plataformas, desempenho e segurança](docs/PLATAFORMAS-E-SEGURANCA.md)
-- [Compilação e publicação de Releases](docs/COMPILACAO-E-RELEASE.md)
-- [Changelog](CHANGELOG.md)
-- [Política de segurança](SECURITY.md)
-- [Como contribuir](CONTRIBUTING.md)
-- [Documentation in English](README.en.md)
+<div align="center">
+<img src="docs/images/configuracoes-dark.png" alt="Configurações" width="720">
+</div>
 
-## Licença e uso
+## ⚙️ Aceleração por plataforma
+
+| | Windows | macOS (Apple Silicon) | Linux |
+| --- | --- | --- | --- |
+| Conversão e cortes | NVIDIA NVENC · AMD AMF | VideoToolbox | encoder disponível no FFmpeg |
+| Transcrição | NVIDIA CUDA · CPU | MLX na GPU · CPU | CPU/int8 |
+
+O que vem a seguir (Intel QSV, VAAPI, decodificação por hardware, cortes em paralelo) está em [`docs/PLANO-OTIMIZACAO-PLATAFORMAS.md`](docs/PLANO-OTIMIZACAO-PLATAFORMAS.md).
+
+## 🔒 Privacidade e segurança
+
+- Nada é enviado a serviços externos além das requisições ao site de origem, às releases do GitHub e às fontes oficiais dos componentes.
+- Componentes só são instalados quando o fornecedor publica um SHA-256 válido, e o hash é conferido antes de cada execução.
+- Cookies, histórico e configurações ficam locais e são removidos do diagnóstico exportado, junto com senhas de proxy e tokens de URL.
+- Cancelar ou fechar o app encerra a árvore de processos (yt-dlp, FFmpeg, Deno); nada fica órfão.
+- Detalhes em [Plataformas, desempenho e segurança](docs/PLATAFORMAS-E-SEGURANCA.md) e na [política de segurança](SECURITY.md).
+
+## 📚 Documentação
+
+| | |
+| --- | --- |
+| [Guia de uso](docs/GUIA-DE-USO.md) | Do primeiro download às ferramentas e às legendas |
+| [Plataformas e segurança](docs/PLATAFORMAS-E-SEGURANCA.md) | Desempenho, GPU e modelo de segurança |
+| [Compilação e Releases](docs/COMPILACAO-E-RELEASE.md) | Build com Nuitka, CI e publicação |
+| [Plano de correções](docs/PLANO-DE-CORRECOES.md) · [Pendências](PENDENCIAS.md) | O que foi feito e o que falta |
+| [Changelog](CHANGELOG.md) | Histórico de versões |
+| [Como contribuir](CONTRIBUTING.md) | Ambiente, testes e convenções |
+
+## 🛠️ Desenvolvimento
+
+```bash
+python -m venv .venv
+.venv/Scripts/pip install -r requirements-windows.lock   # ou requirements-macos/linux
+python main.py                                            # abre o app
+python -m unittest discover -s tests                      # testes (QT_QPA_PLATFORM=offscreen)
+ruff check .
+```
+
+No Windows, `.\build.ps1` gera o executável com Nuitka (`-Installer` cria o instalador). Detalhes em [Compilação e Releases](docs/COMPILACAO-E-RELEASE.md).
+
+## ⚖️ Licença e uso
 
 O projeto usa [yt-dlp](https://github.com/yt-dlp/yt-dlp) e [FFmpeg](https://ffmpeg.org/). Baixe apenas conteúdo que você tenha direito de acessar e utilizar. O código deste repositório está sob a [licença MIT](LICENSE); as bibliotecas distribuídas mantêm suas próprias licenças, listadas em [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
