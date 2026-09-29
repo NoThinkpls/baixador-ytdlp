@@ -125,8 +125,8 @@ class DownloadArgumentsTests(unittest.TestCase):
         args = build_args(opts, Settings(), tools)
         self.assertEqual(args[args.index("--download-sections") + 1],
                          "*00:53:45-02:16:30")
-        # HLS primeiro e H.264 preferido (o VP9 do HLS abre com partes offline no DaVinci)
-        self.assertEqual(args[args.index("-S") + 1], "proto:m3u8,vcodec:h264,res,fps,acodec:aac")
+        # HLS primeiro; o codec continua o melhor (VP9 vai para MKV depois, sem recodificar)
+        self.assertEqual(args[args.index("-S") + 1], "proto:m3u8")
         opts.url = "https://example.invalid/live/example"
         self.assertNotIn("-S", build_args(opts, Settings(prefer_h264=False), tools))
         opts.url = "https://www.youtube.com/live/example"

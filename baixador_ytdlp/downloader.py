@@ -19,7 +19,7 @@ from typing import Callable, Optional
 from .config import IS_WINDOWS, Settings
 from .cookies import cookie_args
 from .processes import popen_isolated, terminate_process_tree
-from .tools import CREATE_NO_WINDOW, Toolchain, decode_external_output
+from .tools import CREATE_NO_WINDOW, Toolchain, decode_external_output, run_hidden
 from .diagnostics import log_event
 from .gpu import UPLOAD_FILTER, backend_of, device_args, quality_args
 from .security import validate_media_url
@@ -161,14 +161,11 @@ def build_args(
                  else opts.selector]
         # Uma única ordenação: dois -S seguidos deixam a prioridade ambígua.
         sort_keys: list[str] = []
-        hls_section = _prefers_hls_section(opts)
-        if hls_section:
+        if _prefers_hls_section(opts):
             # Trecho no YouTube: o HLS é buscado por segmentos e chega a dezenas de
             # vezes o tempo real; o arquivo DASH comum sai numa conexão só, a ~2x.
             sort_keys.append("proto:m3u8")
-        if cfg.prefer_h264 or hls_section:
-            # Um trecho costuma ir para um editor (DaVinci, Premiere): o VP9 do HLS do
-            # YouTube abre com partes "Media Offline" no DaVinci, o H.264 abre sempre.
+        if cfg.prefer_h264:
             sort_keys.append("vcodec:h264,res,fps,acodec:aac")
         if sort_keys:
             args += ["-S", ",".join(sort_keys)]
@@ -221,6 +218,43 @@ def build_args(
     # nunca poderá virar --exec/--batch-file para o yt-dlp.
     args += ["--", validate_media_url(opts.url)]
     return args
+
+
+def vp9_mp4_to_mkv(path: Path, tc: Toolchain) -> Path:
+    """Troca o contêiner de um MP4 com vídeo VP9 por MKV, sem recodificar.
+
+    Medido em 29/09/2026 no DaVinci Resolve: o mesmo VP9 1440p abre com partes
+    "Media Offline" dentro do MP4 e abre inteiro em MKV (H.264 e AV1 em MP4 também
+    abrem). Devolve o caminho novo, ou o original se não for o caso ou se falhar.
+    """
+    if path.suffix.lower() != ".mp4" or not path.is_file():
+        return path
+    try:
+        probe = run_hidden([str(tc.ffprobe), "-v", "error", "-select_streams", "v:0",
+                            "-show_entries", "stream=codec_name", "-of", "csv=p=0",
+                            str(path)], timeout=60)
+        if probe.stdout.strip().split(",")[0] != "vp9":
+            return path
+        target = path.with_suffix(".mkv")
+        for index in range(2, 10_000):
+            if not target.exists():
+                break
+            target = path.with_name(f"{path.stem} ({index}).mkv")
+        # Capa embutida (imagem anexada) não cabe como faixa de vídeo do MKV: fica de fora.
+        result = run_hidden([
+            str(tc.ffmpeg), "-hide_banner", "-loglevel", "error", "-y", "-i", str(path),
+            "-map", "0:v:0", "-map", "0:a?", "-map", "0:s?", "-map_chapters", "0",
+            "-c", "copy", "-c:s", "srt", str(target)], timeout=3600)
+        if result.returncode != 0 or not target.is_file() or target.stat().st_size == 0:
+            target.unlink(missing_ok=True)
+            log_event("Troca de MP4 para MKV falhou: %s", (result.stderr or "").strip()[-300:])
+            return path
+        path.unlink(missing_ok=True)
+        log_event("VP9 em MP4 trocado para MKV: %s", target.name)
+        return target
+    except Exception as exc:  # noqa: BLE001 - o arquivo original continua válido
+        log_event("Troca de MP4 para MKV falhou: %s", exc)
+        return path
 
 
 def _prefers_hls_section(opts: DownloadOptions) -> bool:
