@@ -3,6 +3,18 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.12.4] - 2026-09-29
+
+### Adicionado
+
+- Trechos longos (10 min ou mais) de vídeos do YouTube são baixados em até 6 partes
+  paralelas e emendados sem recodificar. Medido em uma live: 82 min em 2 min 25 s
+  (1.12.3: 10,5 min; antes: mais de 40 min pelo formato comum). As emendas são
+  alinhadas aos quadros-chave (uma sonda de 1 s por emenda), sem repetir nem pular
+  imagem. Se qualquer parte falhar, o download volta ao processo único.
+  Nesses trechos capa, metadados e capítulos não são embutidos, e o modo com
+  SponsorBlock ou legendas junto continua no processo único.
+
 ## [1.12.3] - 2026-09-29
 
 ### Corrigido
