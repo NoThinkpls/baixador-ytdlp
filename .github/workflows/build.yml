@@ -636,9 +636,11 @@ jobs:
           if [[ "$status" == 404 || "$assets" == 0 ]]; then
             publish=true
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
           echo "Release $tag: HTTP $status, $assets ativo(s), publicar=$publish"
 
       - name: Baixar os instaladores compilados
