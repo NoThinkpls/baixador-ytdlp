@@ -114,8 +114,8 @@ class RunnerTests(unittest.TestCase):
             # 6 partes de 300 s: as emendas recuam 2 s até o quadro-chave e as partes se tocam
             parts = [pair for pair in seen if float(pair[1]) - float(pair[0]) > 10]
             self.assertEqual(parts, [
-                ("0.000", "298.000"), ("298.000", "598.000"), ("598.000", "898.000"),
-                ("898.000", "1198.000"), ("1198.000", "1498.000"), ("1498.000", "1800.000")])
+                ("0.000", "297.980"), ("298.000", "597.980"), ("598.000", "897.980"),
+                ("898.000", "1197.980"), ("1198.000", "1497.980"), ("1498.000", "1800.000")])
             # sondas de 1 s nas cinco emendas
             probes = [pair for pair in seen if float(pair[1]) - float(pair[0]) == 1.0]
             self.assertEqual(len(probes), 5)

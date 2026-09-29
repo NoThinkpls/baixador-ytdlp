@@ -170,8 +170,9 @@ class SettingsPage(QWidget):
                          ("Manter original", "original")],
                         "container")
         self._switch_row("Priorizar compatibilidade (H.264)",
-                         "Escolhe H.264/AAC em vez do melhor codec. Roda em qualquer TV, "
-                         "mas com qualidade um pouco menor no mesmo tamanho.", "prefer_h264")
+                         "Escolhe H.264/AAC em vez do melhor codec (VP9/AV1). Abre em qualquer TV "
+                         "e em editores como DaVinci Resolve e Premiere, mas com resolução "
+                         "máxima de 1080p e qualidade um pouco menor no mesmo tamanho.", "prefer_h264")
         self._section("Fila")
         self._switch_row("Retomar a fila ao reabrir",
                          "Itens interrompidos voltam como pendentes e continuam os arquivos .part.",
