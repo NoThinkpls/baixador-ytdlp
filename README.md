@@ -29,7 +29,7 @@ os ajustes de conversão aparecem quando o recurso está ativo.
 
 ## O que o aplicativo oferece
 
-- Download de vídeo, áudio, playlists e trechos com escolha de qualidade e formato. O yt-dlp usa FFmpeg para baixar só o intervalo escolhido, sem recodificar o vídeo; o início pode variar até o quadro-chave próximo. Em vídeos do YouTube, o app prefere HLS para recortes quando há um fluxo equivalente. O progresso aparece na fila.
+- Download de vídeo, áudio, playlists e trechos com escolha de qualidade e formato. O trecho é baixado só com o `--download-sections` do yt-dlp (o FFmpeg busca apenas o intervalo, sem recodificar); o início pode variar até o quadro-chave próximo. O progresso aparece na fila.
 - Análise prévia com miniatura, nome final estimado, tamanhos aproximados, codecs, formatos, idiomas de áudio e legendas manuais/automáticas disponíveis.
 - Entrada em lote pela própria tela: cole vários links, um por linha, e envie todos à fila.
 - Envio direto do navegador pelo protocolo `baixador://` (favorito de um clique) e escolha dos itens de uma playlist.

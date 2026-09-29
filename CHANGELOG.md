@@ -3,6 +3,18 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.12.2] - não publicada
+
+### Corrigido
+
+- Baixar só um trecho volta a usar apenas o `--download-sections` do yt-dlp. Foram
+  removidos o seletor HLS e o `-S proto:m3u8` da 1.12.1, que mudavam o formato
+  escolhido e o protocolo sem o usuário pedir. O corte segue sem recodificar.
+- O empacotador do Windows volta a ser o Nuitka, como decidido; a troca para
+  PyInstaller feita na 1.12.0 não estava prevista. O PyInstaller continua como
+  contingência (`build.ps1 -Packager PyInstaller`). O build Nuitka mantém os
+  ajustes da 1.12.0 para `onnxruntime` e para as DLLs do cuDNN.
+
 ## [1.12.1] - 2026-09-28
 
 ### Correções
@@ -29,8 +41,6 @@ formato Keep a Changelog.
   do artefato e verificação de integridade dos arquivos extraídos.
 - `ffplay.exe` removido da instalação e de versões anteriores.
 - Validação de GPU separada da compilação; pode ser exigida com `-ValidateGpu`.
-- Build Windows com PyInstaller após corrigir a inclusão de metadados, CUDA e
-  o processo auxiliar do VAD; Nuitka segue disponível como rota alternativa.
 
 ### Corrigido
 

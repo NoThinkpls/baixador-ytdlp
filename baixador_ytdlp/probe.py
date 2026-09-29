@@ -434,35 +434,6 @@ def playlist_selector(row: FormatRow) -> str:
     return f"bv*[height<={height}]+ba/b[height<={height}]/bv*+ba/b"
 
 
-def hls_section_selector(info: MediaInfo, row: FormatRow) -> str:
-    """Encontra o fluxo HLS equivalente ao formato escolhido, quando existir."""
-    formats = info.raw.get("formats") or []
-    selected = next((fmt for fmt in formats
-                     if str(fmt.get("format_id")) == row.format_id), None)
-    if not selected or row.audio_only:
-        return ""
-    has_hls_audio = any(
-        str(fmt.get("protocol", "")).startswith("m3u8")
-        and fmt.get("acodec") not in (None, "none")
-        and fmt.get("vcodec") in (None, "none")
-        for fmt in formats
-    )
-    if not has_hls_audio:
-        return ""
-    codec = str(selected.get("vcodec") or "").split(".", 1)[0]
-    candidates = [fmt for fmt in formats
-                  if str(fmt.get("protocol", "")).startswith("m3u8")
-                  and fmt.get("height") == selected.get("height")
-                  and fmt.get("fps") == selected.get("fps")
-                  and fmt.get("dynamic_range") == selected.get("dynamic_range")
-                  and str(fmt.get("vcodec") or "").split(".", 1)[0] == codec]
-    if not candidates:
-        return ""
-    original_rate = float(selected.get("tbr") or 0)
-    match = min(candidates, key=lambda fmt: abs(float(fmt.get("tbr") or 0) - original_rate))
-    return f"{match['format_id']}+ba[protocol=m3u8_native]/{row.selector}"
-
-
 def build_rows(info: dict) -> list[FormatRow]:
     """Ordena os formatos do melhor para o pior e devolve linhas prontas para a tabela."""
     video: list[FormatRow] = []

@@ -54,7 +54,6 @@ class DownloadOptions:
     playlist_items: str = ""         # ex.: "1-3,7" — vazio = playlist inteira
     repeat_index: int = 0          # sufixo (2), (3)… em repetição confirmada
     media_duration: float = 0.0    # segundos, da análise; dá % a trecho sem fim definido
-    section_selector: str = ""      # alternativa HLS equivalente para recortes
 
 
 @dataclass
@@ -156,8 +155,7 @@ def build_args(
         args += ["-f", "bestaudio/best", "-x",
                  "--audio-format", opts.audio_format, "--audio-quality", "0"]
     else:
-        args += ["-f", opts.section_selector if _section_range(opts) and opts.section_selector
-                 else opts.selector]
+        args += ["-f", opts.selector]
         if cfg.prefer_h264:
             args += ["-S", "vcodec:h264,res,fps,acodec:aac"]
         if opts.container in ("mp4", "mkv", "webm"):
@@ -169,16 +167,11 @@ def build_args(
 
     section = _section_range(opts)
     if section:
-        # O downloader FFmpeg busca apenas o intervalo e copia os fluxos. Forçar
-        # quadros-chave recodificaria todo o trecho, inclusive vídeos longos.
+        # Só o --download-sections: o yt-dlp pede ao FFmpeg apenas o intervalo e
+        # copia os fluxos. Nada de --force-keyframes-at-cuts (recodifica o trecho
+        # inteiro na CPU) nem de seletores/protocolos especiais.
         args += ["--download-sections", section]
         if not opts.audio_only:
-            # Em vídeos do YouTube, os fluxos HLS permitem buscar trechos de
-            # transmissões gravadas muito mais rápido. O seletor explícito
-            # equivalente (quando existe) já foi escolhido na análise.
-            if (not opts.section_selector and opts.selector == "bv*+ba/b"
-                    and _is_youtube_url(opts.url)):
-                args += ["-S", "proto:m3u8"]
             # O FFmpeg usado como downloader não participa do progress-template
             # do yt-dlp. O canal -progress mantém a interface informada durante
             # recortes longos em vez de deixá-la parada em "Iniciando".
@@ -215,13 +208,6 @@ def build_args(
     # nunca poderá virar --exec/--batch-file para o yt-dlp.
     args += ["--", validate_media_url(opts.url)]
     return args
-
-
-def _is_youtube_url(url: str) -> bool:
-    from urllib.parse import urlsplit
-
-    host = (urlsplit(url).hostname or "").lower()
-    return host == "youtu.be" or host == "youtube.com" or host.endswith(".youtube.com")
 
 
 def _section_range(opts: DownloadOptions) -> str:
