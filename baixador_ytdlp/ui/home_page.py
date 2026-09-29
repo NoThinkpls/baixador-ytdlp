@@ -897,10 +897,9 @@ class HomePage(QWidget):
             kill_running()
         if entries_running:
             entries.wait(5000)
-        if self.worker and self.worker.isRunning():
-            if not self.worker.wait(5000):
-                self.worker.terminate()
-                self.worker.wait(1000)
+        if self.worker and self.worker.isRunning() and not self.worker.wait(5000):
+            self.worker.terminate()
+            self.worker.wait(1000)
         for worker in tuple(self._thumbnail_workers):
             if worker.isRunning():
                 # Sem terminate(): matar uma QThread no meio do urllib pode deixar

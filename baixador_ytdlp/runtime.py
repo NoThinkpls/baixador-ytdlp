@@ -16,7 +16,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 # ``from … import`` liga o módulo direto ao nome: ``importlib.metadata`` como atributo do
 # pacote não existia no processo filho do Nuitka (o servidor de transcrição caía ao iniciar).

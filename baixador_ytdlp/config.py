@@ -214,7 +214,7 @@ class Settings:
         return type(default)(value)
 
     @classmethod
-    def load(cls) -> "Settings":
+    def load(cls) -> Settings:
         try:
             raw = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
             if not isinstance(raw, dict):

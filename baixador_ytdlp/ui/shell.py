@@ -373,7 +373,7 @@ class AppShell(_Base):
         # deixam os ícones claros no tema claro (ou escuros no tema escuro).
         set_dark = getattr(title_bar, "setDarkTheme", None)
         if callable(set_dark):
-            try:
+            try:  # noqa: SIM105 - o motivo está no comentário do except
                 set_dark(theme.is_dark())
             except Exception:  # noqa: BLE001 - API varia entre versões
                 pass
@@ -391,7 +391,7 @@ class AppShell(_Base):
                                    theme.qcolor("surface_active"))):
                 function = getattr(button, setter, None)
                 if callable(function):
-                    try:
+                    try:  # noqa: SIM105 - o motivo está no comentário do except
                         function(value)
                     except Exception:  # noqa: BLE001 - versões antigas do widget
                         pass
@@ -405,7 +405,7 @@ class AppShell(_Base):
                                    theme.qcolor("danger_hover"))):
                 function = getattr(close_button, setter, None)
                 if callable(function):
-                    try:
+                    try:  # noqa: SIM105 - o motivo está no comentário do except
                         function(value)
                     except Exception:  # noqa: BLE001
                         pass

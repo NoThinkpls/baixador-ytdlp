@@ -73,7 +73,7 @@ def describe_source(cfg: Settings) -> str:
 
 def _system32(executable: str) -> str:
     """Caminho absoluto de uma ferramenta do Windows — nunca pelo PATH."""
-    root = os.environ.get("SystemRoot") or r"C:\Windows"
+    root = os.environ.get("SYSTEMROOT") or r"C:\Windows"
     return str(Path(root) / "System32" / executable)
 
 

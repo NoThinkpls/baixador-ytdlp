@@ -447,7 +447,7 @@ class SettingsPage(QWidget):
             f"Versão {APP_VERSION} · yt-dlp {'nightly' if cfg.ytdlp_channel == 'nightly' else 'estável'}",
             "Extrator, histórico e ferramentas",
         )
-        for (_title, _desc, card, _scroll), summary in zip(self._categories, subtitles):
+        for (_title, _desc, card, _scroll), summary in zip(self._categories, subtitles, strict=False):
             card.summary.setText(summary)
             card.refresh_icon()
 

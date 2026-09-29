@@ -14,7 +14,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from .config import IS_WINDOWS, Settings
 from .cookies import cookie_args
@@ -323,7 +323,7 @@ class DownloadRunner:
         self.files: list[Path] = []
         # deque com teto: o log de erro não cresce sem limite em playlist longa.
         self.log: deque[str] = deque(maxlen=300)
-        self._proc: Optional[subprocess.Popen] = None
+        self._proc: subprocess.Popen | None = None
         self._cancelled = threading.Event()
         self._last_progress_emit = 0.0
         self._last_progress_state: tuple[str, str] | None = None
@@ -550,7 +550,7 @@ class Transcoder:
 
     def __init__(self, tc: Toolchain, cfg: Settings):
         self.tc, self.cfg = tc, cfg
-        self._proc: Optional[subprocess.Popen] = None
+        self._proc: subprocess.Popen | None = None
         self._cancelled = threading.Event()
 
     def cancel(self) -> None:

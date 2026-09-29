@@ -92,7 +92,7 @@ def _self_test_transcription_server(context) -> None:
     while time.monotonic() < deadline:
         if not child.is_alive():
             detail = ""
-            try:
+            try:  # noqa: SIM105 - o motivo está no comentário do except
                 kind, detail = events.get(timeout=2)
             except Exception:  # noqa: BLE001 - sem detalhe, fica só o código de saída
                 pass

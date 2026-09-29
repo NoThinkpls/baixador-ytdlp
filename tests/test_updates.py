@@ -126,9 +126,8 @@ class ToolCheckTests(unittest.TestCase):
             (Path(tmp) / FFMPEG_EXE).touch()
 
             with patch("baixador_ytdlp.tools.IS_WINDOWS", True), \
-                    patch("baixador_ytdlp.tools.sys.platform", "win32"):
-                with self.assertRaises(RuntimeError):
-                    manager.ensure_ffmpeg(Mock(), check_now=True)
+                    patch("baixador_ytdlp.tools.sys.platform", "win32"), self.assertRaises(RuntimeError):
+                manager.ensure_ffmpeg(Mock(), check_now=True)
             manager._download.assert_called_once()
 
     def test_manual_deno_check_does_not_redownload_current_version(self) -> None:

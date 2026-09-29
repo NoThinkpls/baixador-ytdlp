@@ -18,7 +18,7 @@ import uuid
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 from .config import Settings
 from .diagnostics import log_event
@@ -53,7 +53,7 @@ def plan_pieces(opts: DownloadOptions, cfg: Settings) -> list[tuple[int, int]]:
     if count < 2:
         return []
     bounds = [round(start + total * index / count) for index in range(count + 1)]
-    return list(zip(bounds[:-1], bounds[1:]))
+    return list(zip(bounds[:-1], bounds[1:], strict=True))
 
 
 def create_runner(opts: DownloadOptions, cfg: Settings, tc: Toolchain):
@@ -152,7 +152,7 @@ class ParallelSectionRunner:
         with self._lock:
             self._subs = subs
         try:
-            self._emit(on_progress, "Baixando %d partes em paralelo…" % count)
+            self._emit(on_progress, f"Baixando {count} partes em paralelo…")
             results: dict[int, list[Path]] = {}
             with ThreadPoolExecutor(max_workers=count) as pool:
                 futures = {
@@ -220,7 +220,7 @@ class ParallelSectionRunner:
 
         self._emit_stage("Localizando os quadros-chave das emendas…")
         with ThreadPoolExecutor(max_workers=max(1, len(self.pieces) - 1)) as pool:
-            for index, value in zip(seams, pool.map(probe, seams)):
+            for index, value in zip(seams, pool.map(probe, seams), strict=True):
                 bounds[index] = value
         with self._lock:
             self._subs = []
@@ -239,7 +239,7 @@ class ParallelSectionRunner:
             with self._lock:
                 self._percents[index] = 100.0 if prog.status == "finished" else prog.percent
                 percent = sum(self._percents) / len(self._percents)
-            self._emit(on_progress, "Baixando %d partes em paralelo…" % len(self.pieces),
+            self._emit(on_progress, f"Baixando {len(self.pieces)} partes em paralelo…",
                        min(98.0, percent))
         return callback
 

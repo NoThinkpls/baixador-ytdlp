@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import os
 import secrets
 import sys
@@ -63,10 +64,8 @@ def main(argv: list[str]) -> int:
         secret = secrets.token_bytes(32)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(base64.b64encode(secret).decode() + "\n", encoding="ascii")
-        try:
+        with contextlib.suppress(OSError):
             os.chmod(path, 0o600)
-        except OSError:
-            pass
         # A privada não é impressa: histórico do terminal e logs não a guardam.
         print("Chave PRIVADA gravada em:", path)
         print("Faça um backup desse arquivo num lugar seguro (sem ele não há como assinar).")

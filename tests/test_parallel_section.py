@@ -26,7 +26,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(len(pieces), 6)
         self.assertEqual(pieces[0][0], 3225)
         self.assertEqual(pieces[-1][1], 8190)
-        for (_, end), (start, _) in zip(pieces, pieces[1:]):
+        for (_, end), (start, _) in zip(pieces, pieces[1:], strict=False):
             self.assertEqual(end, start)
 
     def test_short_or_unsupported_cases_stay_in_a_single_process(self) -> None:
