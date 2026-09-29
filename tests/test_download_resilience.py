@@ -14,7 +14,9 @@ from baixador_ytdlp.config import Settings
 from baixador_ytdlp.downloader import (
     DownloadError, DownloadOptions, DownloadRunner, build_args, is_retryable_error,
 )
-from baixador_ytdlp.probe import _audio_languages, _caption_languages
+from baixador_ytdlp.probe import (
+    FormatRow, MediaInfo, _audio_languages, _caption_languages, hls_section_selector,
+)
 from baixador_ytdlp.queue_state import QueueState
 
 try:
@@ -96,7 +98,7 @@ class DownloadArgumentsTests(unittest.TestCase):
         self.assertFalse(is_retryable_error("ERROR: Unsupported URL"))
         self.assertFalse(is_retryable_error("ERROR: Private video"))
 
-    def test_exact_video_cut_reports_progress_without_gpu_arguments(self) -> None:
+    def test_video_cut_uses_stream_copy_and_reports_progress(self) -> None:
         cfg = Settings(transcode_enabled=True, transcode_codec="h264_nvenc")
         tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))
         args = build_args(
@@ -107,7 +109,7 @@ class DownloadArgumentsTests(unittest.TestCase):
             cfg, tools,
         )
 
-        self.assertIn("--force-keyframes-at-cuts", args)
+        self.assertNotIn("--force-keyframes-at-cuts", args)
         downloader_args = [
             args[index + 1]
             for index, value in enumerate(args)
@@ -115,6 +117,43 @@ class DownloadArgumentsTests(unittest.TestCase):
         ]
         self.assertEqual(downloader_args, ["ffmpeg_o:-progress pipe:1 -nostats"])
         self.assertFalse(any("nvenc" in value or "cuda" in value for value in args))
+
+    def test_youtube_section_prefers_hls_without_changing_other_downloads(self) -> None:
+        tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))
+        opts = DownloadOptions("https://www.youtube.com/live/example", "downloads",
+                               section_start="00:53:45", section_end="02:16:30")
+        args = build_args(opts, Settings(), tools)
+        self.assertEqual(args[args.index("--download-sections") + 1],
+                         "*00:53:45-02:16:30")
+        self.assertIn("proto:m3u8", args)
+        opts.url = "https://example.invalid/live/example"
+        self.assertNotIn("proto:m3u8", build_args(opts, Settings(), tools))
+        opts.url = "https://www.youtube.com/live/example"
+        opts.section_start = opts.section_end = ""
+        self.assertNotIn("proto:m3u8", build_args(opts, Settings(), tools))
+
+    def test_selected_video_uses_matching_hls_format_for_section(self) -> None:
+        formats = [
+            dict(format_id="137", protocol="https", height=1080, fps=30,
+                 vcodec="avc1.640028", acodec="none", dynamic_range="SDR", tbr=1700),
+            dict(format_id="270", protocol="m3u8_native", height=1080, fps=30,
+                 vcodec="avc1.640028", acodec="none", dynamic_range="SDR", tbr=4500),
+            dict(format_id="234", protocol="m3u8_native", height=None, fps=None,
+                 vcodec="none", acodec="mp4a.40.2"),
+        ]
+        row = FormatRow("137", "1080p", "30", "H.264", "—", "mp4", "1 GB",
+                        "", height=1080, video_only=True)
+        info = MediaInfo("title", "author", "90:00", "", "", False, 0,
+                         [row], {"formats": formats})
+        selector = hls_section_selector(info, row)
+        self.assertEqual(selector, "270+ba[protocol=m3u8_native]/137+bestaudio/137")
+        opts = DownloadOptions("https://www.youtube.com/live/example", "downloads",
+                               selector=row.selector, section_selector=selector,
+                               section_start="10", section_end="20")
+        args = build_args(opts, Settings(), SimpleNamespace(
+            ytdlp=Path("yt-dlp"), bin_dir=Path("bin")))
+        self.assertEqual(args[args.index("-f") + 1], selector)
+        self.assertNotIn("--force-keyframes-at-cuts", args)
 
     def test_exact_cut_runs_once_without_probing_gpu(self) -> None:
         tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))

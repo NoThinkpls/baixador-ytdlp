@@ -433,9 +433,8 @@ class DownloadWorker(QThread):
                 self.failed.emit(self.job_id, "Cancelado", "")
                 return
 
-            # Um recorte exato já precisa reencodar dentro do FFmpeg downloader
-            # e usa o codec acelerado selecionado quando disponível. Rodar o
-            # Transcoder novamente só perderia qualidade e dobraria o trabalho.
+            # O FFmpeg baixa o trecho e copia os fluxos sem recodificar. A
+            # conversão opcional em GPU continua reservada a vídeos completos.
             has_section = bool(self.opts.section_start.strip() or self.opts.section_end.strip())
             if (self.cfg.transcode_enabled and not has_section
                     and not self.opts.audio_only and files):

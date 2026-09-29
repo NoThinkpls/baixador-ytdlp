@@ -3,6 +3,15 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.12.1] - 2026-09-28
+
+### Correções
+
+- Recortes de vídeo baixam apenas o intervalo solicitado sem recodificar todos
+  os quadros. O início pode variar até o quadro-chave próximo.
+- Recortes do YouTube dão preferência a HLS, com correspondência de resolução,
+  taxa de quadros e codec quando o usuário escolhe um formato específico.
+
 ## [1.12.0] - 2026-09-28
 
 ### Novidades desta rodada
