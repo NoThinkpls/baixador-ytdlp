@@ -33,6 +33,14 @@ não sejam o YouTube e ao áudio (`-x`), se o teto por conexão também for baix
 Ordem sugerida em `docs/PLANO-OTIMIZACAO-PLATAFORMAS.md`: QSV e VAAPI, decodificação
 por hardware, paralelismo de cortes, Whisper com Vulkan para AMD/Intel.
 
+## Arquivos grandes
+
+`transcription.py` caiu de 1.281 para ~870 linhas (pesos e cache em `models.py`, processos em
+`transcription_server.py`). `tools.py` (1.076), `ui/home_page.py` (1.173) e `ui/main_window.py`
+(1.069) são cada um uma classe só: dividir exige mixins e mexe nos pontos de patch dos testes
+(`baixador_ytdlp.tools.IS_WINDOWS`, `...tools.urllib...`), então fica para uma rodada própria,
+começando por `ToolManager` (yt-dlp / FFmpeg / Deno em módulos separados).
+
 ## PRs do Dependabot em espera
 
 - #26 (`actions/attest-build-provenance` 4.2.2) e #27 (`actions/download-artifact` 8.0.1): só rodam

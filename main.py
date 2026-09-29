@@ -58,7 +58,7 @@ def _self_test_vad_child(events) -> None:
 def _self_test_server_child(toolchain, commands, events) -> None:
     """Executa o servidor de transcrição e devolve ao pai o erro de uma queda."""
     try:
-        from baixador_ytdlp.transcription import transcription_server_main
+        from baixador_ytdlp.transcription_server import transcription_server_main
 
         transcription_server_main(toolchain, commands, events)
     except BaseException:  # o pai só vê o código de saída sem isto
@@ -285,7 +285,7 @@ def main() -> int:
     app.setWindowIcon(icon)
 
     try:  # pesos de versões ≤ 1.7: só renomeia pastas no mesmo volume
-        from baixador_ytdlp.transcription import migrate_legacy_model_cache
+        from baixador_ytdlp.models import migrate_legacy_model_cache
         moved = migrate_legacy_model_cache()
         if moved:
             log_event("Modelos Whisper migrados para o cache novo: %s", ", ".join(moved))
