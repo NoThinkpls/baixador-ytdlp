@@ -1,7 +1,7 @@
 # Pendências
 
-Estado em 29/09/2026: versão **1.12.7**. As rodadas 1 a 3 do
-`docs/PLANO-DE-CORRECOES.md` estão feitas e publicadas (1.12.0 a 1.12.7). O
+Estado em 29/09/2026: versão **1.12.8**. As rodadas 1 a 3 do
+`docs/PLANO-DE-CORRECOES.md` estão feitas e publicadas (1.12.0 a 1.12.8). O
 Windows compila com Nuitka; o PyInstaller é só contingência. O GitHub Actions
 compila as três plataformas e publica a release quando todas passam.
 
@@ -43,9 +43,8 @@ começando por `ToolManager` (yt-dlp / FFmpeg / Deno em módulos separados).
 
 ## PRs do Dependabot em espera
 
-- #26 (`actions/attest-build-provenance` 4.2.2) e #27 (`actions/download-artifact` 8.0.1): só rodam
-  no job de release. Mesclar (após `@dependabot rebase` e CI verde) junto com a próxima release;
-  se a publicação falhar por causa deles, reverter o commit.
+- (vazio) Os PRs #26 e #27 foram mesclados e entram na 1.12.8; se a publicação falhar por causa
+  deles, reverter os dois commits.
 - torch, huggingface-hub, setuptools, send2trash, PySide6, faster-whisper e MLX são atualizados
   à mão (o Dependabot não os propõe mais): regenerar os `.lock` com `scripts/update_locks.sh` e
   passar o autoteste com GPU.

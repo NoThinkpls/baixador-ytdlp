@@ -3,7 +3,7 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
-## [Próxima versão] - não publicada
+## [1.12.8] - 2026-09-29
 
 ### Corrigido
 
@@ -28,6 +28,8 @@ formato Keep a Changelog.
 - A cache do Nuitka saiu da pasta de dados do app para `%LOCALAPPDATA%\BaixadorYtdlp-build`.
 - `transcription.py` dividido: pesos e cache em `models.py`, processos em `transcription_server.py`.
 - Testes e scripts de captura rodam num perfil descartável (`BAIXADOR_YTDLP_DATA_DIR`).
+- Actions do job de release atualizadas: `download-artifact` 8.0.1 e `attest-build-provenance` 4.2.2
+  (esta é a primeira release que as usa).
 
 ## [1.12.7] - 2026-09-29
 
