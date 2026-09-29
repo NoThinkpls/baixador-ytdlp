@@ -1,4 +1,4 @@
-"""Contratos da rota de distribuição Windows com Nuitka."""
+"""Contratos das rotas de distribuição Windows."""
 from __future__ import annotations
 
 import tempfile
@@ -27,20 +27,21 @@ class NuitkaBuildTests(unittest.TestCase):
             self.assertIn(folder, config)
 
     def test_build_inclui_metadados_do_runtime_de_transcricao(self) -> None:
-        build_script = (Path(__file__).resolve().parents[1] / "build.ps1").read_text(
+        spec = (Path(__file__).resolve().parents[1] / "baixador_ytdlp.spec").read_text(
             encoding="utf-8"
         )
         for distribution in (
             "faster-whisper", "ctranslate2", "av", "onnxruntime", "tokenizers", "huggingface-hub",
         ):
-            self.assertIn(f"--include-distribution-metadata={distribution}", build_script)
+            self.assertIn(f"'{distribution}'", spec)
+        self.assertIn("copy_metadata(name)", spec)
 
     def test_build_inclui_todos_os_dados_do_faster_whisper(self) -> None:
         root = Path(__file__).resolve().parents[1]
+        spec = (root / "baixador_ytdlp.spec").read_text(encoding="utf-8")
+        self.assertIn("collect_all('faster_whisper')", spec)
         for path in (root / "build.ps1", root / ".github" / "workflows" / "build.yml"):
-            content = path.read_text(encoding="utf-8")
-            self.assertIn("--include-package-data=faster_whisper", content)
-            self.assertNotIn("--include-package-data=faster_whisper:assets/", content)
+            self.assertIn("faster_whisper\\assets", path.read_text(encoding="utf-8"))
 
     def test_build_valida_assets_reais_e_executa_self_test(self) -> None:
         root = Path(__file__).resolve().parents[1]
@@ -54,11 +55,12 @@ class NuitkaBuildTests(unittest.TestCase):
         self.assertIn("--self-test", entrypoint)
         self.assertIn("BAIXADOR_YTDLP_SELF_TEST_REPORT", entrypoint)
 
-    def test_nuitka_e_padrao_e_normaliza_layout_do_instalador(self) -> None:
+    def test_pyinstaller_e_padrao_e_nuitka_continua_opcional(self) -> None:
         build_script = (Path(__file__).resolve().parents[1] / "build.ps1").read_text(
             encoding="utf-8"
         )
-        self.assertIn("[string]$Packager = 'Nuitka'", build_script)
+        self.assertIn("[string]$Packager = 'PyInstaller'", build_script)
+        self.assertIn("if ($Packager -eq 'Nuitka')", build_script)
         self.assertIn("NUITKA_CACHE_DIR", build_script)
         self.assertIn("'dist\\main.dist'", build_script)
         self.assertIn("'dist\\baixador-ytdlp'", build_script)
