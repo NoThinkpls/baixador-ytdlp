@@ -19,13 +19,11 @@ detectada e ignorada; recortes/conversões rodam um por vez.
 ## Prioridades
 
 ### P1 — Download de trecho (feito, mais possível)
-Medido em 29/09: DASH via FFmpeg ~2× o tempo real; HLS ~9× (82 min em ~10,5 min).
-Já publicado como preferência para YouTube. Próximo passo, se ainda importar:
-dividir o intervalo em N partes com N FFmpeg e juntar com `-c copy` (cada conexão
-tem o mesmo teto, então N partes ≈ N×). Risco: emendas em quadros-chave; precisa de
-teste de continuidade. Alternativa a testar (bloqueada por captcha do IP hoje): se o
-downloader HLS nativo do yt-dlp aceita `--download-sections` com
-`--concurrent-fragments`.
+**Feito (1.12.3–1.12.4).** Medido em 29/09: DASH via FFmpeg ~2× o tempo real; HLS ~9×
+(82 min em ~10,5 min, teto de ~5 MB/s por conexão); HLS em até 6 partes paralelas
+emendadas nos quadros-chave: 82 min em ~2,5 min. O downloader nativo do yt-dlp não
+aceita `--download-sections` com fragmentos concorrentes. Falta: sites fora do
+YouTube e áudio.
 
 ### P2 — Encoders por vendor (Windows e Linux)
 - **Intel QSV** (`h264_qsv`, `hevc_qsv`, `av1_qsv`): iGPU Intel e Arc. Windows e Linux.
