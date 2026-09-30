@@ -3,6 +3,15 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [Não lançado]
+
+### Alterado
+
+- A aba Ferramentas agora é um hub como Configurações: os cartões abrem a página de cada
+  ferramenta (`Ferramentas › Nome`) com o arquivo, os ajustes e o botão de processar. Ferramentas
+  sem ajustes (remover áudio, limpar metadados) não mostram a seção vazia, e não dá para abrir
+  outra ferramenta enquanto uma tarefa está rodando.
+
 ## [1.13.0] - 2026-09-30
 
 ### Adicionado

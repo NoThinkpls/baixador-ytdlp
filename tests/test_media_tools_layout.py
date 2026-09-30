@@ -36,10 +36,52 @@ class MediaToolsLayoutTests(unittest.TestCase):
             self.assertTrue(page.run_button.isEnabled())
             page.source_edit.setText("")
             self.assertFalse(page.run_button.isEnabled())
+        # a página da ferramenta mostra o arquivo de origem antes dos ajustes
+        page._open_tool("trim")
+        self.app.processEvents()
         self.assertLess(page.source_edit.mapTo(page, page.source_edit.rect().topLeft()).y(),
-                        page._tool_cards["trim"].mapTo(page, page._tool_cards["trim"].rect().topLeft()).y())
+                        page.start_edit.mapTo(page, page.start_edit.rect().topLeft()).y())
         page.close()
         page.deleteLater()
+
+    def test_hub_abre_a_pagina_da_ferramenta_e_volta(self) -> None:
+        page = MediaToolsPage(Settings())
+        page.resize(1000, 750)
+        page.show()
+        try:
+            self.assertIs(page.pages.currentWidget(), page.landing)     # abre no hub, só com cartões
+            self.assertFalse(page.source_edit.isVisibleTo(page))
+            page._tool_cards["gif"].click()
+            self.assertIs(page.pages.currentWidget(), page.detail)
+            self.assertEqual(page.options_title.text(), "Criar GIF animado")
+            self.assertEqual(page._operation(), "gif")
+            page._tool_cards["gif"].click()                             # reabrir a mesma não trava
+            page.back_link.click()
+            self.assertIs(page.pages.currentWidget(), page.landing)
+            page._tool_cards["mute"].click()
+            self.assertEqual(page._operation(), "mute")
+            self.assertFalse(page.options_group.isVisibleTo(page))      # sem ajustes: sem seção vazia
+            self.assertFalse(page.options_label.isVisibleTo(page))
+            page._tool_cards["trim"].click()
+            self.assertTrue(page.options_group.isVisibleTo(page))
+        finally:
+            page.close()
+            page.deleteLater()
+
+    def test_nao_troca_de_ferramenta_com_tarefa_em_andamento(self) -> None:
+        page = MediaToolsPage(Settings())
+        try:
+            page._open_tool("speed")
+            page._show_landing()
+            with patch.object(MediaToolsPage, "has_active_work", return_value=True),                     patch("baixador_ytdlp.ui.media_tools_page.Toast.info") as info:
+                page._tool_cards["gif"].click()
+                self.assertEqual(page._operation(), "speed")
+                self.assertIs(page.pages.currentWidget(), page.landing)
+                info.assert_called_once()
+                page._tool_cards["speed"].click()                       # a que está rodando abre
+                self.assertIs(page.pages.currentWidget(), page.detail)
+        finally:
+            page.deleteLater()
 
     def test_catalogo_e_grupos_batem_e_cada_cartao_existe(self) -> None:
         grouped = [operation for _title, operations in GROUPS for operation in operations]
@@ -82,12 +124,12 @@ class MediaToolsLayoutTests(unittest.TestCase):
                 source.write_bytes(b"x")
                 page.set_media(str(source))
                 self.assertFalse(page.choice_row.isVisibleTo(page))
-                page._tool_cards["audio"].setChecked(True)
+                page._open_tool("audio")
                 self.assertTrue(page.choice_row.isVisibleTo(page))
                 self.assertTrue(page.destination_edit.text().endswith("clipe_audio.mp3"))
                 page.choice_combo.setCurrentIndex(page.choice_combo.findData("flac"))
                 self.assertTrue(page.destination_edit.text().endswith("clipe_audio.flac"))
-                page._tool_cards["frame"].setChecked(True)     # outra ferramenta, outra lista
+                page._open_tool("frame")     # outra ferramenta, outra lista
                 self.assertEqual(page.choice_combo.currentData(), "png")
                 self.assertTrue(page.destination_edit.text().endswith("clipe_quadro.png"))
                 self.assertEqual(page.choice_combo.count(), len(CHOICES["frame"]))
@@ -99,19 +141,20 @@ class MediaToolsLayoutTests(unittest.TestCase):
         page = MediaToolsPage(Settings())
         page.show()
         try:
+            page._open_tool("trim")
             self.assertTrue(page.time_row.isVisibleTo(page))
             self.assertTrue(page.end_edit.isVisibleTo(page))
-            page._tool_cards["frame"].setChecked(True)             # só o momento, sem "fim"
+            page._open_tool("frame")             # só o momento, sem "fim"
             self.assertTrue(page.time_row.isVisibleTo(page))
             self.assertFalse(page.end_edit.isVisibleTo(page))
             self.assertEqual(page.time_row.title.text(), "Momento do quadro")
-            page._tool_cards["gif"].setChecked(True)
+            page._open_tool("gif")
             self.assertTrue(page.end_edit.isVisibleTo(page))
-            page._tool_cards["mute"].setChecked(True)
+            page._open_tool("mute")
             self.assertFalse(page.time_row.isVisibleTo(page))
             self.assertFalse(page.choice_row.isVisibleTo(page))
             self.assertFalse(page.fast_trim_row.isVisibleTo(page))
-            page._tool_cards["trim"].setChecked(True)               # volta ao estado inicial
+            page._open_tool("trim")               # volta ao estado inicial
             self.assertTrue(page.end_edit.isVisibleTo(page))
             self.assertTrue(page.fast_trim_row.isVisibleTo(page))
             self.assertEqual(page.time_row.title.text(), "Início e fim")
@@ -160,7 +203,7 @@ class MediaToolsLayoutTests(unittest.TestCase):
                 page.set_media(str(source))
                 page.start_edit.setText("00:00:10")
                 page.end_edit.setText("00:00:20")
-                page._tool_cards["speed"].setChecked(True)          # sem linha de tempo
+                page._open_tool("speed")          # sem linha de tempo
                 page.choice_combo.setCurrentIndex(page.choice_combo.findData("4"))
                 page._run()
                 options = captured["options"]
@@ -178,9 +221,9 @@ class MediaToolsLayoutTests(unittest.TestCase):
         try:
             group = page.options_group
             holder = group._dividers[page.choice_row]
-            page._tool_cards["audio"].setChecked(True)
+            page._open_tool("audio")
             self.assertTrue(holder.isVisibleTo(page))
-            page._tool_cards["mute"].setChecked(True)
+            page._open_tool("mute")
             self.assertFalse(page.choice_row.isVisibleTo(page))
             self.assertFalse(holder.isVisibleTo(page))          # sem linha solta no bloco
         finally:
