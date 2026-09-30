@@ -158,7 +158,7 @@ def _run_self_test(report_path: Path) -> int:
             distribution: importlib.metadata.version(distribution)
             for distribution in (
                 "faster-whisper", "ctranslate2", "av", "onnxruntime",
-                "tokenizers", "huggingface-hub",
+                "tokenizers", "huggingface_hub",
             )
         }
         report["imports"] = [
