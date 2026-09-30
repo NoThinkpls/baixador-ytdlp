@@ -23,7 +23,7 @@ from .tools import CREATE_NO_WINDOW, Toolchain, decode_external_output, run_hidd
 from .diagnostics import log_event
 from .gpu import UPLOAD_FILTER, backend_of, device_args, quality_args
 from .security import validate_media_url
-from .sites import login_required_message
+from .sites import login_required_message, site_from_url
 
 SEP = "\x1f"  # unit separator: nunca aparece em título de vídeo
 PROGRESS_TEMPLATE = (
@@ -144,6 +144,10 @@ def build_args(
     ]
     if IS_WINDOWS:
         args.append("--windows-filenames")
+    if (site := site_from_url(opts.url)) and site.key == "facebook":
+        # O título do Facebook começa com o contador ("122K views · 3.4K reactions | ").
+        args += ["--replace-in-metadata", "title",
+                 r"^[\d.,]+[KMB]? views?(?: · [\d.,]+[KMB]? reactions?)? \| ", ""]
 
     if opts.playlist:
         args += ["--yes-playlist"]
