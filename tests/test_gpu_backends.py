@@ -132,3 +132,21 @@ class TranscoderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VaapiPermissionTests(unittest.TestCase):
+    def test_pula_no_sem_permissao_e_explica_o_grupo_render(self) -> None:
+        from baixador_ytdlp import gpu
+
+        nodes = ["/dev/dri/renderD128", "/dev/dri/renderD129"]
+        with patch.object(gpu.sys, "platform", "linux"), \
+                patch("baixador_ytdlp.gpu.glob.glob", return_value=nodes), \
+                patch("baixador_ytdlp.gpu.os.access", side_effect=lambda p, m: p.endswith("129")):
+            self.assertEqual(gpu.vaapi_device(), "/dev/dri/renderD129")
+        with patch.object(gpu.sys, "platform", "linux"), \
+                patch("baixador_ytdlp.gpu.glob.glob", return_value=nodes), \
+                patch("baixador_ytdlp.gpu.os.access", return_value=False):
+            self.assertEqual(gpu.vaapi_device(), "")
+            self.assertIn("grupo", gpu.vaapi_unavailable_reason())
+        with patch("baixador_ytdlp.gpu.glob.glob", return_value=[]):
+            self.assertIn("Nenhum dispositivo", gpu.vaapi_unavailable_reason())
