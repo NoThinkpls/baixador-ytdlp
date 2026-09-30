@@ -1,10 +1,10 @@
-PySide6==6.8.3
+PySide6==6.11.2
 PySideSix-Frameless-Window==0.8.2
-faster-whisper==1.1.1
+faster-whisper==1.2.1
 ctranslate2==4.8.2
-huggingface-hub==0.29.3
-certifi==2025.8.3
-send2trash==1.8.3
+huggingface-hub==0.36.2
+certifi==2026.7.22
+send2trash==2.1.0
 # Runtime CUDA incluído no instalador. Desde a 4.5 o CTranslate2 usa cuDNN 9
 # (não aceita cuDNN 8). O wheel do CTranslate2 4.8.2 para Windows já traz o
 # cudnn64_9.dll 9.10.2.21; as sub-bibliotecas (ops, cnn, graph, engines) vêm do
