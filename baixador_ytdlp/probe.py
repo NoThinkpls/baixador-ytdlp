@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .cookies import is_cookie_source_failure
+from .sites import LOGIN_MARKERS, login_hint, rate_limit_hint, site_from_error
 from .processes import popen_isolated, terminate_process_tree
 from .tools import decode_external_output
 from .diagnostics import log_event
@@ -361,6 +362,8 @@ def _friendly_error_pt(detail: str) -> str:
     no erro de DPAPI. O aplicativo empurrava para o caminho quebrado.
     """
     low = detail.lower()
+    site = site_from_error(detail)
+    other_site = site if site and site.key != "youtube" else None
 
     # Falhas do disco e do sistema de arquivos valem para qualquer etapa (yt-dlp, FFmpeg,
     # conversão), por isso vêm antes das mensagens específicas de site.
@@ -416,6 +419,9 @@ def _friendly_error_pt(detail: str) -> str:
             "inappropriate for some users")):
         return "Vídeo com restrição de idade. É preciso fornecer cookies de uma conta logada."
 
+    if other_site and any(marker in low for marker in LOGIN_MARKERS):
+        return login_hint(other_site)
+
     if "not a bot" in low or "sign in to confirm" in low:
         return ("O YouTube pediu confirmação de que você não é um robô. É preciso fornecer "
                 "cookies de uma conta logada: em Configurações, aponte um arquivo cookies.txt "
@@ -436,6 +442,8 @@ def _friendly_error_pt(detail: str) -> str:
         return "A transmissão ainda não começou. Tente novamente quando o evento estiver ao vivo."
 
     if "http error 429" in low or "too many requests" in low:
+        if other_site:
+            return rate_limit_hint(other_site)
         return ("O YouTube limitou as requisições deste IP. Espere alguns minutos antes de "
                 "tentar de novo, ou configure um proxy.")
 
