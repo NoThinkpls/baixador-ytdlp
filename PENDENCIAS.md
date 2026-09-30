@@ -57,10 +57,7 @@ Bug do story (corrigido): a URL do story é uma playlist de todos os stories da 
 Achados menores: o link direto `packaged-media.redd.it` gera o arquivo `m2-res_480p [m2-res_480p.mp4？m=DASHPlaylist].mp4` (título vazio e a query entra no id); no Facebook o título do post inteiro vira nome de arquivo (`122K views · 3.4K reactions ｜ …`).
 
 Trecho em partes paralelas: funciona só no YouTube (`baixador_ytdlp/parallel_section.py`).
-Medição em 30/09/2026 (mesma live de 30 min, 1080p): YouTube 74-83 s em partes paralelas contra
-65-66 s em um processo, ou seja, o paralelo não compensa quando a rede já é o limite (~20 MB/s
-aqui). Em HLS de outro site (Twitch, mesmo trecho de 30 min) uma conexão fez 120 s (~11,5 MB/s) e
-três partes simultâneas fizeram ~65 s (1,85x), de novo no teto da rede. Conclusão: o teto por
+Medição em 30/09/2026 (2 vídeos, 1080p): parallel = 21,6x, 24,0x, 24,4x (live de 30 min) e 27,5x (20 min de outro vídeo), média ~24,4x o tempo real; um processo só = 27,3x, 27,5x, 27,5x, média ~27,4x. O paralelo não compensa quando a rede já é o limite (~20 MB/s aqui). Em HLS de outro site (Twitch, 30 min) uma conexão fez 120 s (~11,5 MB/s) e três partes simultâneas ~65 s (1,85x), de novo no teto da rede. A bateria com mais 4 vídeos foi interrompida: depois do primeiro download o YouTube passou a pedir confirmação de robô para este IP (o modo paralelo abre até 6 yt-dlp por vez, o que aumenta esse risco). Repetir com o IP liberado e mais espaço entre downloads. Conclusão: o teto por
 conexão de ~5 MB/s medido na nuvem não se repete aqui no YouTube; em HLS de outros sites existe e
 o paralelo ajuda. Decidir entre limitar as partes paralelas a redes lentas, estendê-las a HLS
 não-YouTube ou deixar como está.
