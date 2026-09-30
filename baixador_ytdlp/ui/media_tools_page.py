@@ -217,8 +217,30 @@ class ToolCard(QAbstractButton):
         self.pressed.connect(self.update)
         self.released.connect(self.update)
 
+    _TITLE_X = 56
+    _TEXT_TOP = 37
+    _MIN_HEIGHT = 84
+
+    def _text_width(self, card_width: int) -> int:
+        return max(40, card_width - self._TITLE_X - 12)
+
+    def text_lines(self, card_width: int) -> list[str]:
+        """Linhas da descrição para um cartão desta largura; nunca cortadas com "…"."""
+        metrics = QFontMetrics(theme.footnote())
+        return wrap_lines(tr(self.data["summary"]), metrics, self._text_width(card_width),
+                          max_lines=99)
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802 - assinatura do Qt
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802 - assinatura do Qt
+        """Cresce em vez de cortar: janelas estreitas precisam de mais linhas."""
+        line_height = QFontMetrics(theme.footnote()).height() + 1
+        needed = self._TEXT_TOP + len(self.text_lines(width)) * line_height + 12
+        return max(self._MIN_HEIGHT, needed)
+
     def sizeHint(self) -> QSize:
-        return QSize(250, 84)
+        return QSize(250, self.heightForWidth(250))
 
     def paintEvent(self, _event):  # noqa: N802 - assinatura do Qt
         painter = QPainter(self)
@@ -234,14 +256,15 @@ class ToolCard(QAbstractButton):
         painter.setBrush(fill)
         painter.drawRoundedRect(rect, theme.RADIUS_CARD, theme.RADIUS_CARD)
 
-        icon_rect = QRectF(12, 25, 34, 34)
+        icon_top = (self.height() - 34) / 2
+        icon_rect = QRectF(12, icon_top, 34, 34)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(theme.qcolor("accent_soft" if not active else "accent"))
         painter.drawRoundedRect(icon_rect, 10, 10)
         icon_tone = "accent" if not active else "on_accent"
-        painter.drawPixmap(20, 33, icons.pixmap(self.data["icon"], theme.color(icon_tone), 18))
+        painter.drawPixmap(20, int(icon_top) + 8, icons.pixmap(self.data["icon"], theme.color(icon_tone), 18))
 
-        title_x = 56
+        title_x = self._TITLE_X
         painter.setFont(theme.headline())
         painter.setPen(QPen(theme.qcolor("text")))
         painter.drawText(QRectF(title_x, 13, self.width() - title_x - 12, 22),
@@ -251,9 +274,8 @@ class ToolCard(QAbstractButton):
         painter.setFont(theme.footnote())
         painter.setPen(QPen(theme.qcolor("text_secondary")))
         metrics = QFontMetrics(painter.font())
-        text_width = max(40, self.width() - title_x - 12)
-        # Até três linhas: a descrição não termina mais em "…" no meio da frase.
-        lines = wrap_lines(tr(self.data["summary"]), metrics, text_width, max_lines=3)
+        text_width = self._text_width(self.width())
+        lines = self.text_lines(self.width())
         line_height = metrics.height() + 1
         for index, line in enumerate(lines):
             painter.drawText(QRectF(title_x, 37 + index * line_height, text_width, line_height),

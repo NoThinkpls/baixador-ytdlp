@@ -20,7 +20,7 @@ if HAS_QT:
     from baixador_ytdlp.ui.components import (
         BreadcrumbChevron, BreadcrumbCurrent, BreadcrumbLink, Button,
     )
-    from baixador_ytdlp.ui.media_tools_page import OPERATIONS, wrap_lines
+    from baixador_ytdlp.ui.media_tools_page import OPERATIONS, ToolCard, wrap_lines
     from baixador_ytdlp.ui.settings_page import SettingsPage
     from baixador_ytdlp.ui.shell import CaptionButton
 
@@ -36,12 +36,19 @@ class InterfaceAcabamentoTests(unittest.TestCase):
             self.assertEqual(CaptionButton(action).focusPolicy(), Qt.FocusPolicy.NoFocus)
 
     def test_tool_descriptions_are_never_cut_with_an_ellipsis(self) -> None:
+        # Larguras reais do cartão: de janela mínima (~240) a janela larga (~460).
         metrics = QFontMetrics(theme.footnote())
-        for width in (260, 300, 360):
-            for key, data in OPERATIONS.items():
-                lines = wrap_lines(data["summary"], metrics, width, max_lines=3)
+        line_height = metrics.height() + 1
+        for width in range(240, 470, 7):
+            for key in OPERATIONS:
+                card = ToolCard(key)
+                lines = card.text_lines(width)
                 self.assertFalse(any(line.endswith("…") for line in lines), (key, width))
-                self.assertEqual(" ".join(lines), data["summary"], (key, width))
+                self.assertEqual(" ".join(lines), OPERATIONS[key]["summary"], (key, width))
+                # o cartão cresce o bastante para caber todas as linhas
+                self.assertGreaterEqual(card.heightForWidth(width),
+                                        37 + len(lines) * line_height, (key, width))
+                card.deleteLater()
 
     def test_wrap_lines_elides_only_when_text_really_overflows(self) -> None:
         metrics = QFontMetrics(theme.footnote())
