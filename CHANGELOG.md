@@ -3,6 +3,31 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.13.0] - 2026-09-30
+
+### Adicionado
+
+- Nove ferramentas novas na aba Ferramentas: **ajustar velocidade** (0,25x a 4x, com áudio
+  corrigido por `atempo`), **girar ou espelhar**, **remover áudio**, **nivelar volume**
+  (`loudnorm`, alvos -16/-14/-23 LUFS, imagem copiada sem recodificar), **converter formato**
+  (MP4/H.264 ou WebM/VP9), **criar GIF** (paleta própria, até 30 s), **capturar imagem**
+  (PNG/JPG/WebP), **extrair legendas** (SRT/ASS/VTT, primeira faixa de texto; recusa cedo
+  arquivos sem legenda ou só com legenda em imagem) e **limpar metadados**.
+- "Extrair áudio" ganhou M4A, Opus, FLAC e WAV além de MP3.
+- Os cartões agora ficam em cinco grupos, e cada ferramenta é só dados (`OPERATIONS`): novas
+  ferramentas não exigem mudar o layout.
+
+### Alterado
+
+- O codec das ferramentas de áudio, imagem, legenda e conversão vem da extensão do destino, então
+  renomear o arquivo de saída nunca gera um comando incoerente.
+- Ferramentas em arquivos sem a faixa necessária (imagem num MP3, por exemplo) mostram uma
+  mensagem em português em vez do erro do FFmpeg.
+- Linhas ocultas do bloco de ajustes levam o divisor junto (`InsetGroup.set_row_visible`), sem
+  linhas soltas; a lista de opções acompanha a largura do item mais longo.
+- Textos das Ferramentas (cartões, ajustes, botões) traduzidos para o inglês, incluindo três
+  botões antigos que ficavam em português; um teste falha se surgir texto sem tradução.
+
 ## [1.12.8] - 2026-09-29
 
 ### Corrigido

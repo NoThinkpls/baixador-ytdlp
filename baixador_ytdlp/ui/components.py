@@ -720,6 +720,7 @@ class InsetGroup(QFrame):
         self._column.setContentsMargins(0, 0, 0, 0)
         self._column.setSpacing(0)
         self._rows = 0
+        self._dividers: dict[QWidget, QWidget] = {}
 
     def add_row(self, row: QWidget) -> QWidget:
         if self._rows:
@@ -728,9 +729,17 @@ class InsetGroup(QFrame):
             inner.setContentsMargins(16, 0, 0, 0)
             inner.addWidget(Divider(holder))
             self._column.addWidget(holder)
+            self._dividers[row] = holder
         self._column.addWidget(row)
         self._rows += 1
         return row
+
+    def set_row_visible(self, row: QWidget, visible: bool) -> None:
+        """Mostra ou esconde a linha junto com o divisor acima dela (sem linhas soltas)."""
+        row.setVisible(visible)
+        holder = self._dividers.get(row)
+        if holder is not None:
+            holder.setVisible(visible)
 
 
 class PageHeader(QWidget):

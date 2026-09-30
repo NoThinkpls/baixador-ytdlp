@@ -89,6 +89,20 @@ _BODY: dict[str, str] = {
                 '<path d="m4 5 5 5m11-5-5 5M4 19l5-5m11 5-5-5"/>',
     "limit": '<rect x="3" y="6" width="18" height="12" rx="2"/>'
              '<path d="M7 12h10M7 9v6m10-6v6"/>',
+    "speed": '<path d="M4.5 17a8.5 8.5 0 1 1 15 0"/><path d="m12 14 4-5.5"/>'
+             '<circle cx="12" cy="14.2" r="1.3"/>',
+    "rotate": '<rect x="5.5" y="10.5" width="13" height="9" rx="2"/>'
+              '<path d="M8 7c1-1.7 2.6-2.6 4.5-2.6 2 0 3.6.9 4.7 2.5"/><path d="M17.5 3.3v3.6h-3.6"/>',
+    "volume-off": '<path d="M4 9.5h3l4.5-3.6v12.2L7 14.5H4Z"/><path d="m15.5 9.5 5 5m0-5-5 5"/>',
+    "wave": '<path d="M3 12h2.6l1.6-5 3 10 3-14 3 12 1.6-3H21"/>',
+    "image": '<rect x="3.5" y="5" width="17" height="14" rx="2.6"/><circle cx="9" cy="10" r="1.6"/>'
+             '<path d="m4 17 5-4.5 3.5 3 3-2.5 4.5 3.5"/>',
+    "film": '<rect x="4" y="4.5" width="16" height="15" rx="2.6"/>'
+            '<path d="M8.5 4.5v15m7-15v15M4 9.5h4.5M4 14.5h4.5m7-5H20m-4.5 5H20"/>',
+    "shield": '<path d="M12 3.5 19 6v5.6c0 4.2-2.8 7.4-7 8.9-4.2-1.5-7-4.7-7-8.9V6Z"/>'
+              '<path d="m9 12 2.2 2.2L15.3 10"/>',
+    "convert": '<path d="M4 8h13"/><path d="m13.5 4.5 3.5 3.5-3.5 3.5"/><path d="M20 16H7"/>'
+               '<path d="m10.5 12.5-3.5 3.5 3.5 3.5"/>',
 }
 
 _TEMPLATE = (

@@ -8,27 +8,98 @@ from PySide6.QtGui import QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (QAbstractButton, QButtonGroup, QFileDialog, QGridLayout,
                                QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget)
 
-from ..media_tools import MediaToolOptions, available_destination, default_destination
+from ..media_tools import (DEFAULT_CHOICE, MediaToolOptions, available_destination,
+                           default_destination)
 from ..workers import MediaToolWorker
 from . import icons, theme
-from .components import (Button, Divider, Headline, InsetGroup, Muted, PageHeader,
+from .components import (Button, Divider, Headline, Hint, InsetGroup, Muted, PageHeader,
                          PrimaryButton, ProgressBar, ScrollColumn, SectionLabel, Select,
                          SettingRow, Switch, TextField, Toast)
+from .i18n import tr
 
-MEDIA_FILTER = ("Mídia (*.mp4 *.mkv *.webm *.mov *.avi *.m4v *.mp3 *.m4a *.wav *.flac);;"
+MEDIA_FILTER = ("Mídia (*.mp4 *.mkv *.webm *.mov *.avi *.m4v *.ts *.mpg *.mpeg *.wmv *.flv "
+                "*.3gp *.mp3 *.m4a *.aac *.ogg *.opus *.wav *.flac);;"
                 "Todos os arquivos (*.*)")
 SUBTITLE_FILTER = "Legendas (*.srt *.vtt *.ass);;Todos os arquivos (*.*)"
 
+# Cada ferramenta é só dados: a página monta cartão, ajustes e botão a partir deles.
+#   "time":   linha de início/fim (``end`` False = só um momento);
+#   "choice": lista única de valores (os mesmos de ``media_tools.CHOICES``).
 OPERATIONS = {
     "trim": {
         "title": "Recortar trecho", "icon": "cut", "tag": "Corte preciso",
         "summary": "Crie um novo vídeo apenas com o intervalo escolhido.",
         "action": "Recortar",
+        "time": {"title": "Início e fim",
+                 "hint": "Use mm:ss ou hh:mm:ss. O vídeo será recodificado para "
+                         "começar e terminar nos pontos escolhidos.",
+                 "end": True, "start": "início 00:01:30", "stop": "fim 00:04:00"},
+    },
+    "speed": {
+        "title": "Ajustar velocidade", "icon": "speed", "tag": "Lento ou rápido",
+        "summary": "Deixe o vídeo em câmera lenta ou acelerado, com o som junto.",
+        "action": "Ajustar velocidade",
+        "choice": {"title": "Velocidade",
+                   "hint": "Vale para imagem e som. Abaixo de 1x é câmera lenta.",
+                   "options": [("0,25x — muito lento", "0.25"), ("0,5x — câmera lenta", "0.5"),
+                               ("0,75x — um pouco mais lento", "0.75"),
+                               ("1,25x — um pouco mais rápido", "1.25"),
+                               ("1,5x — rápido", "1.5"), ("2x — o dobro", "2"),
+                               ("3x — três vezes", "3"), ("4x — timelapse", "4")]},
+    },
+    "rotate": {
+        "title": "Girar ou espelhar", "icon": "rotate", "tag": "Orientação",
+        "summary": "Corrija vídeos de celular tortos ou espelhe a imagem.",
+        "action": "Girar vídeo",
+        "choice": {"title": "Transformação",
+                   "hint": "A imagem é recodificada; o som é mantido.",
+                   "options": [("Girar 90° para a direita", "cw"),
+                               ("Girar 90° para a esquerda", "ccw"), ("Girar 180°", "180"),
+                               ("Espelhar na horizontal", "flip_h"),
+                               ("Espelhar na vertical", "flip_v")]},
+    },
+    "shorts": {
+        "title": "Criar versão vertical", "icon": "media", "tag": "9:16",
+        "summary": "Prepare um vídeo vertical para Shorts, Reels ou TikTok.",
+        "action": "Criar versão vertical",
     },
     "audio": {
-        "title": "Extrair áudio", "icon": "media", "tag": "MP3",
-        "summary": "Crie uma faixa MP3 a partir de um vídeo ou áudio.",
+        "title": "Extrair áudio", "icon": "media", "tag": "MP3, M4A, Opus…",
+        "summary": "Salve só o som de um vídeo ou converta entre formatos de áudio.",
         "action": "Extrair áudio",
+        "choice": {"title": "Formato do áudio",
+                   "hint": "MP3 toca em tudo; M4A e Opus rendem mais por megabyte; "
+                           "FLAC e WAV não perdem qualidade.",
+                   "options": [("MP3 — compatível com tudo", "mp3"),
+                               ("M4A (AAC) — celulares e Apple", "m4a"),
+                               ("Opus — menor tamanho", "opus"), ("FLAC — sem perda", "flac"),
+                               ("WAV — sem compressão", "wav")]},
+    },
+    "normalize": {
+        "title": "Nivelar volume", "icon": "wave", "tag": "EBU R128",
+        "summary": "Iguale o volume de vídeos e músicas sem recodificar a imagem.",
+        "action": "Nivelar volume",
+        "choice": {"title": "Volume alvo",
+                   "hint": "Medido em LUFS. -16 serve para a maioria dos casos; -14 é o "
+                           "padrão do YouTube e do Spotify.",
+                   "options": [("-16 LUFS — web e podcast", "-16"),
+                               ("-14 LUFS — YouTube e Spotify", "-14"),
+                               ("-23 LUFS — TV (EBU R128)", "-23")]},
+    },
+    "mute": {
+        "title": "Remover áudio", "icon": "volume-off", "tag": "Sem perda",
+        "summary": "Crie uma cópia do vídeo sem som, sem recodificar a imagem.",
+        "action": "Remover áudio",
+    },
+    "convert": {
+        "title": "Converter formato", "icon": "convert", "tag": "MP4 · WebM",
+        "summary": "Reencode para MP4 (H.264) ou WebM (VP9) e abra em qualquer aparelho.",
+        "action": "Converter",
+        "choice": {"title": "Formato de saída",
+                   "hint": "MP4 abre em qualquer lugar; WebM é ideal para sites e costuma "
+                           "ficar menor, mas demora mais.",
+                   "options": [("MP4 — H.264 e AAC", "mp4"),
+                               ("WebM — VP9 e Opus (mais lento)", "webm")]},
     },
     "remux": {
         "title": "Trocar contêiner", "icon": "media", "tag": "Sem perda",
@@ -45,17 +116,62 @@ OPERATIONS = {
         "summary": "Comprima para caber no limite do Discord, WhatsApp ou e-mail.",
         "action": "Comprimir para o limite",
     },
-    "shorts": {
-        "title": "Criar versão vertical", "icon": "media", "tag": "9:16",
-        "summary": "Prepare um vídeo vertical para Shorts, Reels ou TikTok.",
-        "action": "Criar versão vertical",
+    "gif": {
+        "title": "Criar GIF animado", "icon": "film", "tag": "GIF",
+        "summary": "Transforme um trecho curto em GIF leve, com as cores otimizadas.",
+        "action": "Criar GIF",
+        "time": {"title": "Trecho do GIF",
+                 "hint": "Use mm:ss ou hh:mm:ss, com até 30 s. Em branco, começa do zero.",
+                 "end": True, "start": "início 00:00:05", "stop": "fim 00:00:12"},
+        "choice": {"title": "Tamanho",
+                   "hint": "Quanto maior a largura, maior o arquivo. O GIF nunca passa da "
+                           "largura original do vídeo.",
+                   "options": [("Pequeno — 480 px, 12 quadros/s", "480"),
+                               ("Médio — 640 px, 15 quadros/s", "640"),
+                               ("Grande — 800 px, 20 quadros/s", "800")]},
+    },
+    "frame": {
+        "title": "Capturar imagem", "icon": "image", "tag": "PNG · JPG",
+        "summary": "Salve um quadro do vídeo como imagem, no momento que você escolher.",
+        "action": "Capturar imagem",
+        "time": {"title": "Momento do quadro",
+                 "hint": "Use mm:ss ou hh:mm:ss. Em branco, captura o primeiro quadro.",
+                 "end": False, "start": "momento 00:01:30", "stop": ""},
+        "choice": {"title": "Formato da imagem",
+                   "hint": "PNG não perde qualidade; JPG e WebP ficam bem menores.",
+                   "options": [("PNG — sem perda", "png"), ("JPG — leve e compatível", "jpg"),
+                               ("WebP — leve e moderno", "webp")]},
     },
     "burn": {
         "title": "Adicionar legendas ao vídeo", "icon": "captions", "tag": "Legenda fixa",
         "summary": "Grave uma legenda SRT, VTT ou ASS na imagem do vídeo.",
         "action": "Adicionar legendas",
     },
+    "extract_subs": {
+        "title": "Extrair legendas", "icon": "document", "tag": "SRT · ASS · VTT",
+        "summary": "Salve como arquivo a legenda que já vem dentro do vídeo.",
+        "action": "Extrair legendas",
+        "choice": {"title": "Formato da legenda",
+                   "hint": "Usa a primeira faixa de legenda em texto. O arquivo é salvo "
+                           "ao lado do vídeo, com o mesmo nome.",
+                   "options": [("SRT — o mais compatível", "srt"),
+                               ("ASS — mantém o estilo", "ass"), ("VTT — para a web", "vtt")]},
+    },
+    "strip": {
+        "title": "Limpar metadados", "icon": "shield", "tag": "Privacidade",
+        "summary": "Apague localização, data, câmera e título do arquivo, sem recodificar.",
+        "action": "Limpar metadados",
+    },
 }
+
+# Ordem e agrupamento dos cartões na página.
+GROUPS = (
+    ("Cortar e ajustar", ("trim", "speed", "rotate", "shorts")),
+    ("Áudio", ("audio", "normalize", "mute")),
+    ("Converter e reduzir", ("convert", "remux", "compress", "target_size")),
+    ("Imagem e animação", ("gif", "frame")),
+    ("Legendas e privacidade", ("burn", "extract_subs", "strip")),
+)
 
 
 def wrap_lines(text: str, metrics: QFontMetrics, width: int, max_lines: int = 2) -> list[str]:
@@ -77,7 +193,10 @@ def wrap_lines(text: str, metrics: QFontMetrics, width: int, max_lines: int = 2)
     lines.append(current)
     if len(lines) > max_lines:
         lines = lines[:max_lines]
-    lines[-1] = metrics.elidedText(lines[-1], Qt.TextElideMode.ElideRight, width)
+    # elidedText pode elidar uma linha que cabe por exatamente 1 px (arredondamento e kerning
+    # diferem de horizontalAdvance em cada plataforma); só elida o que de fato passa da largura.
+    if metrics.horizontalAdvance(lines[-1]) > width:
+        lines[-1] = metrics.elidedText(lines[-1], Qt.TextElideMode.ElideRight, width)
     return lines
 
 
@@ -88,21 +207,43 @@ class ToolCard(QAbstractButton):
         super().__init__(parent)
         self.operation = operation
         self.data = OPERATIONS[operation]
-        self.setText(self.data["title"])
+        self.setText(tr(self.data["title"]))
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMinimumHeight(84)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setToolTip(self.data["summary"])
-        self.setAccessibleName(self.data["title"])
-        self.setAccessibleDescription(self.data["summary"])
+        self.setToolTip(tr(self.data["summary"]))
+        self.setAccessibleName(tr(self.data["title"]))
+        self.setAccessibleDescription(tr(self.data["summary"]))
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.toggled.connect(self.update)
         self.pressed.connect(self.update)
         self.released.connect(self.update)
 
+    _TITLE_X = 56
+    _TEXT_TOP = 37
+    _MIN_HEIGHT = 84
+
+    def _text_width(self, card_width: int) -> int:
+        return max(40, card_width - self._TITLE_X - 12)
+
+    def text_lines(self, card_width: int) -> list[str]:
+        """Linhas da descrição para um cartão desta largura; nunca cortadas com "…"."""
+        metrics = QFontMetrics(theme.footnote())
+        return wrap_lines(tr(self.data["summary"]), metrics, self._text_width(card_width),
+                          max_lines=99)
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802 - assinatura do Qt
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802 - assinatura do Qt
+        """Cresce em vez de cortar: janelas estreitas precisam de mais linhas."""
+        line_height = QFontMetrics(theme.footnote()).height() + 1
+        needed = self._TEXT_TOP + len(self.text_lines(width)) * line_height + 12
+        return max(self._MIN_HEIGHT, needed)
+
     def sizeHint(self) -> QSize:
-        return QSize(250, 84)
+        return QSize(250, self.heightForWidth(250))
 
     def paintEvent(self, _event):  # noqa: N802 - assinatura do Qt
         painter = QPainter(self)
@@ -118,26 +259,26 @@ class ToolCard(QAbstractButton):
         painter.setBrush(fill)
         painter.drawRoundedRect(rect, theme.RADIUS_CARD, theme.RADIUS_CARD)
 
-        icon_rect = QRectF(12, 25, 34, 34)
+        icon_top = (self.height() - 34) / 2
+        icon_rect = QRectF(12, icon_top, 34, 34)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(theme.qcolor("accent_soft" if not active else "accent"))
         painter.drawRoundedRect(icon_rect, 10, 10)
         icon_tone = "accent" if not active else "on_accent"
-        painter.drawPixmap(20, 33, icons.pixmap(self.data["icon"], theme.color(icon_tone), 18))
+        painter.drawPixmap(20, int(icon_top) + 8, icons.pixmap(self.data["icon"], theme.color(icon_tone), 18))
 
-        title_x = 56
+        title_x = self._TITLE_X
         painter.setFont(theme.headline())
         painter.setPen(QPen(theme.qcolor("text")))
         painter.drawText(QRectF(title_x, 13, self.width() - title_x - 12, 22),
                          int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
-                         self.data["title"])
+                         tr(self.data["title"]))
 
         painter.setFont(theme.footnote())
         painter.setPen(QPen(theme.qcolor("text_secondary")))
         metrics = QFontMetrics(painter.font())
-        text_width = max(40, self.width() - title_x - 12)
-        # Até três linhas: a descrição não termina mais em "…" no meio da frase.
-        lines = wrap_lines(self.data["summary"], metrics, text_width, max_lines=3)
+        text_width = self._text_width(self.width())
+        lines = self.text_lines(self.width())
         line_height = metrics.height() + 1
         for index, line in enumerate(lines):
             painter.drawText(QRectF(title_x, 37 + index * line_height, text_width, line_height),
@@ -200,20 +341,28 @@ class MediaToolsPage(QWidget):
 
     def _tool_picker(self) -> QWidget:
         host = QWidget(self)
-        layout = QGridLayout(host)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setHorizontalSpacing(10)
-        layout.setVerticalSpacing(10)
+        column = QVBoxLayout(host)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(8)
         self.operation_buttons = QButtonGroup(self)
         self.operation_buttons.setExclusive(True)
         self._tool_cards: dict[str, ToolCard] = {}
-        for index, operation in enumerate(OPERATIONS):
-            card = ToolCard(operation, host)
-            self._tool_cards[operation] = card
-            self.operation_buttons.addButton(card)
-            card.toggled.connect(
-                lambda checked, value=operation: self._operation_changed(value) if checked else None)
-            layout.addWidget(card, index // 2, index % 2)
+        for position, (group_title, operations) in enumerate(GROUPS):
+            label = Hint(group_title, host)
+            label.setContentsMargins(2, 8 if position else 0, 0, 0)
+            column.addWidget(label)
+            grid = QGridLayout()
+            grid.setContentsMargins(0, 0, 0, 0)
+            grid.setHorizontalSpacing(10)
+            grid.setVerticalSpacing(10)
+            for index, operation in enumerate(operations):
+                card = ToolCard(operation, host)
+                self._tool_cards[operation] = card
+                self.operation_buttons.addButton(card)
+                card.toggled.connect(
+                    lambda checked, value=operation: self._operation_changed(value) if checked else None)
+                grid.addWidget(card, index // 2, index % 2)
+            column.addLayout(grid)
         return host
 
     def _source_group(self) -> InsetGroup:
@@ -231,6 +380,7 @@ class MediaToolsPage(QWidget):
 
     def _options_group(self) -> InsetGroup:
         group = InsetGroup(self)
+        self.options_group = group
         intro = QWidget(group)
         intro_layout = QVBoxLayout(intro)
         intro_layout.setContentsMargins(16, 12, 16, 14)
@@ -252,10 +402,8 @@ class MediaToolsPage(QWidget):
         times_row.addWidget(self.start_edit)
         times_row.addWidget(self.end_edit)
         times_row.addStretch(1)
-        self.trim_row = SettingRow(
-            "Início e fim", "Use mm:ss ou hh:mm:ss. O vídeo será recodificado para "
-            "começar e terminar nos pontos escolhidos.", times, group)
-        group.add_row(self.trim_row)
+        self.time_row = SettingRow("Início e fim", "Use mm:ss ou hh:mm:ss.", times, group)
+        group.add_row(self.time_row)
         self.fast_trim_switch = Switch(group)
         self.fast_trim_row = SettingRow(
             "Corte rápido, sem reencodar",
@@ -263,6 +411,11 @@ class MediaToolsPage(QWidget):
             "próximo: podem sobrar alguns segundos antes do início escolhido.",
             self.fast_trim_switch, group)
         group.add_row(self.fast_trim_row)
+
+        self.choice_combo = Select(group)
+        self.choice_combo.currentIndexChanged.connect(self._choice_changed)
+        self.choice_row = SettingRow("Formato", "Escolha uma opção.", self.choice_combo, group)
+        group.add_row(self.choice_row)
 
         self.subtitle_edit = TextField("Arquivo .srt, .vtt ou .ass", group)
         subtitle_button = Button("Escolher legenda", "document", "secondary", group)
@@ -379,15 +532,55 @@ class MediaToolsPage(QWidget):
     def _operation_changed(self, operation: str) -> None:
         self._operation_key = operation
         data = OPERATIONS[operation]
-        self.options_title.setText(data["title"])
-        self.options_summary.setText(data["summary"])
-        self.trim_row.setVisible(operation == "trim")
-        self.fast_trim_row.setVisible(operation == "trim")
-        self.subtitle_row.setVisible(operation == "burn")
-        self.target_row.setVisible(operation == "target_size")
-        self.blur_row.setVisible(operation == "shorts")
-        self.run_button.setText(data["action"])
+        self.options_title.setText(tr(data["title"]))
+        self.options_summary.setText(tr(data["summary"]))
+        timing = data.get("time")
+        show = self.options_group.set_row_visible
+        show(self.time_row, bool(timing))
+        if timing:
+            self.time_row.title.setText(tr(timing["title"]))
+            self.time_row.subtitle.setText(tr(timing["hint"]))
+            self.start_edit.setPlaceholderText(tr(timing["start"]))
+            self.end_edit.setPlaceholderText(tr(timing["stop"]))
+            self.end_edit.setVisible(timing["end"])
+        show(self.fast_trim_row, operation == "trim")
+        self._fill_choices(data.get("choice"), operation)
+        show(self.subtitle_row, operation == "burn")
+        show(self.target_row, operation == "target_size")
+        show(self.blur_row, operation == "shorts")
+        self.run_button.setText(tr(data["action"]))
         self._suggest_destination()
+
+    def _fill_choices(self, choice: dict | None, operation: str) -> None:
+        self.options_group.set_row_visible(self.choice_row, bool(choice))
+        if not choice:
+            return
+        self.choice_row.title.setText(tr(choice["title"]))
+        self.choice_row.subtitle.setText(tr(choice["hint"]))
+        self.choice_combo.blockSignals(True)
+        try:
+            self.choice_combo.clear()
+            for label, value in choice["options"]:
+                self.choice_combo.addItem(label, userData=value)
+            self.choice_combo.setCurrentIndex(
+                max(0, self.choice_combo.findData(DEFAULT_CHOICE.get(operation, ""))))
+            # A largura da lista é calculada uma só vez pelo Qt; cada ferramenta tem itens
+            # diferentes, então ajustamos ao mais longo (texto + margem + seta).
+            metrics = self.choice_combo.fontMetrics()
+            widest = max(metrics.horizontalAdvance(self.choice_combo.itemText(index))
+                         for index in range(self.choice_combo.count()))
+            self.choice_combo.setMinimumWidth(widest + 60)
+        finally:
+            self.choice_combo.blockSignals(False)
+
+    def _choice_changed(self, *_args) -> None:
+        # A escolha muda a extensão sugerida (MP3 → FLAC, PNG → JPG…).
+        self._suggest_destination()
+
+    def _choice(self) -> str:
+        if not self.choice_row.isVisibleTo(self):
+            return ""
+        return str(self.choice_combo.currentData() or "")
 
     def _choose_source(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Selecionar mídia", "", MEDIA_FILTER)
@@ -403,14 +596,18 @@ class MediaToolsPage(QWidget):
     def _suggest_destination(self) -> None:
         source = Path(self.source_edit.text().strip())
         if source.is_file():
-            self.destination_edit.setText(str(default_destination(source, self._operation())))
+            self.destination_edit.setText(str(default_destination(
+                source, self._operation(), choice=self._choice())))
         self._update_run_enabled()
 
     def _choose_destination(self) -> None:
         suggested = self.destination_edit.text().strip()
+        suffix = Path(suggested).suffix.casefold()
+        typed = f"Arquivo {suffix[1:].upper()} (*{suffix});;" if suffix else ""
         path, _ = QFileDialog.getSaveFileName(
             self, "Salvar resultado", suggested,
-            "Arquivo MP4 (*.mp4);;Arquivo MKV (*.mkv);;Arquivo MP3 (*.mp3);;Todos os arquivos (*.*)",
+            f"{typed}Arquivo MP4 (*.mp4);;Arquivo MKV (*.mkv);;Arquivo MP3 (*.mp3);;"
+            "Todos os arquivos (*.*)",
         )
         if path:
             self.destination_edit.setText(path)
@@ -432,12 +629,13 @@ class MediaToolsPage(QWidget):
             source=source,
             destination=destination,
             operation=self._operation(),
-            start=self.start_edit.text().strip(),
-            end=self.end_edit.text().strip(),
+            start=self.start_edit.text().strip() if self.time_row.isVisibleTo(self) else "",
+            end=self.end_edit.text().strip() if self.end_edit.isVisibleTo(self) else "",
             subtitles=Path(self.subtitle_edit.text().strip()) if self.subtitle_edit.text().strip() else None,
             target_mb=int(self.target_combo.currentData() or 25),
             shorts_blur=self.blur_switch.isChecked(),
             fast_trim=self.fast_trim_switch.isChecked(),
+            choice=self._choice(),
         )
         worker = MediaToolWorker(options, self.toolchain, self)
         self.worker = worker
@@ -452,7 +650,7 @@ class MediaToolsPage(QWidget):
         self.progress_host.show()
         self.run_button.setEnabled(False)
         self.cancel_button.show()
-        self.status.setText(f"Preparando: {OPERATIONS[self._operation()]['title'].lower()}…")
+        self.status.setText(f"{tr('Preparando')}: {tr(OPERATIONS[self._operation()]['title']).lower()}…")
 
     def _clear_worker(self, worker: MediaToolWorker) -> None:
         if self.worker is worker:
