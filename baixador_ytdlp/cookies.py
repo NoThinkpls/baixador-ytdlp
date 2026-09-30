@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 
 from .config import COOKIES_DIR, IS_WINDOWS, Settings
+from .sites import SITES, host_matches
 
 # Navegadores Chromium: no Windows, o App-Bound Encryption impede a leitura.
 CHROMIUM_BROWSERS = frozenset({"chrome", "chromium", "edge", "brave", "opera", "vivaldi"})
@@ -71,6 +72,44 @@ def describe_source(cfg: Settings) -> str:
     return "nenhuma fonte de cookies"
 
 
+_HTTPONLY = "#HttpOnly_"
+
+
+def _cookie_domain(line: str) -> str:
+    """Domínio (sem ponto inicial) de uma linha de cookie Netscape, ou vazio."""
+    if line.startswith("#") and not line.startswith(_HTTPONLY):
+        return ""
+    fields = line.removeprefix(_HTTPONLY).split("\t")
+    return fields[0].lstrip(".").lower() if len(fields) >= 7 else ""
+
+
+def cookie_sites(text: str) -> list[str]:
+    """Nomes dos sites conhecidos que têm cookies no arquivo (o Google conta como YouTube)."""
+    domains = {d for d in map(_cookie_domain, text.splitlines()) if d}
+    found: list[str] = []
+    for site in SITES:
+        hosts = site.hosts + (("google.com",) if site.key == "youtube" else ())
+        if any(host_matches(d, h) for d in domains for h in hosts):
+            found.append(site.name)
+    return found
+
+
+def _root_domain(domain: str) -> str:
+    return ".".join(domain.split(".")[-2:])
+
+
+def merge_cookie_text(existing: str, new: str) -> str:
+    """Junta as duas exportações: o que está em ``new`` substitui o mesmo site em ``existing``.
+
+    Cada extensão exporta um site por vez; sem a mescla, importar o Instagram apagava o YouTube.
+    """
+    replaced = {_root_domain(d) for d in map(_cookie_domain, new.splitlines()) if d}
+    kept = [line for line in existing.splitlines()
+            if (domain := _cookie_domain(line)) and _root_domain(domain) not in replaced]
+    body = [line for line in new.splitlines() if line.strip()]
+    return "\n".join(body + kept) + "\n"
+
+
 def _system32(executable: str) -> str:
     """Caminho absoluto de uma ferramenta do Windows — nunca pelo PATH."""
     root = os.environ.get("SYSTEMROOT") or r"C:\Windows"
@@ -113,6 +152,14 @@ def import_cookie_file(source: Path) -> tuple[Path, str]:
     warning = ""
     try:
         shutil.copyfile(source, staged)
+        if destination.is_file():
+            try:
+                merged = merge_cookie_text(
+                    destination.read_text(encoding="utf-8", errors="replace"),
+                    staged.read_text(encoding="utf-8", errors="replace"))
+                staged.write_text(merged, encoding="utf-8", newline="\n")
+            except OSError:
+                pass  # sem a mescla, vale só a exportação nova
         os.chmod(staged, stat.S_IRUSR | stat.S_IWUSR)
         if IS_WINDOWS:
             sid = current_user_sid()
@@ -140,10 +187,13 @@ def cookie_age_days(path: Path) -> int:
 EXPORT_INSTRUCTIONS = (
     "Passo a passo simples para salvar um cookies.txt:\n\n"
     "1. No Chrome, Edge ou Firefox, instale a extensão gratuita “Get cookies.txt LOCALLY”.\n"
-    "2. Abra uma janela anônima/privativa e entre na sua conta do YouTube.\n"
-    "3. Ainda nessa janela, abra youtube.com/robots.txt.\n"
-    "4. Clique na extensão e escolha o formato “Netscape cookies.txt”; salve o arquivo.\n"
-    "5. Feche a janela anônima e use “Escolher arquivo” aqui para selecionar o .txt.\n\n"
+    "2. YouTube: abra uma janela anônima/privativa, entre na sua conta e, ainda nela, abra "
+    "youtube.com/robots.txt. Instagram (e outros sites): entre na conta e abra a página inicial "
+    "do site.\n"
+    "3. Clique na extensão e escolha o formato “Netscape cookies.txt”; salve o arquivo.\n"
+    "4. Feche a janela anônima e use “Escolher” para selecionar o .txt e “Importar para o app”.\n\n"
+    "Um site por vez: importar o Instagram depois do YouTube mantém os dois no mesmo arquivo. "
+    "Stories do Instagram só abrem com esse login.\n\n"
     "Segurança: cookies dão acesso à sua conta. Nunca envie esse arquivo a ninguém; "
     "o aplicativo só o lê no seu computador. Evite a extensão antiga “Get cookies.txt” "
     "sem o sufixo LOCALLY."

@@ -29,7 +29,7 @@ and video tools. Free, open source, and nothing leaves your computer.
 
 ## ✨ Why use it
 
-- **Genuinely fast.** Parallel fragment downloads; clips from long YouTube videos use the HLS format and are downloaded in parallel parts joined losslessly: ~30× real time (82 minutes of a live stream in ~2.5 minutes).
+- **Genuinely fast.** Parallel fragment downloads; clips from long YouTube videos use the HLS format and are downloaded in parallel parts joined losslessly: ~25× real time on average as measured (30 minutes of a 1080p live stream in ~75 seconds).
 - **Everything stays local.** Transcription, conversion and cutting run on your machine. No audio or video is uploaded anywhere.
 - **Uses your GPU.** NVIDIA (NVENC and CUDA), AMD (AMF and VAAPI), Intel (Quick Sync) and Apple Silicon (VideoToolbox and MLX), with an automatic CPU fallback if the GPU rejects a file.
 - **Secure by default.** yt-dlp, FFmpeg and Deno come from official sources with verified SHA-256; TLS certificate validation is never disabled.
@@ -60,6 +60,7 @@ and video tools. Free, open source, and nothing leaves your computer.
 - Persistent queue with **pause and resume**, partial-file resume and automatic retries.
 - Cover, metadata and chapters also for audio; optional music organisation by channel/artist.
 - Optional nightly yt-dlp channel for site fixes ahead of the stable release.
+- Beyond YouTube: Instagram, X, TikTok, Facebook, Reddit, Vimeo, Twitch, SoundCloud and other sites yt-dlp supports, with error notices that name the right site. Instagram stories and restricted content need a login: the warning appears immediately, and a single `cookies.txt` (or Firefox) covers every site; importing one after another keeps both.
 
 ### Captions and transcription
 

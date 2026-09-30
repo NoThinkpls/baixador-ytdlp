@@ -150,7 +150,7 @@ jobs:
             --include-distribution-metadata=av `
             --include-distribution-metadata=onnxruntime `
             --include-distribution-metadata=tokenizers `
-            --include-distribution-metadata=huggingface-hub `
+            --include-distribution-metadata=huggingface_hub `
             --include-distribution-metadata=nvidia-cuda-runtime-cu12 `
             --include-distribution-metadata=nvidia-cublas-cu12 `
             --include-distribution-metadata=nvidia-cudnn-cu12 `

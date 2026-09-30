@@ -163,7 +163,7 @@ class HistoryPage(QWidget):
         self._dirty = False
         while self.cards.count() > 1:
             item = self.cards.takeAt(0)
-            if widget := item.widget():
+            if item is not None and (widget := item.widget()):
                 widget.deleteLater()
 
         entries = self.history.entries[:self.cfg.history_limit]

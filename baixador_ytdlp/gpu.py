@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import glob
+import os
 import platform
 import re
 import sys
@@ -43,11 +44,20 @@ def backend_of(codec: str) -> str:
 
 
 def vaapi_device() -> str:
-    """Primeiro nó de renderização do Linux (``/dev/dri/renderD128``), ou vazio."""
+    """Primeiro nó de renderização do Linux que o usuário consegue abrir, ou vazio."""
     if not sys.platform.startswith("linux"):
         return ""
     nodes = sorted(glob.glob("/dev/dri/renderD*"))
-    return nodes[0] if nodes else ""
+    # Em máquina com duas GPUs, o primeiro nó pode ser de uma placa sem permissão.
+    return next((node for node in nodes if os.access(node, os.R_OK | os.W_OK)), "")
+
+
+def vaapi_unavailable_reason() -> str:
+    """Explica por que não há dispositivo VAAPI: sem GPU ou sem permissão de acesso."""
+    if glob.glob("/dev/dri/renderD*"):
+        return ("Sem permissão para abrir /dev/dri/renderD*. Adicione seu usuário ao grupo "
+                "\"render\" (sudo usermod -aG render $USER) e entre na sessão de novo.")
+    return "Nenhum dispositivo de renderização (/dev/dri/renderD*) disponível."
 
 
 def device_args(codec: str) -> list[str]:
@@ -119,7 +129,7 @@ def _encoder_probe(ffmpeg: Path, codec: str) -> tuple[bool, str]:
     """
     backend = backend_of(codec)
     if backend == "vaapi" and not vaapi_device():
-        return False, "Nenhum dispositivo de renderização (/dev/dri/renderD*) disponível."
+        return False, vaapi_unavailable_reason()
     # QSV e VAAPI recebem quadros NV12 (o VAAPI, já enviados à GPU); os demais, YUV 4:2:0.
     frame_args = (["-vf", UPLOAD_FILTER] if backend == "vaapi"
                   else ["-vf", "format=nv12"] if backend == "qsv"
