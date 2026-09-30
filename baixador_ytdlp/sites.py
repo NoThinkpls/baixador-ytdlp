@@ -65,6 +65,17 @@ def site_from_url(url: str) -> Site | None:
                  if any(_host_matches(host, domain) for domain in site.hosts)), None)
 
 
+_STORY_PATH = re.compile(r"^/stories/[^/]+/(\d+)/?$")
+
+
+def is_single_story(url: str) -> bool:
+    """Story do Instagram com id: o yt-dlp devolve todos os stories da pessoa numa
+    playlist, mas o download (``--no-playlist``) pega só o do link."""
+    site = site_from_url(url)
+    return bool(site and site.key == "instagram"
+                and _STORY_PATH.match(urlsplit(url.strip()).path or ""))
+
+
 def site_from_error(detail: str) -> Site | None:
     """Acha o site pela etiqueta do extrator: ``ERROR: [Instagram] abc: ...``."""
     for match in _TAG_RE.finditer(detail or ""):
