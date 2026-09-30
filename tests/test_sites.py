@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 
 from baixador_ytdlp.probe import friendly_error
-from baixador_ytdlp.sites import site_from_error, site_from_url
+from baixador_ytdlp.sites import login_required_message, site_from_error, site_from_url
 
 
 class SiteDetectionTests(unittest.TestCase):
@@ -31,6 +31,34 @@ class SiteDetectionTests(unittest.TestCase):
         self.assertEqual(site_from_error("ERROR: [Instagram] abc: x").key, "instagram")
         self.assertEqual(site_from_error("ERROR: [twitter:broadcast] 1: x").key, "twitter")
         self.assertIsNone(site_from_error("ERROR: algo sem etiqueta"))
+
+
+class LoginRequiredTests(unittest.TestCase):
+    def test_story_do_instagram_pede_login_antes_de_consultar_o_site(self) -> None:
+        story = "https://www.instagram.com/stories/fulano/3997102778119808536/"
+        message = login_required_message(story)
+        self.assertIn("Instagram", message)
+        self.assertIn("cookies.txt", message)
+        self.assertNotIn("YouTube", message)
+
+    def test_reel_e_outros_sites_nao_bloqueiam(self) -> None:
+        for url in ("https://www.instagram.com/reel/abc/", "https://x.com/u/status/1",
+                    "https://www.youtube.com/watch?v=abc"):
+            self.assertEqual(login_required_message(url), "", url)
+
+    def test_download_de_story_sem_cookies_falha_antes_de_abrir_o_yt_dlp(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from baixador_ytdlp.config import Settings
+        from baixador_ytdlp.downloader import DownloadError, DownloadOptions, DownloadRunner
+
+        opts = DownloadOptions(
+            url="https://www.instagram.com/stories/fulano/3997102778119808536/", output_dir=".")
+        runner = DownloadRunner(opts, Settings(cookies_file="", cookies_browser=""), MagicMock())
+        with patch("baixador_ytdlp.downloader.popen_isolated") as popen,                 self.assertRaises(DownloadError) as caught:
+            runner.run(lambda progress: None)
+        self.assertIn("Instagram", str(caught.exception))
+        popen.assert_not_called()
 
 
 class SiteErrorTests(unittest.TestCase):

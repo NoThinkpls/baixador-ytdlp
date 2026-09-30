@@ -9,7 +9,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .cookies import is_cookie_source_failure
-from .sites import LOGIN_MARKERS, is_single_story, login_hint, rate_limit_hint, site_from_error
+from .sites import (
+    LOGIN_MARKERS, is_single_story, login_hint, login_required_message, rate_limit_hint,
+    site_from_error,
+)
 from .processes import popen_isolated, terminate_process_tree
 from .tools import decode_external_output
 from .diagnostics import log_event
@@ -283,6 +286,9 @@ def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = 
         url = validate_media_url(url)
     except ValueError as exc:
         raise ProbeError(str(exc)) from exc
+    cookies = _cookie_args(cookies_browser, cookies_file)
+    if (message := login_required_message(url)) and not cookies:
+        raise ProbeError(message)
     common = [str(ytdlp), "--no-warnings", "--ignore-config", "--encoding", "utf-8",
               "--socket-timeout", "20"]
     if proxy:
@@ -290,7 +296,6 @@ def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = 
     if extractor_args:
         common += ["--extractor-args", extractor_args]
 
-    cookies = _cookie_args(cookies_browser, cookies_file)
     base, note = common + cookies, ""
 
     # --playlist-items 1: a análise extrai os formatos de UM vídeo, não dos N da
