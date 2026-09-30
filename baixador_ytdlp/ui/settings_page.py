@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QAbstractButton, QFileDialog, QGridLayout, QHBoxL
 from ..config import APP_VERSION, Settings
 from ..cookies import EXPORT_INSTRUCTIONS, cookie_age_days, cookie_sites, import_cookie_file
 from ..filename_preview import FILENAME_PRESETS, render_filename_preview
+from ..parallel_section import MAX_PIECES, WARN_PIECES
 from ..gpu import GPU_ENCODER_LABELS, GpuInfo
 from ..hardware import default_fragments, default_parallel_downloads, usable_cores
 from . import icons, theme
@@ -41,6 +42,13 @@ BROWSERS = [("Não usar cookies", ""),
             ("Opera — não funciona no Windows", "opera")]
 THEMES = [("Seguir o sistema", "auto"), ("Claro", "light"), ("Escuro", "dark")]
 UI_LANGUAGES = [("Português (Brasil)", "pt-BR"), ("English", "en")]
+SECTION_PARTS_HELP = (
+    "Quantos pedaços de um trecho longo do YouTube são baixados ao mesmo tempo. "
+    "1 desliga; o ganho some quando a sua internet já é o limite.")
+SECTION_PARTS_WARNING = (
+    "Atenção: números altos abrem muitas conexões e podem fazer o YouTube bloquear o seu "
+    "IP por um tempo (pedido de confirmação de robô).")
+
 PRESETS = [("p1 — mais rápido", "p1"), ("p4 — equilibrado", "p4"),
            ("p5 — recomendado", "p5"), ("p7 — mais lento e melhor", "p7")]
 
@@ -195,6 +203,7 @@ class SettingsPage(QWidget):
                        f"Quantos itens da fila rodam ao mesmo tempo (sugestão para esta "
                        f"máquina: {default_parallel_downloads()}).",
                        "max_parallel_downloads", 1, 6)
+        self._section_parts_row()
         self._line_row("Limite de banda", "Ex.: 5M para 5 MB/s. Vazio = sem limite.",
                        "limit_rate", "sem limite")
         self._section("Quando a conexão falhar")
@@ -557,6 +566,28 @@ class SettingsPage(QWidget):
         stepper.setValue(int(getattr(self.cfg, key)))
         stepper.valueChanged.connect(lambda v, k=key: self._set(k, int(v)))
         self._add_row(SettingRow(title, subtitle, stepper, self))
+
+    def _section_parts_row(self) -> None:
+        """Partes simultâneas de um trecho longo do YouTube, com aviso quando o número é alto."""
+        self.section_parts_stepper = Stepper(self)
+        self.section_parts_stepper.setRange(1, MAX_PIECES)
+        self.section_parts_stepper.setValue(int(self.cfg.section_parallel_parts))
+        self.section_parts_row = SettingRow(
+            "Partes simultâneas do trecho", SECTION_PARTS_HELP, self.section_parts_stepper, self)
+        self.section_parts_stepper.valueChanged.connect(self._section_parts_changed)
+        self._add_row(self.section_parts_row)
+        self._refresh_section_parts_warning()
+
+    def _section_parts_changed(self, value: int) -> None:
+        self._set("section_parallel_parts", int(value))
+        self._refresh_section_parts_warning()
+
+    def _refresh_section_parts_warning(self) -> None:
+        high = self.cfg.section_parallel_parts >= WARN_PIECES
+        subtitle = self.section_parts_row.subtitle
+        subtitle.setText(f"{SECTION_PARTS_HELP} {SECTION_PARTS_WARNING}" if high
+                         else SECTION_PARTS_HELP)
+        subtitle.setStyleSheet(f"color: {theme.color('warning')};" if high else "")
 
     def _line_row(self, title: str, subtitle: str, key: str, placeholder: str) -> None:
         edit = TextField(placeholder, self)

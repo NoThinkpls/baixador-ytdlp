@@ -29,7 +29,8 @@ from .tools import Toolchain, run_hidden
 
 MIN_PARALLEL_SECONDS = 600   # abaixo disso o ganho não paga a emenda
 PIECE_SECONDS = 300          # tamanho-alvo de cada parte
-MAX_PIECES = 6               # conexões simultâneas ao servidor
+MAX_PIECES = 8               # teto de conexões simultâneas ao servidor
+WARN_PIECES = 5              # a partir daqui a interface avisa do risco de bloqueio
 
 
 def plan_pieces(opts: DownloadOptions, cfg: Settings) -> list[tuple[int, int]]:
@@ -49,7 +50,8 @@ def plan_pieces(opts: DownloadOptions, cfg: Settings) -> list[tuple[int, int]]:
     total = end - start
     if total < MIN_PARALLEL_SECONDS:
         return []
-    count = min(MAX_PIECES, int(total // PIECE_SECONDS))
+    limit = max(1, min(MAX_PIECES, int(cfg.section_parallel_parts)))
+    count = min(limit, int(total // PIECE_SECONDS))
     if count < 2:
         return []
     bounds = [round(start + total * index / count) for index in range(count + 1)]

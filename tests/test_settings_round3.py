@@ -20,6 +20,17 @@ class SettingsRound3Tests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
+    def test_parallel_parts_setting_warns_when_high(self) -> None:
+        cfg = Settings(section_parallel_parts=3)
+        cfg.save = lambda *args, **kwargs: None
+        page = SettingsPage(cfg)
+        self.assertNotIn("bloque", page.section_parts_row.subtitle.text())
+        page.section_parts_stepper.setValue(6)
+        self.assertEqual(cfg.section_parallel_parts, 6)
+        self.assertIn("bloque", page.section_parts_row.subtitle.text())
+        page.section_parts_stepper.setValue(2)
+        self.assertNotIn("bloque", page.section_parts_row.subtitle.text())
+
     def test_singular_last_check_and_real_cuda_state(self) -> None:
         cfg = Settings(max_parallel_downloads=1, app_update_checked_at=0)
         page = SettingsPage(cfg)
