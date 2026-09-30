@@ -1,6 +1,6 @@
 # Pendências
 
-Estado em 30/09/2026: versão **1.13.1** publicada; aqui ficam só as pendências. O Windows
+Estado em 30/09/2026: versão **1.13.1** publicada (1.13.2 em preparo); aqui ficam só as pendências. O Windows
 compila com Nuitka; o PyInstaller é só contingência. O GitHub Actions compila as três plataformas
 e publica a release quando todas passam.
 
@@ -25,15 +25,23 @@ está vazia. Passos em "Publicação" abaixo.
 - [ ] Abrir o pacote Nuitka em máquina limpa sem Python nem VC++ instalado (o
       `scripts/refresh_vc_runtime.ps1` embute o runtime C++ mais novo).
 
-## Trecho em partes paralelas
+## Outros sites além do YouTube
 
-Já funciona no YouTube (`baixador_ytdlp/parallel_section.py`). Pendente: aplicar o mesmo a sites
-que não sejam o YouTube e ao áudio (`-x`), se o teto por conexão também for baixo lá.
+O yt-dlp tem extrator para Instagram, X, TikTok, Facebook, Reddit, Vimeo, Twitch, Kick e outros;
+o app já os aceita, e desde a 1.13.2 os avisos de erro citam o site certo (`sites.py`). Falta
+validar na prática, com cookies quando o site pedir, um link de cada: Instagram (reel e story),
+X, TikTok, Facebook, Reddit e Vimeo.
+
+Trecho em partes paralelas: funciona só no YouTube (`baixador_ytdlp/parallel_section.py`).
+Para os outros sites e para o áudio (`-x`) é preciso medir antes se o teto por conexão também
+é baixo; sem medição, fica como está.
 
 ## Melhorias por plataforma
 
-Ordem sugerida em `docs/PLANO-OTIMIZACAO-PLATAFORMAS.md`: QSV e VAAPI, decodificação
-por hardware, paralelismo de cortes, Whisper com Vulkan para AMD/Intel.
+Feitos: QSV/VAAPI, decodificação por hardware e, na 1.13.2, o diagnóstico de permissão do VAAPI.
+Restam, em `docs/PLANO-OTIMIZACAO-PLATAFORMAS.md`: P4 (vários cortes em paralelo), P5 (Whisper
+com Vulkan para AMD/Intel) e o resto do P6 (VideoToolbox com `-allow_sw 0`, GPU dedicada em
+notebook híbrido no Windows).
 
 ## Arquivos grandes
 
@@ -42,11 +50,14 @@ por hardware, paralelismo de cortes, Whisper com Vulkan para AMD/Intel.
 (`baixador_ytdlp.tools.IS_WINDOWS`, `...tools.urllib...`), então fica para uma rodada própria,
 começando por `ToolManager` (yt-dlp / FFmpeg / Deno em módulos separados).
 
-## PRs do Dependabot em espera
+## Pacotes atualizados à mão
 
-- torch, huggingface-hub, setuptools, send2trash, PySide6, faster-whisper e MLX são atualizados
-  à mão (o Dependabot não os propõe mais): regenerar os `.lock` com `scripts/update_locks.sh` e
-  passar o autoteste com GPU.
+Atualizados na 1.13.2: PySide6, faster-whisper, huggingface-hub (0.36.2), certifi, send2trash e
+setuptools; a suíte passa com o lock do Linux. Ficaram de fora:
+
+- huggingface-hub 1.x/2.x: muda a API de cache usada em `models.py`.
+- torch, mlx e mlx-metal (só macOS, transitivos do mlx-whisper): sem Mac para testar.
+- Falta rodar o autoteste com GPU e abrir o app no Windows com o PySide6 6.11.
 
 ## Publicação
 
