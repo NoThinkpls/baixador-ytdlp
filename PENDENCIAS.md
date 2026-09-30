@@ -1,26 +1,16 @@
 # Pendências
 
-Estado em 30/09/2026: versão **1.13.1** publicada. As rodadas 1 a 3 do
-`docs/PLANO-DE-CORRECOES.md` estão feitas e publicadas (1.12.0 a 1.12.8). O
-Windows compila com Nuitka; o PyInstaller é só contingência. O GitHub Actions
-compila as três plataformas e publica a release quando todas passam.
+Estado em 30/09/2026: versão **1.13.1** publicada; aqui ficam só as pendências. O Windows
+compila com Nuitka; o PyInstaller é só contingência. O GitHub Actions compila as três plataformas
+e publica a release quando todas passam.
 
 Contexto: `docs/PLANO-DE-CORRECOES.md` (auditoria e status), `CLAUDE.md`
 (decisões e convenções) e `docs/PLANO-OTIMIZACAO-PLATAFORMAS.md` (próximas melhorias).
 
-## 1.13.1 publicada (30/09/2026)
+## Assinatura Ed25519 das releases
 
-Release https://github.com/NoThinkpls/baixador-ytdlp/releases/tag/v1.13.0 (PR 33, build da `main`
-run 36655719334: Windows/Nuitka, macOS, Linux e teste de janela real verdes). Nove ferramentas de
-mídia novas e formatos extras de áudio. Na validação foram corrigidos: cartões de ferramentas que
-cortavam a descrição com "…" (agora crescem com a largura e `wrap_lines` não elide o que cabe) e o
-worker que quebrava com `out_time=N/A` ao converter para WebM.
-
-A 1.13.1 (PR 34) transformou a aba Ferramentas em hub com uma página por ferramenta, como em
-Configurações; a 1.13.0 foi publicada antes dessa mudança e continua como está.
-
-A release saiu sem `.sig` Ed25519: `RELEASE_SIGNING_KEY` não está configurado e `RELEASE_PUBLIC_KEYS`
-está vazia (igual à 1.12.8). Ver o item de assinatura Ed25519 abaixo para ativar.
+A 1.13.1 saiu sem `.sig`: `RELEASE_SIGNING_KEY` não está configurado e `RELEASE_PUBLIC_KEYS`
+está vazia. Passos em "Publicação" abaixo.
 
 ## Validação manual (só na máquina com NVIDIA)
 
@@ -35,12 +25,10 @@ está vazia (igual à 1.12.8). Ver o item de assinatura Ed25519 abaixo para ativ
 - [ ] Abrir o pacote Nuitka em máquina limpa sem Python nem VC++ instalado (o
       `scripts/refresh_vc_runtime.ps1` embute o runtime C++ mais novo).
 
-## Trecho em partes paralelas (feito na 1.12.4)
+## Trecho em partes paralelas
 
-82 min de live em ~2,5 min (`baixador_ytdlp/parallel_section.py`). O downloader nativo
-do yt-dlp ignora `--concurrent-fragments` com `--download-sections` (sempre usa o
-FFmpeg), então o ganho vem de várias conexões. Pendente: aplicar o mesmo a sites que
-não sejam o YouTube e ao áudio (`-x`), se o teto por conexão também for baixo lá.
+Já funciona no YouTube (`baixador_ytdlp/parallel_section.py`). Pendente: aplicar o mesmo a sites
+que não sejam o YouTube e ao áudio (`-x`), se o teto por conexão também for baixo lá.
 
 ## Melhorias por plataforma
 
@@ -49,16 +37,13 @@ por hardware, paralelismo de cortes, Whisper com Vulkan para AMD/Intel.
 
 ## Arquivos grandes
 
-`transcription.py` caiu de 1.281 para ~870 linhas (pesos e cache em `models.py`, processos em
-`transcription_server.py`). `tools.py` (1.076), `ui/home_page.py` (1.173) e `ui/main_window.py`
+`tools.py` (1.076), `ui/home_page.py` (1.173) e `ui/main_window.py`
 (1.069) são cada um uma classe só: dividir exige mixins e mexe nos pontos de patch dos testes
 (`baixador_ytdlp.tools.IS_WINDOWS`, `...tools.urllib...`), então fica para uma rodada própria,
 começando por `ToolManager` (yt-dlp / FFmpeg / Deno em módulos separados).
 
 ## PRs do Dependabot em espera
 
-- (vazio) Os PRs #26 e #27 foram mesclados e entram na 1.12.8; se a publicação falhar por causa
-  deles, reverter os dois commits.
 - torch, huggingface-hub, setuptools, send2trash, PySide6, faster-whisper e MLX são atualizados
   à mão (o Dependabot não os propõe mais): regenerar os `.lock` com `scripts/update_locks.sh` e
   passar o autoteste com GPU.
