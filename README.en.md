@@ -29,7 +29,7 @@ and video tools. Free, open source, and nothing leaves your computer.
 
 ## ✨ Why use it
 
-- **Genuinely fast.** Parallel fragment downloads; clips from long YouTube videos use the HLS format and are downloaded in parallel parts joined losslessly: ~30× real time (82 minutes of a live stream in ~2.5 minutes).
+- **Genuinely fast.** Parallel fragment downloads; clips from long YouTube videos use the HLS format and are downloaded in parallel parts joined losslessly: ~25× real time on average as measured (30 minutes of a 1080p live stream in ~75 seconds).
 - **Everything stays local.** Transcription, conversion and cutting run on your machine. No audio or video is uploaded anywhere.
 - **Uses your GPU.** NVIDIA (NVENC and CUDA), AMD (AMF and VAAPI), Intel (Quick Sync) and Apple Silicon (VideoToolbox and MLX), with an automatic CPU fallback if the GPU rejects a file.
 - **Secure by default.** yt-dlp, FFmpeg and Deno come from official sources with verified SHA-256; TLS certificate validation is never disabled.

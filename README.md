@@ -29,7 +29,7 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 
 ## ✨ Por que usar
 
-- **Rápido de verdade.** Downloads com fragmentos em paralelo; trechos de vídeos longos do YouTube usam o formato HLS e são baixados em partes paralelas, emendadas sem recodificar: ~30× o tempo real (82 min de uma live em ~2,5 min).
+- **Rápido de verdade.** Downloads com fragmentos em paralelo; trechos de vídeos longos do YouTube usam o formato HLS e são baixados em partes paralelas, emendadas sem recodificar: ~25× o tempo real na média medida (30 min de uma live em 1080p em ~75 s).
 - **Tudo no seu computador.** Transcrição, conversão e cortes rodam localmente. Nenhum áudio ou vídeo sai da sua máquina.
 - **Usa a sua GPU.** NVIDIA (NVENC e CUDA), AMD (AMF e VAAPI), Intel (Quick Sync) e Apple Silicon (VideoToolbox e MLX), com retorno automático para a CPU se a GPU recusar a mídia.
 - **Seguro por padrão.** yt-dlp, FFmpeg e Deno vêm das fontes oficiais com SHA-256 conferido; a validação de certificado TLS nunca é desligada.
