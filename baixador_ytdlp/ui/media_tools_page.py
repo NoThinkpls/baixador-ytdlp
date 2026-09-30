@@ -5,16 +5,18 @@ from pathlib import Path
 
 from PySide6.QtCore import QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QFontMetrics, QPainter, QPen
-from PySide6.QtWidgets import (QAbstractButton, QButtonGroup, QFileDialog, QGridLayout,
-                               QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractButton, QFileDialog, QGridLayout,
+                               QHBoxLayout, QSizePolicy, QStackedWidget, QVBoxLayout,
+                               QWidget)
 
 from ..media_tools import (DEFAULT_CHOICE, MediaToolOptions, available_destination,
                            default_destination)
 from ..workers import MediaToolWorker
 from . import icons, theme
-from .components import (Button, Divider, Headline, Hint, InsetGroup, Muted, PageHeader,
-                         PrimaryButton, ProgressBar, ScrollColumn, SectionLabel, Select,
-                         SettingRow, Switch, TextField, Toast)
+from .components import (BreadcrumbChevron, BreadcrumbCurrent, BreadcrumbLink, Button, Divider,
+                         Headline, Hint, InsetGroup, Muted, PageHeader, PrimaryButton, ProgressBar,
+                         ScrollColumn, SectionLabel, Select, SettingRow, Switch, TextField,
+                         Toast)
 from .i18n import tr
 
 MEDIA_FILTER = ("Mídia (*.mp4 *.mkv *.webm *.mov *.avi *.m4v *.ts *.mpg *.mpeg *.wmv *.flv "
@@ -208,7 +210,6 @@ class ToolCard(QAbstractButton):
         self.operation = operation
         self.data = OPERATIONS[operation]
         self.setText(tr(self.data["title"]))
-        self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMinimumHeight(84)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -216,7 +217,6 @@ class ToolCard(QAbstractButton):
         self.setAccessibleName(tr(self.data["title"]))
         self.setAccessibleDescription(tr(self.data["summary"]))
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.toggled.connect(self.update)
         self.pressed.connect(self.update)
         self.released.connect(self.update)
 
@@ -249,23 +249,20 @@ class ToolCard(QAbstractButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        active = self.isChecked()
         hovered = self.underMouse()
-        fill = theme.qcolor("accent_soft") if active else theme.qcolor(
-            "surface_hover" if hovered else "surface")
-        border = theme.qcolor("accent" if active else (
-            "border_strong" if hovered else "border"))
-        painter.setPen(QPen(border, 1.2 if active else 1))
+        fill = theme.qcolor("surface_hover" if hovered else "surface")
+        border = theme.qcolor("border_strong" if hovered else "border")
+        painter.setPen(QPen(border, 1))
         painter.setBrush(fill)
         painter.drawRoundedRect(rect, theme.RADIUS_CARD, theme.RADIUS_CARD)
 
         icon_top = (self.height() - 34) / 2
         icon_rect = QRectF(12, icon_top, 34, 34)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(theme.qcolor("accent_soft" if not active else "accent"))
+        painter.setBrush(theme.qcolor("accent_soft"))
         painter.drawRoundedRect(icon_rect, 10, 10)
-        icon_tone = "accent" if not active else "on_accent"
-        painter.drawPixmap(20, int(icon_top) + 8, icons.pixmap(self.data["icon"], theme.color(icon_tone), 18))
+        painter.drawPixmap(20, int(icon_top) + 8,
+                           icons.pixmap(self.data["icon"], theme.color("accent"), 18))
 
         title_x = self._TITLE_X
         painter.setFont(theme.headline())
@@ -316,36 +313,69 @@ class MediaToolsPage(QWidget):
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 20, 28, 0)
-        root.setSpacing(16)
-        root.addWidget(PageHeader(
+        root.setSpacing(0)
+        # Como em Configurações: um hub com os cartões e, ao escolher um, a página da ferramenta.
+        self.pages = QStackedWidget(self)
+        root.addWidget(self.pages)
+
+        self.landing = ScrollColumn(self, spacing=14)
+        self.landing.add(PageHeader(
             "Ferramentas",
-            "Escolha uma tarefa, informe o arquivo e processe. O original nunca é alterado.",
+            "Escolha uma tarefa. O original nunca é alterado.",
             self))
+        self.landing.add(self._tool_picker())
+        self.landing.add_stretch()
+        self.pages.addWidget(self.landing)
 
-        page = ScrollColumn(self, spacing=14)
-        root.addWidget(page, 1)
+        detail = QWidget(self)
+        self.detail = detail
+        layout = QVBoxLayout(detail)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        breadcrumb = QHBoxLayout()
+        breadcrumb.setSpacing(4)
+        self.back_link = BreadcrumbLink("Ferramentas", detail)
+        self.back_link.setAccessibleName("Voltar para Ferramentas")
+        self.back_link.clicked.connect(self._show_landing)
+        breadcrumb.addWidget(self.back_link)
+        breadcrumb.addWidget(BreadcrumbChevron(detail))
+        self.options_title = BreadcrumbCurrent("", detail)
+        breadcrumb.addWidget(self.options_title, 1)
+        layout.addLayout(breadcrumb)
+        self.options_summary = Muted("", detail)
+        layout.addWidget(self.options_summary)
 
-        page.add(SectionLabel("1. Arquivo de origem", self))
+        page = ScrollColumn(detail, spacing=14)
+        layout.addWidget(page, 1)
         page.add(self._source_group())
-        page.add(SectionLabel("2. O que você quer fazer?", self))
-        page.add(self._tool_picker())
-        page.add(SectionLabel("3. Ajustes desta tarefa", self))
+        self.options_label = page.add(SectionLabel("Ajustes", detail))
         page.add(self._options_group())
-        page.add(SectionLabel("4. Onde salvar", self))
         page.add(self._destination_group())
         page.add_stretch()
+        layout.addWidget(self._action_bar())
+        self.pages.addWidget(detail)
 
-        root.addWidget(self._action_bar())
-        self._tool_cards["trim"].setChecked(True)
         self._operation_changed("trim")
+
+    def _show_landing(self) -> None:
+        self.pages.setCurrentWidget(self.landing)
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _open_tool(self, operation: str) -> None:
+        if self.has_active_work() and operation != self._operation_key:
+            Toast.info("Há uma tarefa em andamento",
+                       "Espere terminar ou cancele antes de abrir outra ferramenta.",
+                       parent=self.window())
+            return
+        self._operation_changed(operation)
+        self.pages.setCurrentWidget(self.detail)
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _tool_picker(self) -> QWidget:
         host = QWidget(self)
         column = QVBoxLayout(host)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(8)
-        self.operation_buttons = QButtonGroup(self)
-        self.operation_buttons.setExclusive(True)
         self._tool_cards: dict[str, ToolCard] = {}
         for position, (group_title, operations) in enumerate(GROUPS):
             label = Hint(group_title, host)
@@ -358,9 +388,7 @@ class MediaToolsPage(QWidget):
             for index, operation in enumerate(operations):
                 card = ToolCard(operation, host)
                 self._tool_cards[operation] = card
-                self.operation_buttons.addButton(card)
-                card.toggled.connect(
-                    lambda checked, value=operation: self._operation_changed(value) if checked else None)
+                card.clicked.connect(lambda _checked=False, value=operation: self._open_tool(value))
                 grid.addWidget(card, index // 2, index % 2)
             column.addLayout(grid)
         return host
@@ -381,16 +409,6 @@ class MediaToolsPage(QWidget):
     def _options_group(self) -> InsetGroup:
         group = InsetGroup(self)
         self.options_group = group
-        intro = QWidget(group)
-        intro_layout = QVBoxLayout(intro)
-        intro_layout.setContentsMargins(16, 12, 16, 14)
-        intro_layout.setSpacing(4)
-        self.options_title = Headline("Ajustes", intro)
-        self.options_summary = Muted("", intro)
-        intro_layout.addWidget(self.options_title)
-        intro_layout.addWidget(self.options_summary)
-        group.add_row(intro)
-
         self.start_edit = TextField("início 00:01:30", group)
         self.start_edit.setFixedWidth(150)
         self.end_edit = TextField("fim 00:04:00", group)
@@ -548,6 +566,11 @@ class MediaToolsPage(QWidget):
         show(self.subtitle_row, operation == "burn")
         show(self.target_row, operation == "target_size")
         show(self.blur_row, operation == "shorts")
+        rows = (self.time_row, self.fast_trim_row, self.choice_row, self.subtitle_row,
+                self.target_row, self.blur_row)
+        has_options = any(row.isVisibleTo(self.options_group) for row in rows)
+        self.options_label.setVisible(has_options)   # mudo, limpar metadados etc. não têm ajustes
+        self.options_group.setVisible(has_options)
         self.run_button.setText(tr(data["action"]))
         self._suggest_destination()
 
