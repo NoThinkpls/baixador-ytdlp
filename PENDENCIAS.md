@@ -1,6 +1,6 @@
 # Pendências
 
-Estado em 30/09/2026: versão **1.13.0** (candidata; 1.12.8 é a última publicada). As rodadas 1 a 3 do
+Estado em 30/09/2026: versão **1.13.0** publicada. As rodadas 1 a 3 do
 `docs/PLANO-DE-CORRECOES.md` estão feitas e publicadas (1.12.0 a 1.12.8). O
 Windows compila com Nuitka; o PyInstaller é só contingência. O GitHub Actions
 compila as três plataformas e publica a release quando todas passam.
@@ -8,27 +8,16 @@ compila as três plataformas e publica a release quando todas passam.
 Contexto: `docs/PLANO-DE-CORRECOES.md` (auditoria e status), `CLAUDE.md`
 (decisões e convenções) e `docs/PLANO-OTIMIZACAO-PLATAFORMAS.md` (próximas melhorias).
 
-## Retomada: release 1.13.0 (ferramentas novas de mídia)
+## 1.13.0 publicada (30/09/2026)
 
-Branch `ccr-38f697c6-lvvgdq` (2 commits à frente de `main`): nove ferramentas novas na aba
-Ferramentas + formatos de áudio extras, versão 1.13.0 e docs. Suíte, ruff e testes com FFmpeg real
-passam (o único erro no container da nuvem era o pacote `cryptography` do sistema). Build de teste
-disparado em `workflow_dispatch` (run 36650656293; não publica, só `main` e tags `v*` publicam).
+Release https://github.com/NoThinkpls/baixador-ytdlp/releases/tag/v1.13.0 (PR 33, build da `main`
+run 36655719334: Windows/Nuitka, macOS, Linux e teste de janela real verdes). Nove ferramentas de
+mídia novas e formatos extras de áudio. Na validação foram corrigidos: cartões de ferramentas que
+cortavam a descrição com "…" (agora crescem com a largura e `wrap_lines` não elide o que cabe) e o
+worker que quebrava com `out_time=N/A` ao converter para WebM.
 
-A fazer, nesta ordem:
-
-1. Conferir o resultado do run 36650656293 (Windows/Nuitka, macOS, Linux e o teste de janela real).
-   Se algo falhar, corrigir na branch.
-2. No Windows: `python scripts/capture_screenshots.py` e commitar as imagens novas de
-   `docs/images/` (a `ferramentas-*.png` mudou; o README as usa). Olhar as capturas antes de commitar.
-3. Rodar no Windows `python -m unittest discover -s tests`, `ruff check .` e
-   `python scripts/pyright_check.py` (o pyright não rodou na nuvem).
-4. Só com o build verde e as imagens no lugar, e com a confirmação do mantenedor: abrir o PR para
-   `main`, mesclar e criar a tag `v1.13.0` (isso publica a release para todos).
-
-Detalhes que valem lembrar: o codec das ferramentas de áudio/imagem/legenda/conversão vem da
-extensão do destino; ferramentas são dados em `OPERATIONS`/`GROUPS`/`CHOICES`
-(`ui/media_tools_page.py`, `media_tools.py`); um teste falha se faltar tradução em inglês.
+A release saiu sem `.sig` Ed25519: `RELEASE_SIGNING_KEY` não está configurado e `RELEASE_PUBLIC_KEYS`
+está vazia (igual à 1.12.8). Ver o item de assinatura Ed25519 abaixo para ativar.
 
 ## Validação manual (só na máquina com NVIDIA)
 
