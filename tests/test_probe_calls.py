@@ -48,6 +48,13 @@ class ProbeCallsTests(unittest.TestCase):
         self.assertIn("--no-playlist", args)
         self.assertNotIn("--playlist-items", args)
 
+    def test_story_sem_cookies_avisa_sem_chamar_o_yt_dlp(self) -> None:
+        story = "https://www.instagram.com/stories/fulano/3997102778119808536/"
+        with patch.object(probe, "_run_json") as run,                 self.assertRaises(probe.ProbeError) as caught:
+            probe.probe(story, Path("yt-dlp"))
+        self.assertIn("Instagram", str(caught.exception))
+        run.assert_not_called()
+
     def test_stories_sem_id_continuam_playlist(self) -> None:
         with patch.object(probe, "_run_json", return_value=VIDEO) as run:
             probe.probe("https://www.instagram.com/stories/fulano/", Path("yt-dlp"),

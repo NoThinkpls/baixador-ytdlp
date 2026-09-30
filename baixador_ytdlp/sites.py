@@ -76,6 +76,16 @@ def is_single_story(url: str) -> bool:
                 and _STORY_PATH.match(urlsplit(url.strip()).path or ""))
 
 
+def login_required_message(url: str) -> str:
+    """Aviso para o que nunca abre sem conta (story do Instagram), ou vazio."""
+    site = site_from_url(url)
+    if site and site.key == "instagram" and urlsplit(url.strip()).path.startswith("/stories/"):
+        return ("Stories do Instagram só abrem com login. Em Configurações → Contas e cookies, "
+                "aponte um cookies.txt exportado do instagram.com (ou selecione o Firefox) "
+                "e tente de novo.")
+    return ""
+
+
 def site_from_error(detail: str) -> Site | None:
     """Acha o site pela etiqueta do extrator: ``ERROR: [Instagram] abc: ...``."""
     for match in _TAG_RE.finditer(detail or ""):
