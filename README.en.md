@@ -60,6 +60,7 @@ and video tools. Free, open source, and nothing leaves your computer.
 - Persistent queue with **pause and resume**, partial-file resume and automatic retries.
 - Cover, metadata and chapters also for audio; optional music organisation by channel/artist.
 - Optional nightly yt-dlp channel for site fixes ahead of the stable release.
+- Beyond YouTube: Instagram, X, TikTok, Facebook, Reddit, Vimeo, Twitch, SoundCloud and other sites yt-dlp supports, with error notices that name the right site. Instagram stories and restricted content need a login: the warning appears immediately, and a single `cookies.txt` (or Firefox) covers every site; importing one after another keeps both.
 
 ### Captions and transcription
 
