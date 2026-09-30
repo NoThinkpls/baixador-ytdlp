@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (QAbstractButton, QFileDialog, QGridLayout, QHBoxL
 
 from ..config import APP_VERSION, Settings
 from ..cookies import EXPORT_INSTRUCTIONS, cookie_age_days, cookie_sites, import_cookie_file
-from ..filename_preview import render_filename_preview
+from ..filename_preview import FILENAME_PRESETS, render_filename_preview
 from ..gpu import GPU_ENCODER_LABELS, GpuInfo
 from ..hardware import default_fragments, default_parallel_downloads, usable_cores
 from . import icons, theme
@@ -595,15 +595,44 @@ class SettingsPage(QWidget):
         self.filename_template_edit.setMinimumWidth(240)
         self.filename_template_edit.setText(self.cfg.filename_template)
         self.filename_template_edit.textChanged.connect(self._refresh_template_preview)
+        self.filename_template_edit.textChanged.connect(self._sync_filename_presets)
         self.filename_template_edit.editingFinished.connect(
             lambda: self._set("filename_template", self.filename_template_edit.text().strip())
         )
-        row = SettingRow("Nome do arquivo", "Prévia do nome do arquivo", self.filename_template_edit, self)
+        # Modelos prontos; digitar um modelo próprio deixa o seletor sem escolha.
+        self.filename_presets = Select(self)
+        for label, template in FILENAME_PRESETS:
+            self.filename_presets.addItem(label, userData=template)
+        self.filename_presets.setMinimumWidth(230)
+        self.filename_presets.currentIndexChanged.connect(self._apply_filename_preset)
+        control = QWidget(self)
+        layout = QHBoxLayout(control)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        layout.addWidget(self.filename_presets)
+        layout.addWidget(self.filename_template_edit, 1)
+        row = SettingRow("Nome do arquivo", "Prévia do nome do arquivo", control, self)
         # A prévia acompanha o campo sem abrir uma seção alta de botões.
         self.filename_template_preview = row.subtitle
         self.filename_template_preview.setAccessibleName("Prévia do nome do arquivo")
+        self._sync_filename_presets()
         self._refresh_template_preview()
         self._add_row(row)
+
+    def _apply_filename_preset(self, index: int) -> None:
+        template = self.filename_presets.itemData(index)
+        if template and template != self.filename_template_edit.text().strip():
+            self.filename_template_edit.setText(template)
+        if template:
+            self._set("filename_template", template)
+
+    def _sync_filename_presets(self) -> None:
+        current = self.filename_template_edit.text().strip()
+        index = next((i for i in range(self.filename_presets.count())
+                      if self.filename_presets.itemData(i) == current), -1)
+        self.filename_presets.blockSignals(True)
+        self.filename_presets.setCurrentIndex(index)
+        self.filename_presets.blockSignals(False)
 
     def _insert_template_token(self, token: str) -> None:
         self.filename_template_edit.insert(token)
