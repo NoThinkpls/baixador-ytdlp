@@ -18,8 +18,8 @@ from .downloader import (DownloadOptions, Progress, Transcoder, is_retryable_err
                          vp9_mp4_to_mkv)
 from .gpu import GpuInfo, detect, forget_negative_cache
 from .media_tools import (MediaToolError, MediaToolOptions, build_command,
-                          operation_duration, preferred_video_encoder, resolve_options,
-                          time_seconds, uses_gpu)
+                          operation_duration, preferred_video_encoder, progress_seconds,
+                          resolve_options, uses_gpu)
 from .parallel_section import create_runner
 from .processes import attach_pid_to_kill_job, popen_isolated, release_job, terminate_process_tree
 from .probe import friendly_error, playlist_entries, probe
@@ -178,8 +178,8 @@ class MediaToolWorker(QThread):
                     if line:
                         output_tail.append(line)
                         del output_tail[:-80]
-                    if duration and line.startswith("out_time="):
-                        elapsed = time_seconds(line.partition("=")[2])
+                    elapsed = progress_seconds(line) if duration else None
+                    if elapsed is not None:
                         percent = max(0, min(99, round(elapsed * 100 / duration)))
                         self.progress_value.emit(percent)
                         self.progress.emit(f"Processando na {label}… {percent}%")
