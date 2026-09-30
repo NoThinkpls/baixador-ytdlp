@@ -5,11 +5,13 @@
 # dependências transitivas (av, onnxruntime, tokenizers, numpy, pywin32…).
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# O mlx só publica wheels a partir do macOS 14; sem isso o uv resolve para o macOS 13.
+export MACOSX_DEPLOYMENT_TARGET=14.0
 compile() { uv pip compile "$1" --generate-hashes --python-platform "$2" \
               --python-version 3.12 --no-header --quiet -o "$3"; }
 compile requirements.txt        x86_64-pc-windows-msvc   requirements-windows.lock
 compile requirements-macos.txt  aarch64-apple-darwin     requirements-macos.lock
-compile requirements-linux.txt  x86_64-manylinux_2_28    requirements-linux.lock
+compile requirements-linux.txt  x86_64-manylinux_2_34    requirements-linux.lock
 compile requirements-build.txt  x86_64-pc-windows-msvc   requirements-build-windows.lock
 compile requirements-build.txt  aarch64-apple-darwin     requirements-build-macos.lock
 compile requirements-build.txt  x86_64-manylinux_2_28    requirements-build-linux.lock

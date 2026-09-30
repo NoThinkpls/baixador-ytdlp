@@ -9,6 +9,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .cookies import is_cookie_source_failure
+from .sites import (
+    LOGIN_MARKERS, is_single_story, login_hint, login_required_message, rate_limit_hint,
+    site_from_error,
+)
 from .processes import popen_isolated, terminate_process_tree
 from .tools import decode_external_output
 from .diagnostics import log_event
@@ -282,6 +286,9 @@ def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = 
         url = validate_media_url(url)
     except ValueError as exc:
         raise ProbeError(str(exc)) from exc
+    cookies = _cookie_args(cookies_browser, cookies_file)
+    if (message := login_required_message(url)) and not cookies:
+        raise ProbeError(message)
     common = [str(ytdlp), "--no-warnings", "--ignore-config", "--encoding", "utf-8",
               "--socket-timeout", "20"]
     if proxy:
@@ -289,13 +296,14 @@ def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = 
     if extractor_args:
         common += ["--extractor-args", extractor_args]
 
-    cookies = _cookie_args(cookies_browser, cookies_file)
     base, note = common + cookies, ""
 
     # --playlist-items 1: a análise extrai os formatos de UM vídeo, não dos N da
     # playlist. Sem isso, uma playlist de 200 itens levava minutos e centenas de
     # requisições só para montar a tabela de qualidades do primeiro vídeo.
-    request = ["-J", "--playlist-items", "1", "--", url]
+    # Story do Instagram com id é exceção: o item 1 é outro story, com outros formatos.
+    scope = ["--no-playlist"] if is_single_story(url) else ["--playlist-items", "1"]
+    request = ["-J", *scope, "--", url]
     try:
         data = _run_json(base + request, timeout, env)
     except ProbeError as exc:
@@ -361,6 +369,8 @@ def _friendly_error_pt(detail: str) -> str:
     no erro de DPAPI. O aplicativo empurrava para o caminho quebrado.
     """
     low = detail.lower()
+    site = site_from_error(detail)
+    other_site = site if site and site.key != "youtube" else None
 
     # Falhas do disco e do sistema de arquivos valem para qualquer etapa (yt-dlp, FFmpeg,
     # conversão), por isso vêm antes das mensagens específicas de site.
@@ -416,6 +426,9 @@ def _friendly_error_pt(detail: str) -> str:
             "inappropriate for some users")):
         return "Vídeo com restrição de idade. É preciso fornecer cookies de uma conta logada."
 
+    if other_site and any(marker in low for marker in LOGIN_MARKERS):
+        return login_hint(other_site)
+
     if "not a bot" in low or "sign in to confirm" in low:
         return ("O YouTube pediu confirmação de que você não é um robô. É preciso fornecer "
                 "cookies de uma conta logada: em Configurações, aponte um arquivo cookies.txt "
@@ -436,6 +449,8 @@ def _friendly_error_pt(detail: str) -> str:
         return "A transmissão ainda não começou. Tente novamente quando o evento estiver ao vivo."
 
     if "http error 429" in low or "too many requests" in low:
+        if other_site:
+            return rate_limit_hint(other_site)
         return ("O YouTube limitou as requisições deste IP. Espere alguns minutos antes de "
                 "tentar de novo, ou configure um proxy.")
 

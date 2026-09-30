@@ -3,6 +3,29 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.13.2] - 2026-09-30
+
+### Adicionado
+
+- Avisos de erro por plataforma (`sites.py`): Instagram, X, TikTok, Facebook, Reddit, Vimeo e
+  outros. Pedido de login e limite de requisições citam o site certo em vez de falar do YouTube.
+
+### Alterado
+
+- Configurações → Rede e desempenho → "Partes simultâneas do trecho" (1 a 8, padrão 4; 1 desliga): 
+  antes eram sempre até 6. Do 5 em diante a tela avisa que o YouTube pode bloquear o IP por um tempo.
+- Nome do arquivo: seletor de modelos (Título [id], Plataforma - data - título [id] e Só o título) 
+  e título do Facebook sem o contador de views.
+- Story do Instagram: avisa na hora que exige login (cookies.txt ou Firefox) e a análise usa o story do link, 
+  em vez de mostrar formatos de outro story.
+- Configurações → cookies.txt vale para vários sites: a validação lista quais o arquivo cobre, o passo a passo
+  inclui o Instagram e importar outro site mescla com o que já estava no app.
+- PySide6 6.11.2, faster-whisper 1.2.1, huggingface-hub 0.36.2, certifi, send2trash 2.1.0 e
+  setuptools 84; locks regenerados. `update_locks.sh` passou a resolver o macOS 14 (o mlx não
+  tem wheels para o 13) e o manylinux_2_34 do PySide6 no Linux.
+- VAAPI escolhe o primeiro `/dev/dri/renderD*` que o usuário consegue abrir e, sem permissão,
+  orienta a entrar no grupo `render`.
+
 ## [1.13.1] - 2026-09-30
 
 ### Alterado

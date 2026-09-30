@@ -23,11 +23,21 @@ def _opts(**kwargs) -> DownloadOptions:
 class PlanTests(unittest.TestCase):
     def test_long_section_is_split_into_contiguous_pieces(self) -> None:
         pieces = plan_pieces(_opts(section_start="00:53:45", section_end="02:16:30"), Settings())
-        self.assertEqual(len(pieces), 6)
+        self.assertEqual(len(pieces), 4)  # padrão: 4 partes simultâneas
         self.assertEqual(pieces[0][0], 3225)
         self.assertEqual(pieces[-1][1], 8190)
         for (_, end), (start, _) in zip(pieces, pieces[1:], strict=False):
             self.assertEqual(end, start)
+
+    def test_number_of_parts_follows_the_setting(self) -> None:
+        long_cut = _opts(section_start="0", section_end="7200")
+        for parts, expected in ((1, 0), (2, 2), (3, 3), (8, 8), (50, 8), (0, 0), (-3, 0)):
+            pieces = plan_pieces(long_cut, Settings(section_parallel_parts=parts))
+            self.assertEqual(len(pieces), expected, parts)
+
+    def test_parts_never_exceed_what_the_length_allows(self) -> None:
+        ten_minutes = _opts(section_start="0", section_end="900")
+        self.assertEqual(len(plan_pieces(ten_minutes, Settings(section_parallel_parts=8))), 3)
 
     def test_short_or_unsupported_cases_stay_in_a_single_process(self) -> None:
         cfg = Settings()
@@ -88,7 +98,8 @@ class RunnerTests(unittest.TestCase):
         tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"),
                                 ffmpeg=Path("ffmpeg"), ffprobe=Path("ffprobe"))
         opts = _opts(output_dir=out, section_start="0", section_end="1800")
-        return ParallelSectionRunner(opts, Settings(), tools, plan_pieces(opts, Settings()))
+        cfg = Settings(section_parallel_parts=6)
+        return ParallelSectionRunner(opts, cfg, tools, plan_pieces(opts, cfg))
 
     def test_pieces_are_aligned_to_keyframes_joined_and_cleaned_up(self) -> None:
         seen = []

@@ -12,7 +12,7 @@ from .plataforma import is_macos, is_windows, pasta_dados_usuario, pasta_do_exec
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.13.1"
+APP_VERSION = "1.13.2"
 IS_WINDOWS = is_windows()
 
 
@@ -133,6 +133,7 @@ class Settings:
     # Padrões calculados na primeira execução a partir da máquina do usuário.
     concurrent_fragments: int = field(default_factory=default_fragments)
     max_parallel_downloads: int = field(default_factory=default_parallel_downloads)
+    section_parallel_parts: int = 4  # partes simultâneas de um trecho longo (1 = desligado)
     cookies_browser: str = ""        # "", chrome, edge, firefox, brave...
     cookies_file: str = ""           # cookies.txt Netscape; tem prioridade sobre o navegador
     extractor_args: str = ""         # ex.: youtube:player_client=default,web_safari

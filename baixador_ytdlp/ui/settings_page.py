@@ -19,8 +19,9 @@ from PySide6.QtWidgets import (QAbstractButton, QFileDialog, QGridLayout, QHBoxL
                                QLabel, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
 from ..config import APP_VERSION, Settings
-from ..cookies import EXPORT_INSTRUCTIONS, cookie_age_days, import_cookie_file
-from ..filename_preview import render_filename_preview
+from ..cookies import EXPORT_INSTRUCTIONS, cookie_age_days, cookie_sites, import_cookie_file
+from ..filename_preview import FILENAME_PRESETS, render_filename_preview
+from ..parallel_section import MAX_PIECES, WARN_PIECES
 from ..gpu import GPU_ENCODER_LABELS, GpuInfo
 from ..hardware import default_fragments, default_parallel_downloads, usable_cores
 from . import icons, theme
@@ -41,6 +42,13 @@ BROWSERS = [("Não usar cookies", ""),
             ("Opera — não funciona no Windows", "opera")]
 THEMES = [("Seguir o sistema", "auto"), ("Claro", "light"), ("Escuro", "dark")]
 UI_LANGUAGES = [("Português (Brasil)", "pt-BR"), ("English", "en")]
+SECTION_PARTS_HELP = (
+    "Quantos pedaços de um trecho longo do YouTube são baixados ao mesmo tempo. "
+    "1 desliga; o ganho some quando a sua internet já é o limite.")
+SECTION_PARTS_WARNING = (
+    "Atenção: números altos abrem muitas conexões e podem fazer o YouTube bloquear o seu "
+    "IP por um tempo (pedido de confirmação de robô).")
+
 PRESETS = [("p1 — mais rápido", "p1"), ("p4 — equilibrado", "p4"),
            ("p5 — recomendado", "p5"), ("p7 — mais lento e melhor", "p7")]
 
@@ -195,6 +203,7 @@ class SettingsPage(QWidget):
                        f"Quantos itens da fila rodam ao mesmo tempo (sugestão para esta "
                        f"máquina: {default_parallel_downloads()}).",
                        "max_parallel_downloads", 1, 6)
+        self._section_parts_row()
         self._line_row("Limite de banda", "Ex.: 5M para 5 MB/s. Vazio = sem limite.",
                        "limit_rate", "sem limite")
         self._section("Quando a conexão falhar")
@@ -454,8 +463,8 @@ class SettingsPage(QWidget):
     def _filter_settings(self, query: str) -> None:
         while self.results_layout.count():
             item = self.results_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            if item is not None and (widget := item.widget()):
+                widget.deleteLater()
         terms = _search_key(query).split()
         self.results.setVisible(bool(terms))
         self.cards_host.setVisible(not terms)
@@ -558,6 +567,28 @@ class SettingsPage(QWidget):
         stepper.valueChanged.connect(lambda v, k=key: self._set(k, int(v)))
         self._add_row(SettingRow(title, subtitle, stepper, self))
 
+    def _section_parts_row(self) -> None:
+        """Partes simultâneas de um trecho longo do YouTube, com aviso quando o número é alto."""
+        self.section_parts_stepper = Stepper(self)
+        self.section_parts_stepper.setRange(1, MAX_PIECES)
+        self.section_parts_stepper.setValue(int(self.cfg.section_parallel_parts))
+        self.section_parts_row = SettingRow(
+            "Partes simultâneas do trecho", SECTION_PARTS_HELP, self.section_parts_stepper, self)
+        self.section_parts_stepper.valueChanged.connect(self._section_parts_changed)
+        self._add_row(self.section_parts_row)
+        self._refresh_section_parts_warning()
+
+    def _section_parts_changed(self, value: int) -> None:
+        self._set("section_parallel_parts", int(value))
+        self._refresh_section_parts_warning()
+
+    def _refresh_section_parts_warning(self) -> None:
+        high = self.cfg.section_parallel_parts >= WARN_PIECES
+        subtitle = self.section_parts_row.subtitle
+        subtitle.setText(f"{SECTION_PARTS_HELP} {SECTION_PARTS_WARNING}" if high
+                         else SECTION_PARTS_HELP)
+        subtitle.setStyleSheet(f"color: {theme.color('warning')};" if high else "")
+
     def _line_row(self, title: str, subtitle: str, key: str, placeholder: str) -> None:
         edit = TextField(placeholder, self)
         edit.setFixedWidth(240)
@@ -595,15 +626,44 @@ class SettingsPage(QWidget):
         self.filename_template_edit.setMinimumWidth(240)
         self.filename_template_edit.setText(self.cfg.filename_template)
         self.filename_template_edit.textChanged.connect(self._refresh_template_preview)
+        self.filename_template_edit.textChanged.connect(self._sync_filename_presets)
         self.filename_template_edit.editingFinished.connect(
             lambda: self._set("filename_template", self.filename_template_edit.text().strip())
         )
-        row = SettingRow("Nome do arquivo", "Prévia do nome do arquivo", self.filename_template_edit, self)
+        # Modelos prontos; digitar um modelo próprio deixa o seletor sem escolha.
+        self.filename_presets = Select(self)
+        for label, template in FILENAME_PRESETS:
+            self.filename_presets.addItem(label, userData=template)
+        self.filename_presets.setMinimumWidth(230)
+        self.filename_presets.currentIndexChanged.connect(self._apply_filename_preset)
+        control = QWidget(self)
+        layout = QHBoxLayout(control)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        layout.addWidget(self.filename_presets)
+        layout.addWidget(self.filename_template_edit, 1)
+        row = SettingRow("Nome do arquivo", "Prévia do nome do arquivo", control, self)
         # A prévia acompanha o campo sem abrir uma seção alta de botões.
         self.filename_template_preview = row.subtitle
         self.filename_template_preview.setAccessibleName("Prévia do nome do arquivo")
+        self._sync_filename_presets()
         self._refresh_template_preview()
         self._add_row(row)
+
+    def _apply_filename_preset(self, index: int) -> None:
+        template = self.filename_presets.itemData(index)
+        if template and template != self.filename_template_edit.text().strip():
+            self.filename_template_edit.setText(template)
+        if template:
+            self._set("filename_template", template)
+
+    def _sync_filename_presets(self) -> None:
+        current = self.filename_template_edit.text().strip()
+        index = next((i for i in range(self.filename_presets.count())
+                      if self.filename_presets.itemData(i) == current), -1)
+        self.filename_presets.blockSignals(True)
+        self.filename_presets.setCurrentIndex(index)
+        self.filename_presets.blockSignals(False)
 
     def _insert_template_token(self, token: str) -> None:
         self.filename_template_edit.insert(token)
@@ -687,9 +747,11 @@ class SettingsPage(QWidget):
     def _cookies_file_row(self) -> None:
         """Arquivo cookies.txt: caminho, seletor e o passo a passo de exportação."""
         row, column = self._custom_row(
-            "Arquivo cookies.txt (só se o YouTube pedir)",
-            "Necessário apenas quando o YouTube exibir \"confirme que você não é um robô\" "
-            "(bloqueio temporário do IP, mais comum após muitos downloads seguidos). "
+            "Arquivo cookies.txt (YouTube, Instagram e outros)",
+            "Um arquivo só para todos os sites: importar o Instagram depois do YouTube (ou o "
+            "contrário) mantém os dois. Reimportar um site troca só os cookies dele. "
+            "YouTube: só quando ele exibir \"confirme que você não é um robô\" (bloqueio "
+            "temporário do IP). Instagram: obrigatório para stories. "
             "Tem prioridade sobre o navegador e o conteúdo nunca é copiado para os logs.")
 
         line = QHBoxLayout()
@@ -791,7 +853,7 @@ class SettingsPage(QWidget):
                 "Não parece um cookies.txt no formato Netscape. Reexporte com uma "
                 "extensão que gere esse formato.", ok=False)
             return
-        domains = "youtube.com" in head or "google.com" in head
+        sites = cookie_sites(target.read_text(encoding="utf-8", errors="replace"))
         age = cookie_age_days(target)
         if age > 14:
             self._set_status(
@@ -800,8 +862,9 @@ class SettingsPage(QWidget):
             )
         else:
             self._set_status(
-                (f"Arquivo válido, com cookies do YouTube (há {age} dia(s))." if domains
-                 else "Formato válido, mas sem cookies de youtube.com — confira a exportação."),
+                (f"Arquivo válido, com cookies de {', '.join(sites)} (há {age} dia(s))." if sites
+                 else "Formato válido, mas sem cookies de um site conhecido (YouTube, "
+                      "Instagram…) — confira a exportação."),
                 ok=True,
             )
 
