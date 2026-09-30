@@ -50,7 +50,13 @@ Validado em 30/09/2026 (yt-dlp 2026.08.19, Deno 2.9.7, `probe()` + `DownloadRunn
 | Instagram (reel) | sim | MP4 VP9 640x640 + AAC |
 | Facebook (`/share/r/`) | sim | MP4 AV1 1152x2048 + AAC |
 | Reddit (post e `packaged-media.redd.it`) | sim | MP4 H.264 360x640 + AAC pelo post; 270x480 + AAC pelo link direto (título e nome de arquivo ruins, veja abaixo) |
-| Instagram story | não testado | falta link (exige login) |
+| Instagram story | não (exige login) | com cookies, a análise funciona mas o download pelas linhas da tabela **falha** ("O formato escolhido não existe"); "Automático" baixa. Bug abaixo |
+
+Bug do story (30/09/2026): a URL `instagram.com/stories/<usuário>/<id>/` vira uma playlist com todos os
+stories da pessoa (2 itens no teste). A análise usa `--playlist-items 1` e mostra os formatos do primeiro
+story, mas o download vai para o story do link, cujos ids de formato são outros (`dash-…v`), então o
+seletor da linha não existe. Correção a decidir: na análise, escolher o item cujo id bate com o da URL
+(ou, para playlists de story, usar sempre o seletor automático) e cobrir com teste.
 
 Achados menores: o link direto `packaged-media.redd.it` gera o arquivo `m2-res_480p [m2-res_480p.mp4？m=DASHPlaylist].mp4` (título vazio e a query entra no id); no Facebook o título do post inteiro vira nome de arquivo (`122K views · 3.4K reactions ｜ …`).
 
