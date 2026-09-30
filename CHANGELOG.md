@@ -12,6 +12,10 @@ formato Keep a Changelog.
 
 ### Alterado
 
+- Story do Instagram: avisa na hora que exige login (cookies.txt ou Firefox) e a análise usa o story do link, 
+  em vez de mostrar formatos de outro story.
+- Configurações → cookies.txt vale para vários sites: a validação lista quais o arquivo cobre, o passo a passo
+  inclui o Instagram e importar outro site mescla com o que já estava no app.
 - PySide6 6.11.2, faster-whisper 1.2.1, huggingface-hub 0.36.2, certifi, send2trash 2.1.0 e
   setuptools 84; locks regenerados. `update_locks.sh` passou a resolver o macOS 14 (o mlx não
   tem wheels para o 13) e o manylinux_2_34 do PySide6 no Linux.
