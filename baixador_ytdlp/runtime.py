@@ -37,7 +37,7 @@ PYPI_INDEX = "https://pypi.org/simple"
 # cuDNN 9: embutir cuDNN 8 com ele fazia a transcrição cair para CPU sem aviso.
 # O wheel do CTranslate2 4.8.2 traz o cudnn64_9.dll 9.10.2.21; as
 # sub-bibliotecas vêm do pacote NVIDIA e precisam ser da mesma versão.
-PACKAGES = ("faster-whisper==1.1.1", "ctranslate2==4.8.2")
+PACKAGES = ("faster-whisper==1.2.1", "ctranslate2==4.8.2")
 CUDA_PACKAGES = (
     "nvidia-cuda-runtime-cu12==12.8.90",
     "nvidia-cublas-cu12==12.8.4.1",
