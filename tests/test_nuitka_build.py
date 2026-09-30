@@ -31,9 +31,27 @@ class NuitkaBuildTests(unittest.TestCase):
             encoding="utf-8"
         )
         for distribution in (
-            "faster-whisper", "ctranslate2", "av", "onnxruntime", "tokenizers", "huggingface-hub",
+            "faster-whisper", "ctranslate2", "av", "onnxruntime", "tokenizers", "huggingface_hub",
         ):
             self.assertIn(f"--include-distribution-metadata={distribution}", build_script)
+
+    def test_metadados_usam_o_nome_canonico_da_distribuicao(self) -> None:
+        # O Nuitka ignora (só avisa) quando o nome pedido difere do nome real da
+        # distribuição: com o huggingface-hub 0.36 o nome virou huggingface_hub e o
+        # executável saiu sem metadados.
+        from importlib import metadata
+
+        root = Path(__file__).resolve().parents[1]
+        for path in (root / "build.ps1", root / ".github" / "workflows" / "build.yml"):
+            content = path.read_text(encoding="utf-8")
+            for distribution in ("faster-whisper", "ctranslate2", "av", "onnxruntime",
+                                 "tokenizers", "huggingface-hub"):
+                try:
+                    real_name = metadata.metadata(distribution)["Name"]
+                except metadata.PackageNotFoundError:
+                    continue
+                self.assertIn(f"--include-distribution-metadata={real_name}", content,
+                              f"{path.name}: {distribution}")
 
     def test_build_inclui_todos_os_dados_do_faster_whisper(self) -> None:
         root = Path(__file__).resolve().parents[1]
