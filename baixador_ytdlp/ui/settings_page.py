@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (QAbstractButton, QFileDialog, QGridLayout, QHBoxL
                                QLabel, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
 from ..config import APP_VERSION, Settings
-from ..cookies import EXPORT_INSTRUCTIONS, cookie_age_days, import_cookie_file
+from ..cookies import EXPORT_INSTRUCTIONS, cookie_age_days, cookie_sites, import_cookie_file
 from ..filename_preview import render_filename_preview
 from ..gpu import GPU_ENCODER_LABELS, GpuInfo
 from ..hardware import default_fragments, default_parallel_downloads, usable_cores
@@ -687,9 +687,10 @@ class SettingsPage(QWidget):
     def _cookies_file_row(self) -> None:
         """Arquivo cookies.txt: caminho, seletor e o passo a passo de exportação."""
         row, column = self._custom_row(
-            "Arquivo cookies.txt (só se o YouTube pedir)",
-            "Necessário apenas quando o YouTube exibir \"confirme que você não é um robô\" "
-            "(bloqueio temporário do IP, mais comum após muitos downloads seguidos). "
+            "Arquivo cookies.txt (YouTube, Instagram e outros)",
+            "YouTube: só quando ele exibir \"confirme que você não é um robô\" (bloqueio "
+            "temporário do IP). Instagram: obrigatório para stories. Um arquivo serve para vários "
+            "sites: ao importar outro site, os que já estavam no app continuam. "
             "Tem prioridade sobre o navegador e o conteúdo nunca é copiado para os logs.")
 
         line = QHBoxLayout()
@@ -791,7 +792,7 @@ class SettingsPage(QWidget):
                 "Não parece um cookies.txt no formato Netscape. Reexporte com uma "
                 "extensão que gere esse formato.", ok=False)
             return
-        domains = "youtube.com" in head or "google.com" in head
+        sites = cookie_sites(target.read_text(encoding="utf-8", errors="replace"))
         age = cookie_age_days(target)
         if age > 14:
             self._set_status(
@@ -800,8 +801,9 @@ class SettingsPage(QWidget):
             )
         else:
             self._set_status(
-                (f"Arquivo válido, com cookies do YouTube (há {age} dia(s))." if domains
-                 else "Formato válido, mas sem cookies de youtube.com — confira a exportação."),
+                (f"Arquivo válido, com cookies de {', '.join(sites)} (há {age} dia(s))." if sites
+                 else "Formato válido, mas sem cookies de um site conhecido (YouTube, "
+                      "Instagram…) — confira a exportação."),
                 ok=True,
             )
 
