@@ -387,6 +387,11 @@ def _friendly_error_pt(detail: str) -> str:
         return ("O FFmpeg encontrou dados inválidos no arquivo (parte danificada ou download "
                 "incompleto). Baixe de novo ou escolha outro formato.")
 
+    # Ferramentas de mídia num arquivo sem a faixa que precisam (vídeo num MP3, por exemplo).
+    if "matches no streams" in low or "does not contain any stream" in low:
+        return ("Este arquivo não tem a faixa que a ferramenta precisa (por exemplo, imagem em "
+                "um arquivo só de áudio). Escolha outro arquivo ou outra ferramenta.")
+
     code = re.search(r"ffmpeg exited with code (-?\d+)", low)
     if code:
         return (f"O FFmpeg terminou com erro (código {code.group(1)}). Tente de novo; se repetir, "

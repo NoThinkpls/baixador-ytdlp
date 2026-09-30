@@ -22,6 +22,11 @@ class FfmpegErrorTests(unittest.TestCase):
         self.assertIn("FFmpeg terminou com erro (código 1)", message)
         self.assertIn("diagnóstico", message)
 
+    def test_ferramenta_em_arquivo_sem_a_faixa_necessaria(self) -> None:
+        for text in ("Stream map '0:v:0' matches no streams.",
+                     "Output file #0 does not contain any stream"):
+            self.assertIn("não tem a faixa", friendly_error(text), text)
+
     def test_disco_cheio(self) -> None:
         for text in ("OSError: [Errno 28] No space left on device",
                      "[WinError 112] There is not enough space on the disk",

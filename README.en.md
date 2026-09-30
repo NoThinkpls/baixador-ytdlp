@@ -74,7 +74,7 @@ and video tools. Free, open source, and nothing leaves your computer.
 
 ### Video tools
 
-- Trim, extract audio, remux without quality loss, shrink, **fit under a size limit** (Discord, WhatsApp, email), create vertical video and add subtitles.
+- 16 tools in five groups: trim, **change speed**, rotate/flip and vertical video (Shorts/Reels); extract audio (MP3, M4A, Opus, FLAC, WAV), **normalize volume** and remove audio; **convert to MP4 or WebM**, remux without loss, shrink and **fit under a size limit** (Discord, WhatsApp, email); **make GIFs** and **capture a frame**; add and **extract subtitles** and **strip metadata** (GPS, title, camera).
 - Conversion through **NVENC, AMF or VideoToolbox** when available, falling back to the CPU if the GPU fails. The original file is never modified.
 
 <div align="center">
