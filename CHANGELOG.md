@@ -12,6 +12,10 @@ formato Keep a Changelog.
 
 ### Alterado
 
+- Configurações → Rede e desempenho → "Partes simultâneas do trecho" (1 a 8, padrão 4; 1 desliga): 
+  antes eram sempre até 6. Do 5 em diante a tela avisa que o YouTube pode bloquear o IP por um tempo.
+- Nome do arquivo: seletor de modelos (Título [id], Plataforma - data - título [id] e Só o título) 
+  e título do Facebook sem o contador de views.
 - Story do Instagram: avisa na hora que exige login (cookies.txt ou Firefox) e a análise usa o story do link, 
   em vez de mostrar formatos de outro story.
 - Configurações → cookies.txt vale para vários sites: a validação lista quais o arquivo cobre, o passo a passo
