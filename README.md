@@ -62,6 +62,7 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 - Fila persistente com **pausar e retomar**, retomada de arquivos parciais e novas tentativas automáticas.
 - Capa, metadados e capítulos também em áudio; organização de músicas por canal/artista.
 - Canal *nightly* do yt-dlp opcional, para correções de sites antes da versão estável.
+- Além do YouTube: Instagram, X, TikTok, Facebook, Reddit, Vimeo, Twitch, SoundCloud e outros sites que o yt-dlp cobre, com avisos de erro que citam o site certo. Stories do Instagram e conteúdo restrito pedem login: o aviso aparece na hora e um único `cookies.txt` (ou o Firefox) serve para todos os sites; importar um depois do outro mantém ambos.
 
 ### Legendas e transcrição
 

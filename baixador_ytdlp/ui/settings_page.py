@@ -688,9 +688,10 @@ class SettingsPage(QWidget):
         """Arquivo cookies.txt: caminho, seletor e o passo a passo de exportação."""
         row, column = self._custom_row(
             "Arquivo cookies.txt (YouTube, Instagram e outros)",
+            "Um arquivo só para todos os sites: importar o Instagram depois do YouTube (ou o "
+            "contrário) mantém os dois. Reimportar um site troca só os cookies dele. "
             "YouTube: só quando ele exibir \"confirme que você não é um robô\" (bloqueio "
-            "temporário do IP). Instagram: obrigatório para stories. Um arquivo serve para vários "
-            "sites: ao importar outro site, os que já estavam no app continuam. "
+            "temporário do IP). Instagram: obrigatório para stories. "
             "Tem prioridade sobre o navegador e o conteúdo nunca é copiado para os logs.")
 
         line = QHBoxLayout()
