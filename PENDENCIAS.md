@@ -1,6 +1,6 @@
 # Pendências
 
-Estado em 30/09/2026: versão **1.13.0** publicada. As rodadas 1 a 3 do
+Estado em 30/09/2026: versão **1.13.1** publicada. As rodadas 1 a 3 do
 `docs/PLANO-DE-CORRECOES.md` estão feitas e publicadas (1.12.0 a 1.12.8). O
 Windows compila com Nuitka; o PyInstaller é só contingência. O GitHub Actions
 compila as três plataformas e publica a release quando todas passam.
@@ -8,13 +8,16 @@ compila as três plataformas e publica a release quando todas passam.
 Contexto: `docs/PLANO-DE-CORRECOES.md` (auditoria e status), `CLAUDE.md`
 (decisões e convenções) e `docs/PLANO-OTIMIZACAO-PLATAFORMAS.md` (próximas melhorias).
 
-## 1.13.0 publicada (30/09/2026)
+## 1.13.1 publicada (30/09/2026)
 
 Release https://github.com/NoThinkpls/baixador-ytdlp/releases/tag/v1.13.0 (PR 33, build da `main`
 run 36655719334: Windows/Nuitka, macOS, Linux e teste de janela real verdes). Nove ferramentas de
 mídia novas e formatos extras de áudio. Na validação foram corrigidos: cartões de ferramentas que
 cortavam a descrição com "…" (agora crescem com a largura e `wrap_lines` não elide o que cabe) e o
 worker que quebrava com `out_time=N/A` ao converter para WebM.
+
+A 1.13.1 (PR 34) transformou a aba Ferramentas em hub com uma página por ferramenta, como em
+Configurações; a 1.13.0 foi publicada antes dessa mudança e continua como está.
 
 A release saiu sem `.sig` Ed25519: `RELEASE_SIGNING_KEY` não está configurado e `RELEASE_PUBLIC_KEYS`
 está vazia (igual à 1.12.8). Ver o item de assinatura Ed25519 abaixo para ativar.
