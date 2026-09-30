@@ -193,7 +193,10 @@ def wrap_lines(text: str, metrics: QFontMetrics, width: int, max_lines: int = 2)
     lines.append(current)
     if len(lines) > max_lines:
         lines = lines[:max_lines]
-    lines[-1] = metrics.elidedText(lines[-1], Qt.TextElideMode.ElideRight, width)
+    # elidedText pode elidar uma linha que cabe por exatamente 1 px (arredondamento e kerning
+    # diferem de horizontalAdvance em cada plataforma); só elida o que de fato passa da largura.
+    if metrics.horizontalAdvance(lines[-1]) > width:
+        lines[-1] = metrics.elidedText(lines[-1], Qt.TextElideMode.ElideRight, width)
     return lines
 
 

@@ -50,6 +50,21 @@ class InterfaceAcabamentoTests(unittest.TestCase):
                                         37 + len(lines) * line_height, (key, width))
                 card.deleteLater()
 
+    def test_wrap_lines_does_not_elide_a_line_that_fits_exactly(self) -> None:
+        class Metrics:
+            """Mede como o Qt em Linux/macOS: elidedText é mais rígido que horizontalAdvance."""
+            def horizontalAdvance(self, text: str) -> int:  # noqa: N802
+                return len(text) * 7
+
+            def elidedText(self, text: str, _mode, width: int) -> str:  # noqa: N802
+                return text if len(text) * 7 < width else text[: max(0, width // 7 - 1)] + "…"
+
+        text = "aaaa bbbb cccc"   # 14 caracteres = 98 px
+        for width in (98, 99, 105):
+            lines = wrap_lines(text, Metrics(), width, max_lines=3)  # type: ignore[arg-type]
+            self.assertEqual(" ".join(lines), text, width)
+        self.assertTrue(wrap_lines("palavra " * 40, Metrics(), 98, max_lines=2)[-1].endswith("…"))  # type: ignore[arg-type]
+
     def test_wrap_lines_elides_only_when_text_really_overflows(self) -> None:
         metrics = QFontMetrics(theme.footnote())
         lines = wrap_lines("palavra " * 40, metrics, 120, max_lines=2)
