@@ -178,6 +178,18 @@ def time_seconds(value: str) -> float:
     return seconds
 
 
+def progress_seconds(line: str) -> float | None:
+    """Segundos de uma linha ``out_time=`` do ``-progress``; ``None`` se ainda não há tempo.
+
+    O FFmpeg escreve ``out_time=N/A`` antes do primeiro quadro (comum ao gerar WebM/VP9)."""
+    if not line.startswith("out_time="):
+        return None
+    try:
+        return time_seconds(line.partition("=")[2])
+    except ValueError:
+        return None
+
+
 def media_duration(source: Path, toolchain: Toolchain) -> float:
     """Lê a duração fora da UI; falha apenas torna o progresso indeterminado."""
     try:

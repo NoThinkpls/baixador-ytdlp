@@ -309,6 +309,23 @@ class RealFfmpegTests(unittest.TestCase):
         self.assertAlmostEqual(_seconds(self.run_tool("speed", "v4.mp4", choice="4")[1]), 1.5, delta=0.1)
         self.assertAlmostEqual(_seconds(self.run_tool("speed", "v05.mp4", choice="0.5")[1]), 12.0, delta=0.2)
 
+    def test_worker_converte_para_webm_apesar_do_progresso_sem_tempo(self) -> None:
+        """O FFmpeg escreve ``out_time=N/A`` antes do primeiro quadro do VP9; o worker travava."""
+        from baixador_ytdlp.media_tools import progress_seconds
+        from baixador_ytdlp.workers import MediaToolWorker
+        self.assertIsNone(progress_seconds("out_time=N/A"))
+        self.assertIsNone(progress_seconds("frame=3"))
+        self.assertAlmostEqual(progress_seconds("out_time=00:00:02.500000") or 0, 2.5)
+        destination = self.root / "worker.webm"
+        worker = MediaToolWorker(MediaToolOptions(self.source, destination, "convert", choice="webm"),
+                                 self.tc)
+        outcome: dict[str, str] = {}
+        worker.finished_ok.connect(lambda path: outcome.update(ok=path))
+        worker.failed.connect(lambda message: outcome.update(failed=message))
+        worker.run()
+        self.assertNotIn("failed", outcome)
+        self.assertTrue(destination.stat().st_size > 0)
+
     def test_remover_audio(self) -> None:
         _, info = self.run_tool("mute", "mudo.mp4")
         self.assertIn("Video:", info)
