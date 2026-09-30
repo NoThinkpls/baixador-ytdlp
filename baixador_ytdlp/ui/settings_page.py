@@ -463,8 +463,8 @@ class SettingsPage(QWidget):
     def _filter_settings(self, query: str) -> None:
         while self.results_layout.count():
             item = self.results_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            if item is not None and (widget := item.widget()):
+                widget.deleteLater()
         terms = _search_key(query).split()
         self.results.setVisible(bool(terms))
         self.cards_host.setVisible(not terms)
