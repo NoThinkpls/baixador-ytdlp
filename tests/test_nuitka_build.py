@@ -53,6 +53,20 @@ class NuitkaBuildTests(unittest.TestCase):
                 self.assertIn(f"--include-distribution-metadata={real_name}", content,
                               f"{path.name}: {distribution}")
 
+    def test_autoteste_consulta_as_versoes_pelo_nome_real_da_distribuicao(self) -> None:
+        # No executável do Nuitka a consulta ao importlib.metadata casa o nome exato
+        # da metadata incluída; "huggingface-hub" falhava com PackageNotFoundError.
+        from importlib import metadata
+
+        main_source = (Path(__file__).resolve().parents[1] / "main.py").read_text(encoding="utf-8")
+        for distribution in ("faster-whisper", "ctranslate2", "av", "onnxruntime",
+                             "tokenizers", "huggingface-hub"):
+            try:
+                real_name = metadata.metadata(distribution)["Name"]
+            except metadata.PackageNotFoundError:
+                continue
+            self.assertIn(f'"{real_name}"', main_source, distribution)
+
     def test_build_inclui_todos_os_dados_do_faster_whisper(self) -> None:
         root = Path(__file__).resolve().parents[1]
         for path in (root / "build.ps1", root / ".github" / "workflows" / "build.yml"):
