@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .cookies import is_cookie_source_failure
-from .sites import LOGIN_MARKERS, login_hint, rate_limit_hint, site_from_error
+from .sites import LOGIN_MARKERS, is_single_story, login_hint, rate_limit_hint, site_from_error
 from .processes import popen_isolated, terminate_process_tree
 from .tools import decode_external_output
 from .diagnostics import log_event
@@ -296,7 +296,9 @@ def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = 
     # --playlist-items 1: a análise extrai os formatos de UM vídeo, não dos N da
     # playlist. Sem isso, uma playlist de 200 itens levava minutos e centenas de
     # requisições só para montar a tabela de qualidades do primeiro vídeo.
-    request = ["-J", "--playlist-items", "1", "--", url]
+    # Story do Instagram com id é exceção: o item 1 é outro story, com outros formatos.
+    scope = ["--no-playlist"] if is_single_story(url) else ["--playlist-items", "1"]
+    request = ["-J", *scope, "--", url]
     try:
         data = _run_json(base + request, timeout, env)
     except ProbeError as exc:
