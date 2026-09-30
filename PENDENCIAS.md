@@ -47,7 +47,12 @@ Validado em 30/09/2026 (yt-dlp 2026.08.19, Deno 2.9.7, `probe()` + `DownloadRunn
 | SoundCloud | sim (link curto `on.soundcloud.com`) | MP3 128 kbps |
 | Twitch (VOD, 30 min) | sim | MP4 H.264 1080p + AAC, 15x o tempo real em uma conexão |
 | Vimeo | não | aviso correto: "Vimeo pediu login…". Com o cookies.txt indicado seguiu igual, porque ele só tem 1 cookie de vimeo.com (sem sessão logada) |
-| Instagram, Facebook, Reddit | não testado | faltam links de teste |
+| Instagram (reel) | sim | MP4 VP9 640x640 + AAC |
+| Facebook (`/share/r/`) | sim | MP4 AV1 1152x2048 + AAC |
+| Reddit (post e `packaged-media.redd.it`) | sim | MP4 H.264 360x640 + AAC pelo post; 270x480 + AAC pelo link direto (título e nome de arquivo ruins, veja abaixo) |
+| Instagram story | não testado | falta link (exige login) |
+
+Achados menores: o link direto `packaged-media.redd.it` gera o arquivo `m2-res_480p [m2-res_480p.mp4？m=DASHPlaylist].mp4` (título vazio e a query entra no id); no Facebook o título do post inteiro vira nome de arquivo (`122K views · 3.4K reactions ｜ …`).
 
 Trecho em partes paralelas: funciona só no YouTube (`baixador_ytdlp/parallel_section.py`).
 Medição em 30/09/2026 (mesma live de 30 min, 1080p): YouTube 74-83 s em partes paralelas contra
