@@ -50,7 +50,7 @@ _BY_KEY = {site.key: site for site in SITES}
 _TAG_RE = re.compile(r"\[([A-Za-z0-9:_-]+)\]")
 
 
-def _host_matches(host: str, domain: str) -> bool:
+def host_matches(host: str, domain: str) -> bool:
     return host == domain or host.endswith("." + domain)
 
 
@@ -62,7 +62,7 @@ def site_from_url(url: str) -> Site | None:
     if not host:
         return None
     return next((site for site in SITES
-                 if any(_host_matches(host, domain) for domain in site.hosts)), None)
+                 if any(host_matches(host, domain) for domain in site.hosts)), None)
 
 
 _STORY_PATH = re.compile(r"^/stories/[^/]+/(\d+)/?$")
