@@ -108,7 +108,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/baixador-ytdlp-nuitka-cache
-          key: nuitka-${{ runner.os }}-${{ hashFiles('requirements/requirements-windows.lock', 'requirements/requirements-build-windows.lock', 'nuitka-package.config.yml') }}-v1
+          key: nuitka-${{ runner.os }}-${{ hashFiles('requirements/requirements-windows.lock', 'requirements/requirements-build-windows.lock', 'packaging/nuitka-package.config.yml') }}-v1
           restore-keys: |
             nuitka-${{ runner.os }}-
 
@@ -131,7 +131,7 @@ jobs:
             --file-description='Baixador YT-DLP' `
             --include-data-dir=assets=assets `
             --include-data-files=THIRD_PARTY_NOTICES.md=THIRD_PARTY_NOTICES.md `
-            --user-package-configuration-file=nuitka-package.config.yml `
+            --user-package-configuration-file=packaging/nuitka-package.config.yml `
             --include-package=nvidia.cuda_runtime `
             --include-package=nvidia.cublas `
             --include-package=nvidia.cudnn `

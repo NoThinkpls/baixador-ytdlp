@@ -18,7 +18,7 @@ class NuitkaBuildTests(unittest.TestCase):
         self.assertIn(root, roots)
 
     def test_configuracao_declara_dlls_cuda_dinamicas(self) -> None:
-        config = (Path(__file__).resolve().parents[1] / "nuitka-package.config.yml").read_text(
+        config = (Path(__file__).resolve().parents[1] / "packaging" / "nuitka-package.config.yml").read_text(
             encoding="utf-8"
         )
         for package in ("nvidia.cuda_runtime", "nvidia.cublas", "nvidia.cudnn"):
