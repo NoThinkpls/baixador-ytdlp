@@ -3,9 +3,9 @@ name: codeql
 on:
   push:
     branches: [main]
-    paths-ignore: ['docs/**', '**/*.md']
+    paths-ignore: ['docs/**', 'web/**', '**/*.md']
   pull_request:
-    paths-ignore: ['docs/**', '**/*.md']
+    paths-ignore: ['docs/**', 'web/**', '**/*.md']
   schedule:
     - cron: '41 5 * * 3'
 

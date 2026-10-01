@@ -6,9 +6,9 @@ on:
     tags: ['v*']
     # Só documentação: não vale uma build de ~20 min por job. A release depende da
     # versão do código, então um commit de texto nunca precisaria publicar nada.
-    paths-ignore: ['docs/**', '**/*.md', 'LICENSE']
+    paths-ignore: ['docs/**', 'web/**', '**/*.md', 'LICENSE']
   pull_request:
-    paths-ignore: ['docs/**', '**/*.md', 'LICENSE']
+    paths-ignore: ['docs/**', 'web/**', '**/*.md', 'LICENSE']
   workflow_dispatch:
 
 # Uma execução por ref: um push novo cancela o PR anterior, mas nunca uma execução
