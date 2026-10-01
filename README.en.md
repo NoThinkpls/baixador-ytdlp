@@ -10,7 +10,7 @@ A modern interface for [yt-dlp](https://github.com/yt-dlp/yt-dlp) with local Whi
 and video tools. Free, open source, and nothing leaves your computer.
 
 [![Version](https://img.shields.io/github/v/release/NoThinkpls/baixador-ytdlp?display_name=tag&label=version&color=5865F2)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/NoThinkpls/baixador-ytdlp/total?label=downloads&color=3BA55D)](https://github.com/NoThinkpls/baixador-ytdlp/releases)
+[![Last commit](https://img.shields.io/github/last-commit/NoThinkpls/baixador-ytdlp?label=last%20commit&color=3BA55D)](https://github.com/NoThinkpls/baixador-ytdlp/commits/main)
 [![Build](https://img.shields.io/github/actions/workflow/status/NoThinkpls/baixador-ytdlp/build.yml?branch=main&label=build)](https://github.com/NoThinkpls/baixador-ytdlp/actions)
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-0078D4)](#-download)
 [![MIT License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)

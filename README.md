@@ -10,7 +10,7 @@ Interface moderna para o [yt-dlp](https://github.com/yt-dlp/yt-dlp), com transcr
 e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuvem.
 
 [![Versão](https://img.shields.io/github/v/release/NoThinkpls/baixador-ytdlp?display_name=tag&label=vers%C3%A3o&color=5865F2)](https://github.com/NoThinkpls/baixador-ytdlp/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/NoThinkpls/baixador-ytdlp/total?label=downloads&color=3BA55D)](https://github.com/NoThinkpls/baixador-ytdlp/releases)
+[![Último commit](https://img.shields.io/github/last-commit/NoThinkpls/baixador-ytdlp?label=%C3%BAltimo%20commit&color=3BA55D)](https://github.com/NoThinkpls/baixador-ytdlp/commits/main)
 [![Build](https://img.shields.io/github/actions/workflow/status/NoThinkpls/baixador-ytdlp/build.yml?branch=main&label=build)](https://github.com/NoThinkpls/baixador-ytdlp/actions)
 [![Plataformas](https://img.shields.io/badge/plataformas-Windows%20%7C%20macOS%20%7C%20Linux-0078D4)](#-download)
 [![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-lightgrey)](LICENSE)
