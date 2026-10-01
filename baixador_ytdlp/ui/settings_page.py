@@ -18,7 +18,7 @@ from PySide6.QtGui import QDesktopServices, QPainter, QPen
 from PySide6.QtWidgets import (QAbstractButton, QFileDialog, QGridLayout, QHBoxLayout,
                                QLabel, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
-from ..config import APP_VERSION, Settings, is_valid_rate_limit
+from ..config import APP_VERSION, Settings, is_valid_rate_limit, usable_extractor_args
 from ..cookies import EXPORT_INSTRUCTIONS, cookie_age_days, cookie_sites, import_cookie_file
 from ..filename_preview import FILENAME_PRESETS, render_filename_preview
 from ..parallel_section import MAX_PIECES, WARN_PIECES
@@ -602,6 +602,12 @@ class SettingsPage(QWidget):
             # O yt-dlp recusa o valor e todo download falharia; volta ao que estava salvo.
             Toast.warning("Limite de banda inválido",
                           "Use um número com unidade, como 5M, 500K ou 1.5M.",
+                          parent=self.window(), duration=6000)
+            edit.setText(str(getattr(self.cfg, key)))
+            return
+        if key == "extractor_args" and value and not usable_extractor_args(value):
+            Toast.warning("Argumentos do extrator inválidos",
+                          "Use o formato extrator:chave=valor, como youtube:player_client=web.",
                           parent=self.window(), duration=6000)
             edit.setText(str(getattr(self.cfg, key)))
             return

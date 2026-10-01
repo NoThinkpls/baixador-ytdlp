@@ -8,6 +8,7 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .config import usable_extractor_args
 from .cookies import is_cookie_source_failure
 from .sites import (
     LOGIN_MARKERS, is_single_story, login_hint, login_required_message, rate_limit_hint,
@@ -274,7 +275,7 @@ def playlist_entries(url: str, ytdlp: Path, cookies_browser: str = "", cookies_f
             "--socket-timeout", "20"]
     if proxy:
         args += ["--proxy", proxy]
-    if extractor_args:
+    if extractor_args := usable_extractor_args(extractor_args):
         args += ["--extractor-args", extractor_args]
     args += _cookie_args(cookies_browser, cookies_file)
     data = _run_json(args + ["-J", "--flat-playlist", "--", url], timeout, env)
@@ -295,7 +296,7 @@ def probe(url: str, ytdlp: Path, cookies_browser: str = "", cookies_file: str = 
               "--socket-timeout", "20"]
     if proxy:
         common += ["--proxy", proxy]
-    if extractor_args:
+    if extractor_args := usable_extractor_args(extractor_args):
         common += ["--extractor-args", extractor_args]
 
     base, note = common + cookies, ""

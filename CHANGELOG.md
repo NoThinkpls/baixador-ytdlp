@@ -38,12 +38,17 @@ formato Keep a Changelog.
 - Tamanhos: 1023,6 KB aparecia como "1024 KB" (e 1 GB menos 1 byte como "1024.00 MB").
 - Limite de banda: um valor que o yt-dlp recusa (`abc`) fazia todo download falhar com "invalid rate
   limit". Configurações agora recusa o valor com aviso e o download ignora um valor inválido já salvo.
+- Preparação do ambiente: `tools_state.json` com JSON válido que não é objeto (`[]`, `null`) derrubava
+  a preparação com `AttributeError` em toda abertura; agora o estado volta vazio e é regravado.
+- Argumentos do extrator: um valor que o yt-dlp recusa (`lixo`, sem `extrator:`) fazia toda análise e
+  todo download falhar com "wrong --extractor-args form". Configurações recusa o valor com aviso e
+  análise/download ignoram um valor inválido já salvo.
 
 ### Testes
 
 - `tests/test_integracao_real.py`: valida toda combinação de opções de `build_args` com o parser do
   próprio yt-dlp e executa cada ferramenta de mídia com o FFmpeg real (caminhos com `'`, `[ ]`, `,`, `;`).
-- `tests/test_bugs_caca_1132.py` e `tests/test_bugs_rodada2.py`, `tests/test_bugs_rodada3.py`: regressões dos itens acima.
+- `tests/test_bugs_caca_1132.py` e `tests/test_bugs_rodada2.py`, `tests/test_bugs_rodada3.py`, `tests/test_bugs_rodada4.py`: regressões dos itens acima.
 
 ## [1.13.2] - 2026-09-30
 

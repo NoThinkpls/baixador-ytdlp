@@ -106,6 +106,19 @@ def is_valid_rate_limit(value: str) -> bool:
     return bool(_RATE_LIMIT_RE.fullmatch((value or "").strip()))
 
 
+_EXTRACTOR_ARGS_RE = re.compile(r"[A-Za-z0-9_-]+:.*")
+
+
+def usable_extractor_args(value: str) -> str:
+    """O valor de ``--extractor-args`` se o yt-dlp o aceita (``extrator:chave=valor``), senão vazio.
+
+    Sem os dois pontos (``lixo``) ele aborta com "wrong --extractor-args form" e toda análise
+    e todo download falhariam até a pessoa achar o campo nas Configurações.
+    """
+    text = (value or "").strip()
+    return text if _EXTRACTOR_ARGS_RE.fullmatch(text) else ""
+
+
 def default_download_dir() -> str:
     """Pasta padrão de saída: Vídeos/baixador-ytdlp (ou ~/Videos fora do Windows)."""
     if IS_WINDOWS:

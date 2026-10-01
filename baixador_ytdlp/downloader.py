@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Callable
 
-from .config import IS_WINDOWS, Settings, is_valid_rate_limit
+from .config import IS_WINDOWS, Settings, is_valid_rate_limit, usable_extractor_args
 from .cookies import cookie_args
 from .processes import popen_isolated, terminate_process_tree
 from .tools import CREATE_NO_WINDOW, Toolchain, decode_external_output, run_hidden
@@ -211,8 +211,10 @@ def build_args(
     if cfg.sponsorblock:
         args += ["--sponsorblock-remove", "sponsor,selfpromo,interaction"]
     args += cookie_args(cfg)
-    if cfg.extractor_args:
-        args += ["--extractor-args", cfg.extractor_args]
+    if extractor := usable_extractor_args(cfg.extractor_args):
+        args += ["--extractor-args", extractor]
+    elif cfg.extractor_args.strip():
+        log_event("Argumentos de extrator inválidos ignorados: %r", cfg.extractor_args)
     if cfg.limit_rate.strip():
         if is_valid_rate_limit(cfg.limit_rate):
             args += ["--limit-rate", cfg.limit_rate.strip()]
