@@ -69,7 +69,7 @@ nova · **H** manutenção.
 | U8 | `876d575` | Avisos, estados e erros amigáveis respeitam o idioma inglês. |
 | M1 | `0e3b629` | Windows instala yt-dlp do ZIP oficial em pasta, com hashes do ZIP e de cada arquivo. |
 
-Ver `PENDENCIAS.md` na raiz para H2, validação final e publicação da 1.12.0.
+Ver `PENDENCIAS.md` (nesta pasta) para H2, validação final e publicação da 1.12.0.
 
 ## Uso de GPU por etapa (decisão)
 

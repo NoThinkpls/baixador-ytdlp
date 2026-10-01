@@ -31,7 +31,7 @@ def _pins(text: str) -> dict[str, str]:
 class CudaStackTests(unittest.TestCase):
     def setUp(self) -> None:
         self.requirements = _pins((ROOT / "requirements.txt").read_text(encoding="utf-8"))
-        self.lock = _pins((ROOT / "requirements-windows.lock").read_text(encoding="utf-8"))
+        self.lock = _pins((ROOT / "requirements/requirements-windows.lock").read_text(encoding="utf-8"))
 
     def test_major_do_cudnn_segue_o_ctranslate2(self) -> None:
         self.assertEqual(runtime.required_cudnn_major("4.4.0"), 8)

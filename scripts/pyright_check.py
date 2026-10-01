@@ -1,7 +1,7 @@
 """Verificação de tipos com pyright (modo básico) em catraca.
 
 O código já tinha dezenas de avisos herdados (Qt, ctypes, atributos opcionais). Em vez de
-bloquear tudo de uma vez, o CI falha só para erros NOVOS em relação a ``pyright-baseline.json``;
+bloquear tudo de uma vez, o CI falha só para erros NOVOS em relação a ``scripts/pyright-baseline.json``;
 o que for corrigido some da linha de base com ``--update``.
 
 Uso: python scripts/pyright_check.py [--update]
@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BASELINE = ROOT / "pyright-baseline.json"
+BASELINE = ROOT / "scripts" / "pyright-baseline.json"
 
 
 def fingerprint(item: dict) -> str:
