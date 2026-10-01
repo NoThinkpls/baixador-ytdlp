@@ -22,13 +22,13 @@ jobs:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: |
-            requirements-linux.txt
-            requirements-security.txt
+            requirements/requirements-linux.txt
+            requirements/requirements-security.txt
       - name: Auditar vulnerabilidades conhecidas
         run: |
-          python -m pip install -r requirements-security.txt
+          python -m pip install -r requirements/requirements-security.txt
           # Os locks cobrem também as dependências transitivas dos três sistemas.
-          for requirements in requirements-windows.lock requirements-macos.lock requirements-linux.lock; do
+          for requirements in requirements/requirements-windows.lock requirements/requirements-macos.lock requirements/requirements-linux.lock; do
             echo "::group::pip-audit $requirements"
             python -m pip_audit --disable-pip -r "$requirements" --no-deps || status=1
             echo "::endgroup::"
@@ -79,9 +79,9 @@ jobs:
           python -m pip install uv==0.11.7
           python - <<'PY'
           import re, subprocess, sys
-          pairs = {"requirements.txt": "requirements-windows.lock",
-                   "requirements-macos.txt": "requirements-macos.lock",
-                   "requirements-linux.txt": "requirements-linux.lock"}
+          pairs = {"requirements.txt": "requirements/requirements-windows.lock",
+                   "requirements/requirements-macos.txt": "requirements/requirements-macos.lock",
+                   "requirements/requirements-linux.txt": "requirements/requirements-linux.lock"}
           failed = False
           for source, lock in pairs.items():
               wanted = {m.group(1).lower(): m.group(2) for m in

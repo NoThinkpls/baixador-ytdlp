@@ -31,7 +31,7 @@ PYPI_INDEX = "https://pypi.org/simple"
 
 # O faster-whisper roda sobre CTranslate2, sem PyTorch.
 #
-# Estas versões espelham ``requirements.txt`` e ``requirements-windows.lock``
+# Estas versões espelham ``requirements.txt`` e ``requirements/requirements-windows.lock``
 # (tests/test_cuda_stack.py garante isso). As DLLs CUDA são embarcadas a partir
 # do que está instalado na máquina de build. Desde a 4.5 o CTranslate2 usa
 # cuDNN 9: embutir cuDNN 8 com ele fazia a transcrição cair para CPU sem aviso.

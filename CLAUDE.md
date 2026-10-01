@@ -7,7 +7,7 @@ transcrição local com faster-whisper (CTranslate2) e ferramentas de vídeo.
 
 Siga `docs/PLANO-DE-CORRECOES.md`: auditoria completa da v1.10.10 com status de
 cada item. As rodadas 1 e 2 e a parte funcional da 3 estão feitas na versão
-candidata 1.12.0. A validação e a publicação estão em `PENDENCIAS.md`.
+candidata 1.12.0. A validação e a publicação estão em `docs/PENDENCIAS.md`.
 
 ## Decisões do mantenedor (não reabrir)
 

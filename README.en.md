@@ -124,7 +124,7 @@ Planned next (Intel QSV, VAAPI, hardware decoding, parallel cuts): [`docs/PLANO-
 
 ```bash
 python -m venv .venv
-.venv/Scripts/pip install -r requirements-windows.lock   # or requirements-macos/linux
+.venv/Scripts/pip install -r requirements/requirements-windows.lock   # or requirements-macos/linux
 python main.py                                            # run the app
 python -m unittest discover -s tests                      # tests (QT_QPA_PLATFORM=offscreen)
 ruff check .

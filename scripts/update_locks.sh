@@ -9,10 +9,10 @@ cd "$(dirname "$0")/.."
 export MACOSX_DEPLOYMENT_TARGET=14.0
 compile() { uv pip compile "$1" --generate-hashes --python-platform "$2" \
               --python-version 3.12 --no-header --quiet -o "$3"; }
-compile requirements.txt        x86_64-pc-windows-msvc   requirements-windows.lock
-compile requirements-macos.txt  aarch64-apple-darwin     requirements-macos.lock
-compile requirements-linux.txt  x86_64-manylinux_2_34    requirements-linux.lock
-compile requirements-build.txt  x86_64-pc-windows-msvc   requirements-build-windows.lock
-compile requirements-build.txt  aarch64-apple-darwin     requirements-build-macos.lock
-compile requirements-build.txt  x86_64-manylinux_2_28    requirements-build-linux.lock
+compile requirements.txt        x86_64-pc-windows-msvc   requirements/requirements-windows.lock
+compile requirements/requirements-macos.txt  aarch64-apple-darwin     requirements/requirements-macos.lock
+compile requirements/requirements-linux.txt  x86_64-manylinux_2_34    requirements/requirements-linux.lock
+compile requirements/requirements-build.txt  x86_64-pc-windows-msvc   requirements/requirements-build-windows.lock
+compile requirements/requirements-build.txt  aarch64-apple-darwin     requirements/requirements-build-macos.lock
+compile requirements/requirements-build.txt  x86_64-manylinux_2_28    requirements/requirements-build-linux.lock
 echo "Locks atualizados. Rode a suíte e confira o diff antes do commit."
