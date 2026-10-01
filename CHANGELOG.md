@@ -23,12 +23,21 @@ formato Keep a Changelog.
 - Cookies: importar um site `.co.uk`/`.com.br`-like apagava os cookies de todos os outros do mesmo sufixo.
 - Histórico: um item com tipo errado (`"when": "ontem"`) derrubava a página; `history_limit` negativo
   apagava a lista inteira.
+- Legendas: com palavras longas, o grupo cabia em 2×o limite de caracteres mas o quebrador gerava 3
+  linhas e a terceira era cortada (texto perdido no SRT/VTT/ASS). O grupo agora fecha antes de estourar.
+- Filtro de alucinações: "musical", "precisos" e "compartilhei" eram descartados por conterem
+  "music", "risos" e "compartilhe"; a comparação agora é por palavra inteira.
+- Fila: o mesmo link como vídeo único e como playlist (ou com outros itens da playlist) era tratado
+  como repetição e recusado.
+- Lote e importação de lista: `)` que faz parte do link (`…/Foo_(bar)`) era cortado; a extração
+  ficou num só lugar (`security.extract_urls`).
+- Processo de transcrição avulso devolvia a mensagem crua do motor em vez da amigável.
 
 ### Testes
 
 - `tests/test_integracao_real.py`: valida toda combinação de opções de `build_args` com o parser do
   próprio yt-dlp e executa cada ferramenta de mídia com o FFmpeg real (caminhos com `'`, `[ ]`, `,`, `;`).
-- `tests/test_bugs_caca_1132.py`: regressões dos itens acima.
+- `tests/test_bugs_caca_1132.py` e `tests/test_bugs_rodada2.py`: regressões dos itens acima.
 
 ## [1.13.2] - 2026-09-30
 

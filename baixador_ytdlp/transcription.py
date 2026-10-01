@@ -635,7 +635,10 @@ class Transcriber:
         words = text.split()
         if any(words[i] == words[i - 1] == words[i - 2] for i in range(2, len(words))):
             return True
-        if any(phrase in text and len(phrase) / len(text) > .5 for phrase in self.hallucination_phrases):
+        # Por palavra inteira: "musical", "precisos" e "compartilhei" contêm "music", "risos" e
+        # "compartilhe" e eram descartados como se fossem marcações do Whisper.
+        if any(len(phrase) / len(text) > .5 and re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", text)
+               for phrase in self.hallucination_phrases):
             return True
         log_limit = -0.8 if self.aggressive_filter else -1.0
         speech_limit = .6 if self.aggressive_filter else .8
@@ -719,7 +722,12 @@ class Transcriber:
                 # usado sempre (word_timestamps=True). Sem isto, fala lenta
                 # gerava blocos de 8–10 s ignorando o limite da interface.
                 too_long = elapsed > self.max_duration and shown >= self.min_duration
+                # O grupo pode caber em 2×limite caracteres e mesmo assim precisar de 3 linhas
+                # (palavras longas); o corte em max_lines apagava o fim do texto.
+                overflow = len(self._lines(" ".join([g["text"] for g in group] + [word["text"]]))
+                               ) > self.max_lines
                 if (char_count + len(word["text"]) + 1 > self.max_chars_per_line * self.max_lines
+                        or overflow
                         or (sentence_break and elapsed >= self.min_duration)
                         or too_long):
                     flush()

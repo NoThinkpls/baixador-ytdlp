@@ -64,6 +64,36 @@ def redact_sensitive(value: str) -> str:
     return _INLINE_SECRET_RE.sub(r"\1\2***", text)
 
 
+_URL_FINDER_RE = re.compile(r"""https?://[^\s<>"']+""")
+_TRAILING_PUNCTUATION = ".,;:!?"
+_CLOSERS = {")": "(", "]": "[", "}": "{", ">": "<"}
+
+
+def _strip_trailing(url: str) -> str:
+    """Tira a pontuação colada ao link na frase, mas guarda ``)`` que fecha um ``(`` do próprio link."""
+    while url:
+        last = url[-1]
+        unbalanced = last in _CLOSERS and url.count(last) > url.count(_CLOSERS[last])
+        if last not in _TRAILING_PUNCTUATION and not unbalanced:
+            break
+        url = url[:-1]
+    return url
+
+
+def extract_urls(text: str, limit: int = 500) -> list[str]:
+    """Links http(s) de um texto livre, sem repetições e na ordem em que aparecem."""
+    seen: set[str] = set()
+    urls: list[str] = []
+    for match in _URL_FINDER_RE.findall(text or ""):
+        url = _strip_trailing(match)
+        if url and url not in seen:
+            seen.add(url)
+            urls.append(url)
+            if len(urls) >= limit:
+                break
+    return urls
+
+
 PROTOCOL_SCHEME = "baixador"
 
 
