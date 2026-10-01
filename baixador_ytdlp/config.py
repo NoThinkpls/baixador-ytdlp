@@ -210,6 +210,9 @@ class Settings:
             if not isinstance(value, dict):
                 raise ValueError("objeto inválido")
             return value
+        if value is None or isinstance(value, bool):
+            # null viraria a string "None" (--proxy None); True/False viraria 1/0.
+            raise ValueError("valor sem sentido para este campo")
         if isinstance(value, type(default)):
             return value
         return type(default)(value)

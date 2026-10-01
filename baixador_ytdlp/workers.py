@@ -6,6 +6,7 @@ import queue
 import subprocess
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -230,6 +231,21 @@ def _is_private_host(host: str) -> bool:
     return False
 
 
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Reaplica a regra da URL inicial a cada redirecionamento.
+
+    Sem isto, um CDN (ou quem controla o metadado da miniatura) respondia 302 para
+    ``https://127.0.0.1/…`` ou para a rede local e a checagem de host privado, feita só
+    na primeira URL, nunca via o destino final.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        parsed = urllib.parse.urlsplit(newurl)
+        if parsed.scheme != "https" or _is_private_host(parsed.hostname or ""):
+            raise urllib.error.URLError("Redirecionamento para endereço não permitido.")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 class ThumbnailWorker(QThread):
     """Obtém uma miniatura pequena sem bloquear a interface nem relaxar o TLS."""
 
@@ -250,7 +266,8 @@ class ThumbnailWorker(QThread):
             if parsed.scheme != "https" or _is_private_host(parsed.hostname or ""):
                 raise ValueError("Miniatura ignorada: endereço não permitido.")
             handlers: list[urllib.request.BaseHandler] = [
-                urllib.request.HTTPSHandler(context=_verified_ssl_context())]
+                urllib.request.HTTPSHandler(context=_verified_ssl_context()),
+                _SafeRedirectHandler()]
             if self.proxy:
                 handlers.append(urllib.request.ProxyHandler({"http": self.proxy, "https": self.proxy}))
             opener = urllib.request.build_opener(*handlers)

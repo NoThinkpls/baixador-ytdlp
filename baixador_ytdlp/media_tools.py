@@ -465,7 +465,7 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain, *, video_enco
         # legenda escolhida já entra na imagem pelo filtro abaixo.
         command += [
             "-map", "0:v:0", "-map", "0:a?",
-            "-vf", f"subtitles=filename='{_escape_filter_path(options.subtitles)}'",
+            "-vf", f"subtitles=filename={_escape_filter_path(options.subtitles)}",
             "-c:v", "libx264", "-preset", "medium", "-crf", "20",
             # Reencodar o áudio evita uma segunda fonte de falhas ao salvar MP4
             # quando a mídia de entrada traz Opus, DTS ou outro codec que o
@@ -572,17 +572,15 @@ def _validate_time_range(start: str, end: str, *, required: bool = True) -> None
 
 
 def _escape_filter_path(path: Path | None) -> str:
+    """Caminho para ``subtitles=filename=…`` sem aspas, com os dois níveis de escape do FFmpeg.
+
+    Entre aspas simples não há como escrever um ``'`` (nome como ``It's.srt`` ou pasta
+    ``João's``): a aspa era descartada e o FFmpeg não achava o arquivo. Sem aspas, cada
+    caractere especial recebe uma barra para a opção do filtro (``\\ ' :``) e outra para
+    o grafo (``\\ ' [ ] , ;``). Testado com o FFmpeg real em ``test_integracao_real``.
+    """
     if path is None:
         return ""
-    # O filtro subtitles recebe uma string própria do FFmpeg, não um argumento de shell.
     value = str(path.resolve()).replace("\\", "/")
-    # Aqui cada caractere precisa de *uma* barra. Duas barras antes de `:`
-    # fazem o parser do FFmpeg interpretar `C\\:` como uma opção separada,
-    # gerando "Error opening output files: Invalid argument" no Windows.
-    return (value.replace("'", r"\'")
-                 .replace(":", r"\:")
-                 .replace(",", r"\,")
-                 .replace("[", r"\[")
-                 .replace("]", r"\]")
-                 .replace(";", r"\;")
-                 .replace("|", r"\|"))
+    value = "".join(f"\\{char}" if char in "\\':" else char for char in value)
+    return "".join(f"\\{char}" if char in "\\'[],;" else char for char in value)

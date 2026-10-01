@@ -6,6 +6,7 @@ frágil em cima da saída humana.
 """
 from __future__ import annotations
 
+import math
 import re
 import shlex
 import subprocess
@@ -285,17 +286,21 @@ def _section_range(opts: DownloadOptions) -> str:
 
 
 def _time_seconds(value: str) -> float:
-    """Aceita segundos, mm:ss ou hh:mm:ss sem depender da localidade."""
+    """Aceita segundos, mm:ss ou hh:mm:ss (com vírgula ou ponto decimal).
+
+    Valores negativos, ``nan`` e ``inf`` valem 0: o FFmpeg escreve ``N/A`` e tempos
+    negativos no ``-progress``, e o teclado brasileiro digita ``1:30,5``.
+    """
     try:
-        parts = [float(part) for part in value.strip().split(":")]
-    except (TypeError, ValueError):
+        parts = [float(part) for part in value.strip().replace(",", ".").split(":")]
+    except (AttributeError, ValueError):
         return 0.0
-    if not 1 <= len(parts) <= 3:
+    if not 1 <= len(parts) <= 3 or any(not math.isfinite(part) or part < 0 for part in parts):
         return 0.0
     seconds = 0.0
     for part in parts:
         seconds = seconds * 60 + part
-    return seconds
+    return seconds if math.isfinite(seconds) else 0.0
 
 
 def _section_duration(opts: DownloadOptions) -> float:
@@ -436,12 +441,14 @@ class DownloadRunner:
         prog.status = "processing"
         prog.stage = prog.stage or "Processando o trecho com FFmpeg…"
         duration = _section_duration(self.opts)
+        if key not in ("out_time_us", "out_time") or value.strip() in ("", "N/A"):
+            return True   # "N/A" é o FFmpeg antes do primeiro quadro, não o tempo 0
         if key == "out_time_us":
             elapsed = _to_float(value) / 1_000_000
-        elif key == "out_time":
-            elapsed = _time_seconds(value)
+        elif value.strip().startswith("-"):
+            return True   # lista de edição com início negativo
         else:
-            return True
+            elapsed = _time_seconds(value)
         if not duration or elapsed < 0:
             return True
         if elapsed + 1.0 < self._section_elapsed:
