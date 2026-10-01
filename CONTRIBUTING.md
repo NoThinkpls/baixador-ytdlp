@@ -1,12 +1,12 @@
 # Como contribuir
 
 Use Python 3.12. Crie um ambiente virtual e instale as dependências da sua
-plataforma junto de `requirements-build.txt`. No Linux:
+plataforma junto de `requirements/requirements-build.txt`. No Linux:
 
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install --require-hashes -r requirements-linux.lock -r requirements-build-linux.lock
+python -m pip install --require-hashes -r requirements/requirements-linux.lock -r requirements/requirements-build-linux.lock
 ```
 
 Antes de abrir um pull request, execute:

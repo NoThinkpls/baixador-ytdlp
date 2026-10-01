@@ -46,7 +46,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           # Locks com hashes: exatamente os mesmos pacotes em toda build.
-          pip install --require-hashes -r requirements-windows.lock -r requirements-build-windows.lock
+          pip install --require-hashes -r requirements/requirements-windows.lock -r requirements/requirements-build-windows.lock
           # Sem PyTorch: o motor de transcrição é o CTranslate2, com runtime
           # CUDA (cuBLAS/cuDNN 9) incluído no instalador.
 
@@ -59,7 +59,7 @@ jobs:
         run: python -m ruff check .
 
       - name: Verificar os tipos (pyright, só erros novos)
-        # Modo básico em catraca: pyright-baseline.json guarda os avisos herdados; o CI só
+        # Modo básico em catraca: scripts/pyright-baseline.json guarda os avisos herdados; o CI só
         # falha para erro novo. Ferramenta de desenvolvimento: não entra no pacote.
         run: |
           python -m pip install pyright==1.1.414
@@ -84,7 +84,7 @@ jobs:
           # o instalador, sem pip-audit/cyclonedx misturados.
           $buildPython = (Get-Command python).Source
           python -m venv .sbom
-          .sbom\Scripts\python -m pip install -r requirements-security.txt
+          .sbom\Scripts\python -m pip install -r requirements/requirements-security.txt
           New-Item -ItemType Directory -Force dist\installer | Out-Null
           .sbom\Scripts\python -m cyclonedx_py environment $buildPython --output-format JSON `
             --output-file dist\installer\sbom-windows.cdx.json
@@ -108,7 +108,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/baixador-ytdlp-nuitka-cache
-          key: nuitka-${{ runner.os }}-${{ hashFiles('requirements-windows.lock', 'requirements-build-windows.lock', 'nuitka-package.config.yml') }}-v1
+          key: nuitka-${{ runner.os }}-${{ hashFiles('requirements/requirements-windows.lock', 'requirements/requirements-build-windows.lock', 'nuitka-package.config.yml') }}-v1
           restore-keys: |
             nuitka-${{ runner.os }}-
 
@@ -312,19 +312,19 @@ jobs:
           python-version: '3.12'
           architecture: 'arm64'
           cache: pip
-          cache-dependency-path: requirements-macos.txt
+          cache-dependency-path: requirements/requirements-macos.txt
 
       - name: Instalar dependências
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --require-hashes -r requirements-macos.lock -r requirements-build-macos.lock
+          python -m pip install --require-hashes -r requirements/requirements-macos.lock -r requirements/requirements-build-macos.lock
           python -m compileall -q baixador_ytdlp main.py
 
       - name: Inventário real do ambiente de build (SBOM)
         run: |
           build_python="$(command -v python)"
           python -m venv .sbom
-          .sbom/bin/python -m pip install -r requirements-security.txt
+          .sbom/bin/python -m pip install -r requirements/requirements-security.txt
           mkdir -p dist/installer
           .sbom/bin/python -m cyclonedx_py environment "$build_python" --output-format JSON \
             --output-file dist/installer/sbom-macos.cdx.json
@@ -483,19 +483,19 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: requirements-linux.txt
+          cache-dependency-path: requirements/requirements-linux.txt
 
       - name: Instalar dependências
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --require-hashes -r requirements-linux.lock -r requirements-build-linux.lock
+          python -m pip install --require-hashes -r requirements/requirements-linux.lock -r requirements/requirements-build-linux.lock
           python -m compileall -q baixador_ytdlp main.py
 
       - name: Inventário real do ambiente de build (SBOM)
         run: |
           build_python="$(command -v python)"
           python -m venv .sbom
-          .sbom/bin/python -m pip install -r requirements-security.txt
+          .sbom/bin/python -m pip install -r requirements/requirements-security.txt
           mkdir -p dist/installer
           .sbom/bin/python -m cyclonedx_py environment "$build_python" --output-format JSON \
             --output-file dist/installer/sbom-linux.cdx.json
@@ -668,15 +668,15 @@ jobs:
         if: steps.release.outputs.publish == 'true'
         shell: bash
         run: |
-          python -m pip install -r requirements-security.txt
+          python -m pip install -r requirements/requirements-security.txt
           # Os jobs de build já trazem o SBOM do ambiente real; os requisitos
           # declarados só servem de reserva se algum artefato faltar.
           test -f release-assets/sbom-windows.cdx.json || python -m cyclonedx_py requirements \
             requirements.txt --output-format JSON --output-file release-assets/sbom-windows.cdx.json
           test -f release-assets/sbom-macos.cdx.json || python -m cyclonedx_py requirements \
-            requirements-macos.txt --output-format JSON --output-file release-assets/sbom-macos.cdx.json
+            requirements/requirements-macos.txt --output-format JSON --output-file release-assets/sbom-macos.cdx.json
           test -f release-assets/sbom-linux.cdx.json || python -m cyclonedx_py requirements \
-            requirements-linux.txt --output-format JSON --output-file release-assets/sbom-linux.cdx.json
+            requirements/requirements-linux.txt --output-format JSON --output-file release-assets/sbom-linux.cdx.json
 
       - name: Validar os ativos da Release
         if: steps.release.outputs.publish == 'true'

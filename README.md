@@ -118,7 +118,7 @@ O que vem a seguir (Intel QSV, VAAPI, decodificação por hardware, cortes em pa
 | [Guia de uso](docs/GUIA-DE-USO.md) | Do primeiro download às ferramentas e às legendas |
 | [Plataformas e segurança](docs/PLATAFORMAS-E-SEGURANCA.md) | Desempenho, GPU e modelo de segurança |
 | [Compilação e Releases](docs/COMPILACAO-E-RELEASE.md) | Build com Nuitka, CI e publicação |
-| [Plano de correções](docs/PLANO-DE-CORRECOES.md) · [Pendências](PENDENCIAS.md) | O que foi feito e o que falta |
+| [Plano de correções](docs/PLANO-DE-CORRECOES.md) · [Pendências](docs/PENDENCIAS.md) | O que foi feito e o que falta |
 | [Changelog](CHANGELOG.md) | Histórico de versões |
 | [Como contribuir](CONTRIBUTING.md) | Ambiente, testes e convenções |
 
@@ -126,7 +126,7 @@ O que vem a seguir (Intel QSV, VAAPI, decodificação por hardware, cortes em pa
 
 ```bash
 python -m venv .venv
-.venv/Scripts/pip install -r requirements-windows.lock   # ou requirements-macos/linux
+.venv/Scripts/pip install -r requirements/requirements-windows.lock   # ou requirements-macos/linux
 python main.py                                            # abre o app
 python -m unittest discover -s tests                      # testes (QT_QPA_PLATFORM=offscreen)
 ruff check .
