@@ -122,7 +122,7 @@ if ($Packager -eq 'Nuitka') {
         "--file-version=$appVersion", "--product-version=$appVersion",
         '--file-description=Baixador YT-DLP', '--include-data-dir=assets=assets',
         '--include-data-files=THIRD_PARTY_NOTICES.md=THIRD_PARTY_NOTICES.md',
-        '--user-package-configuration-file=nuitka-package.config.yml',
+        '--user-package-configuration-file=packaging/nuitka-package.config.yml',
         '--include-package=nvidia.cuda_runtime', '--include-package=nvidia.cublas',
         '--include-package=nvidia.cudnn',
         # Menos código para compilar (o tempo do Nuitka cai pela metade): o pip só
