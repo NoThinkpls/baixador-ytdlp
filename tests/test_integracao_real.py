@@ -7,6 +7,7 @@ ferramenta não está instalada.
 from __future__ import annotations
 
 import itertools
+import optparse
 import shutil
 import subprocess
 import tempfile
@@ -60,8 +61,8 @@ class OpcoesAceitasPeloYtDlpTests(unittest.TestCase):
                                   playlist=playlist, flags=flags):
                     try:
                         parsed = yt_dlp.parse_options(args)
-                    except SystemExit as exc:   # o parser sai com código 2 em opção inválida
-                        self.fail(f"yt-dlp recusou as opções ({exc.code}): {args}")
+                    except (SystemExit, optparse.OptParseError, ValueError) as exc:
+                        self.fail(f"yt-dlp recusou as opções ({exc}): {args}")
                     self.assertEqual(opts.url, parsed.urls[0])
                     casos += 1
         self.assertGreater(casos, 100)

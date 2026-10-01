@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Callable
 
-from .config import IS_WINDOWS, Settings
+from .config import IS_WINDOWS, Settings, is_valid_rate_limit
 from .cookies import cookie_args
 from .processes import popen_isolated, terminate_process_tree
 from .tools import CREATE_NO_WINDOW, Toolchain, decode_external_output, run_hidden
@@ -213,8 +213,12 @@ def build_args(
     args += cookie_args(cfg)
     if cfg.extractor_args:
         args += ["--extractor-args", cfg.extractor_args]
-    if cfg.limit_rate:
-        args += ["--limit-rate", cfg.limit_rate]
+    if cfg.limit_rate.strip():
+        if is_valid_rate_limit(cfg.limit_rate):
+            args += ["--limit-rate", cfg.limit_rate.strip()]
+        else:
+            # O yt-dlp recusa o valor e falha o download inteiro; melhor baixar sem limite.
+            log_event("Limite de banda inválido ignorado: %r", cfg.limit_rate)
     if cfg.proxy:
         args += ["--proxy", cfg.proxy]
     # O histórico de IDs do yt-dlp não verifica se o arquivo ainda existe.

@@ -38,8 +38,10 @@ def human_size(num: float | None) -> str:
     if not num:
         return "—"
     for unit in ("B", "KB", "MB", "GB"):
-        if num < 1024:
-            return f"{num:.0f} {unit}" if unit in ("B", "KB") else f"{num:.2f} {unit}"
+        shown = f"{num:.0f}" if unit in ("B", "KB") else f"{num:.2f}"
+        # 1023,6 KB arredonda para "1024"; nesse caso já é 1 MB.
+        if float(shown) < 1024:
+            return f"{shown} {unit}"
         num /= 1024
     return f"{num:.2f} TB"
 
@@ -360,6 +362,11 @@ def friendly_error(detail: str) -> str:
     return tr(_friendly_error_pt(detail))
 
 
+def _os_code(low: str, *codes: int) -> bool:
+    """``[WinError 5]``/``[Errno 28]`` com o número inteiro (``winerror 5`` casava o 53 e o 5xx)."""
+    return any(re.search(rf"\b(?:winerror|errno) {code}\b", low) for code in codes)
+
+
 def _friendly_error_pt(detail: str) -> str:
     """Traduz o erro do yt-dlp para uma instrução que resolve o problema.
 
@@ -374,19 +381,19 @@ def _friendly_error_pt(detail: str) -> str:
 
     # Falhas do disco e do sistema de arquivos valem para qualquer etapa (yt-dlp, FFmpeg,
     # conversão), por isso vêm antes das mensagens específicas de site.
-    if any(marker in low for marker in (
+    if _os_code(low, 112, 28) or any(marker in low for marker in (
             "no space left on device", "not enough space on the disk", "disk full",
-            "winerror 112", "errno 28", "espaço insuficiente", "não há espaço")):
+            "espaço insuficiente", "não há espaço")):
         return ("O disco ou a pasta de destino está sem espaço. Libere espaço ou escolha outra "
                 "pasta em Configurações e tente de novo.")
 
-    if any(marker in low for marker in (
-            "file name too long", "filename too long", "path too long", "winerror 206",
-            "errno 36", "the filename or extension is too long")):
+    if _os_code(low, 206, 36) or any(marker in low for marker in (
+            "file name too long", "filename too long", "path too long",
+            "the filename or extension is too long")):
         return ("O caminho do arquivo ficou longo demais para o sistema. Escolha uma pasta mais "
                 "curta ou simplifique o modelo do nome do arquivo em Configurações.")
 
-    if "permission denied" in low or "access is denied" in low or "winerror 5" in low:
+    if "permission denied" in low or "access is denied" in low or _os_code(low, 5):
         return ("Sem permissão para gravar na pasta de destino. Escolha outra pasta ou feche o "
                 "programa que está usando o arquivo.")
 

@@ -18,7 +18,7 @@ from PySide6.QtGui import QDesktopServices, QPainter, QPen
 from PySide6.QtWidgets import (QAbstractButton, QFileDialog, QGridLayout, QHBoxLayout,
                                QLabel, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
-from ..config import APP_VERSION, Settings
+from ..config import APP_VERSION, Settings, is_valid_rate_limit
 from ..cookies import EXPORT_INSTRUCTIONS, cookie_age_days, cookie_sites, import_cookie_file
 from ..filename_preview import FILENAME_PRESETS, render_filename_preview
 from ..parallel_section import MAX_PIECES, WARN_PIECES
@@ -27,7 +27,7 @@ from ..hardware import default_fragments, default_parallel_downloads, usable_cor
 from . import icons, theme
 from .components import (BreadcrumbChevron, BreadcrumbCurrent, BreadcrumbLink, Button, Headline, InsetGroup, Muted, PageHeader, PrimaryButton,
                          ScrollColumn, SectionLabel, Select, SettingRow, Stepper, Switch,
-                         TextField)
+                         TextField, Toast)
 
 # A ordem e os rótulos são deliberados: no Windows só o Firefox funciona de fato.
 # Os demais são navegadores Chromium, que desde o Chrome 127 não liberam mais os
@@ -593,8 +593,19 @@ class SettingsPage(QWidget):
         edit = TextField(placeholder, self)
         edit.setFixedWidth(240)
         edit.setText(str(getattr(self.cfg, key)))
-        edit.editingFinished.connect(lambda k=key, e=edit: self._set(k, e.text().strip()))
+        edit.editingFinished.connect(lambda k=key, e=edit: self._commit_line(k, e))
         self._add_row(SettingRow(title, subtitle, edit, self))
+
+    def _commit_line(self, key: str, edit) -> None:
+        value = edit.text().strip()
+        if key == "limit_rate" and value and not is_valid_rate_limit(value):
+            # O yt-dlp recusa o valor e todo download falharia; volta ao que estava salvo.
+            Toast.warning("Limite de banda inválido",
+                          "Use um número com unidade, como 5M, 500K ou 1.5M.",
+                          parent=self.window(), duration=6000)
+            edit.setText(str(getattr(self.cfg, key)))
+            return
+        self._set(key, value)
 
     # ------------------------------------------------------------ linhas altas
     def _folder_row(self) -> None:

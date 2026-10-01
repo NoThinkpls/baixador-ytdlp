@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
@@ -92,6 +93,17 @@ SETTINGS_PATH = DATA_DIR / "settings.json"
 STATE_PATH = DATA_DIR / "tools_state.json"
 HISTORY_PATH = DATA_DIR / "history.json"
 QUEUE_STATE_PATH = DATA_DIR / "download_queue.json"
+
+
+_RATE_LIMIT_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:[kmgtpezy]i?b?)?", re.IGNORECASE)
+
+
+def is_valid_rate_limit(value: str) -> bool:
+    """Mesma regra do ``--limit-rate`` do yt-dlp (``5M``, ``500k``, ``1.5MiB``, ``300``).
+
+    Um valor que ele recusa derruba todo download com "invalid rate limit".
+    """
+    return bool(_RATE_LIMIT_RE.fullmatch((value or "").strip()))
 
 
 def default_download_dir() -> str:
