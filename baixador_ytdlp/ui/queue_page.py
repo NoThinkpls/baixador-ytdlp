@@ -518,6 +518,10 @@ class QueuePage(QWidget):
             and first.audio_format == second.audio_format
             and first.section_start == second.section_start
             and first.section_end == second.section_end
+            # O mesmo link como vídeo único e como playlist (ou com outros itens) são
+            # downloads diferentes; só os recortes iguais são repetição.
+            and first.playlist == second.playlist
+            and first.playlist_items.strip() == second.playlist_items.strip()
         )
 
     def retry(self, job_id: int) -> None:

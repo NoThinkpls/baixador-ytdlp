@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
@@ -92,6 +93,30 @@ SETTINGS_PATH = DATA_DIR / "settings.json"
 STATE_PATH = DATA_DIR / "tools_state.json"
 HISTORY_PATH = DATA_DIR / "history.json"
 QUEUE_STATE_PATH = DATA_DIR / "download_queue.json"
+
+
+_RATE_LIMIT_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:[kmgtpezy]i?b?)?", re.IGNORECASE)
+
+
+def is_valid_rate_limit(value: str) -> bool:
+    """Mesma regra do ``--limit-rate`` do yt-dlp (``5M``, ``500k``, ``1.5MiB``, ``300``).
+
+    Um valor que ele recusa derruba todo download com "invalid rate limit".
+    """
+    return bool(_RATE_LIMIT_RE.fullmatch((value or "").strip()))
+
+
+_EXTRACTOR_ARGS_RE = re.compile(r"[A-Za-z0-9_-]+:.*")
+
+
+def usable_extractor_args(value: str) -> str:
+    """O valor de ``--extractor-args`` se o yt-dlp o aceita (``extrator:chave=valor``), senão vazio.
+
+    Sem os dois pontos (``lixo``) ele aborta com "wrong --extractor-args form" e toda análise
+    e todo download falhariam até a pessoa achar o campo nas Configurações.
+    """
+    text = (value or "").strip()
+    return text if _EXTRACTOR_ARGS_RE.fullmatch(text) else ""
 
 
 def default_download_dir() -> str:
@@ -210,6 +235,9 @@ class Settings:
             if not isinstance(value, dict):
                 raise ValueError("objeto inválido")
             return value
+        if value is None or isinstance(value, bool):
+            # null viraria a string "None" (--proxy None); True/False viraria 1/0.
+            raise ValueError("valor sem sentido para este campo")
         if isinstance(value, type(default)):
             return value
         return type(default)(value)

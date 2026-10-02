@@ -8,19 +8,35 @@ import urllib.parse
 _SENSITIVE_QUERY_KEYS = (
     "token", "sig", "signature", "key", "api_key", "apikey", "auth",
     "authorization", "expire", "expires", "policy", "credential", "lsig",
-    "spc", "sparams", "xpc",
+    "spc", "sparams", "xpc", "access_token", "refresh_token", "id_token",
+    "password", "passwd", "secret", "client_secret", "po_token", "visitor_data",
 )
 _QUERY_RE = re.compile(
     rf"(?i)([?&](?:{'|'.join(map(re.escape, _SENSITIVE_QUERY_KEYS))})=)[^&#\s]+"
+)
+# ``--extractor-args youtube:po_token=web+XXX;visitor_data=YYY``: o valor vem depois
+# de ``:`` ou ``;`` em vez de ``?``/``&``.
+_EXTRACTOR_SECRET_RE = re.compile(
+    r"(?i)([:;,]\s*(?:po_token|visitor_data|data_sync_id)=)[^;\s'\"]+"
 )
 # A senha pode conter "/" ou "@": o usuário/senha vai até o ÚLTIMO "@" antes
 # do host (``[^\s'"]*@`` é guloso até ele).
 _PROXY_RE = re.compile(r"(?i)(--proxy\s+['\"]?[a-z0-9+.-]+://)[^\s'\"]*@")
 _URL_CREDENTIAL_RE = re.compile(r"(?i)((?:https?|socks[45]h?)://)[^\s/'\"@]+(?::[^\s'\"]*)?@")
 _COOKIE_RE = re.compile(r"(?i)(--cookies(?:-from-browser)?\s+)\S+")
-_HEADER_RE = re.compile(r"(?i)(--(?:add-)?headers?\s+)\S+")
+# O valor do cabeçalho tem espaço ("Authorization: Bearer x"): vai até a aspa que fecha
+# ou, sem aspas, até o fim da linha.
+_HEADER_RE = re.compile(
+    r"(?i)(--(?:add-)?headers?\s+)(?:'[^']*'|\"[^\"]*\"|\S+(?:\s+[A-Za-z0-9._~+/=-]+)?)"
+)
+# "Authorization: Bearer abc", "Cookie: A=1; B=2", "x-api-key=abc": o valor inteiro, não só
+# a primeira palavra. Termina na aspa ou no fim da linha.
 _INLINE_SECRET_RE = re.compile(
-    r"(?i)\b(authorization|cookie|x-api-key)(\s*[:=]\s*)[^\s,;]+"
+    r"(?i)\b(authorization|cookie|set-cookie|x-api-key|proxy-authorization)(\s*[:=]\s*)"
+    r"[^\r\n'\"]+"
+)
+_CREDENTIAL_FLAG_RE = re.compile(
+    r"(?i)(--(?:password|video-password|twofactor|username|ap-password)\s+)\S+"
 )
 
 
@@ -41,9 +57,41 @@ def redact_sensitive(value: str) -> str:
     text = _PROXY_RE.sub(r"\1***:***@", text)
     text = _URL_CREDENTIAL_RE.sub(r"\1***:***@", text)
     text = _QUERY_RE.sub(r"\1***", text)
+    text = _EXTRACTOR_SECRET_RE.sub(r"\1***", text)
     text = _COOKIE_RE.sub(r"\1<cookies>", text)
     text = _HEADER_RE.sub(r"\1***", text)
+    text = _CREDENTIAL_FLAG_RE.sub(r"\1***", text)
     return _INLINE_SECRET_RE.sub(r"\1\2***", text)
+
+
+_URL_FINDER_RE = re.compile(r"""https?://[^\s<>"']+""")
+_TRAILING_PUNCTUATION = ".,;:!?"
+_CLOSERS = {")": "(", "]": "[", "}": "{", ">": "<"}
+
+
+def _strip_trailing(url: str) -> str:
+    """Tira a pontuação colada ao link na frase, mas guarda ``)`` que fecha um ``(`` do próprio link."""
+    while url:
+        last = url[-1]
+        unbalanced = last in _CLOSERS and url.count(last) > url.count(_CLOSERS[last])
+        if last not in _TRAILING_PUNCTUATION and not unbalanced:
+            break
+        url = url[:-1]
+    return url
+
+
+def extract_urls(text: str, limit: int = 500) -> list[str]:
+    """Links http(s) de um texto livre, sem repetições e na ordem em que aparecem."""
+    seen: set[str] = set()
+    urls: list[str] = []
+    for match in _URL_FINDER_RE.findall(text or ""):
+        url = _strip_trailing(match)
+        if url and url not in seen:
+            seen.add(url)
+            urls.append(url)
+            if len(urls) >= limit:
+                break
+    return urls
 
 
 PROTOCOL_SCHEME = "baixador"

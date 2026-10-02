@@ -92,10 +92,24 @@ class History:
         except (OSError, ValueError):
             return self
         known = set(HistoryEntry.__dataclass_fields__)
-        self.entries = [
-            HistoryEntry(**{k: v for k, v in item.items() if k in known})
-            for item in raw if isinstance(item, dict) and item.get("title")
-        ]
+        defaults = HistoryEntry(title="")
+        entries: list[HistoryEntry] = []
+        for item in raw if isinstance(raw, list) else []:
+            if not isinstance(item, dict) or not item.get("title"):
+                continue
+            values = {}
+            for key, value in item.items():
+                if key not in known:
+                    continue
+                default = getattr(defaults, key)
+                # Um tipo errado (``when: "ontem"``) quebrava date_label e a página inteira.
+                if isinstance(default, bool) != isinstance(value, bool) or (
+                        not isinstance(value, type(default))
+                        and not (isinstance(default, float) and isinstance(value, int))):
+                    continue
+                values[key] = value
+            entries.append(HistoryEntry(**values))
+        self.entries = entries[:max(1, self.limit)]
         return self
 
     def flush(self) -> None:
@@ -116,7 +130,7 @@ class History:
     # ------------------------------------------------------------------ dados
     def add(self, entry: HistoryEntry) -> None:
         self.entries.insert(0, entry)
-        del self.entries[self.limit:]
+        del self.entries[max(1, self.limit):]
         self._dirty = True
 
     def remove(self, index: int) -> None:

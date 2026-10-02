@@ -62,9 +62,10 @@ class MediaToolsTests(unittest.TestCase):
             ), self._toolchain(root))
 
         filter_value = command[command.index("-vf") + 1]
-        self.assertIn(r"\:", filter_value)
-        self.assertNotIn(r"\\:", filter_value)
-        self.assertIn(r"\|", filter_value)
+        # Sem aspas em volta do caminho (uma aspa no nome não teria como ser escrita dentro
+        # delas) e com os dois níveis de escape: o ":" vira "\\:" (opção do filtro + grafo).
+        self.assertNotIn("'", filter_value)
+        self.assertIn("\\\\:", filter_value)
         self.assertEqual(command[command.index("-map") + 1], "0:v:0")
         self.assertIn("0:a?", command)
         self.assertIn("aac", command)

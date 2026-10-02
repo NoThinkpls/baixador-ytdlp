@@ -251,9 +251,12 @@ class ToolManager:
     # ---------------------------------------------------------------- estado
     def _load_state(self) -> dict:
         try:
-            return json.loads(STATE_PATH.read_text(encoding="utf-8"))
+            state = json.loads(STATE_PATH.read_text(encoding="utf-8"))
         except Exception:
             return {}
+        # JSON válido que não é objeto ("[]", "null") derrubava toda a preparação com
+        # AttributeError e o arquivo nunca era regravado.
+        return state if isinstance(state, dict) else {}
 
     def _save_state(self) -> None:
         STATE_PATH.parent.mkdir(parents=True, exist_ok=True)

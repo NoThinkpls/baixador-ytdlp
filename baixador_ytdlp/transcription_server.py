@@ -51,7 +51,8 @@ def transcription_process_main(opts: TranscriptionOptions, toolchain: Toolchain,
         send("cancelled")
     except Exception as exc:  # noqa: BLE001 - precisa voltar à interface sem fechá-la
         report_exception("transcrição auxiliar", exc)
-        send("error", {"message": str(exc), "traceback": traceback.format_exc()})
+        send("error", {"message": friendly_transcription_error(exc),
+                        "traceback": traceback.format_exc()})
     else:
         log_event("Transcrição auxiliar concluída: %s", opts.output_path)
         send("finished", str(opts.output_path))
