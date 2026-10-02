@@ -7,6 +7,7 @@ na mesma release antes de ser executado.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -206,7 +207,8 @@ class AppUpdater:
                     received += len(block)
                     if progress:
                         progress(received, total)
-        except (HTTPError, URLError, OSError, TimeoutError, ValueError) as exc:
+        except (HTTPError, URLError, OSError, TimeoutError, ValueError,
+                http.client.HTTPException) as exc:
             partial.unlink(missing_ok=True)
             raise UpdateError("Não foi possível baixar a atualização. Tente novamente.") from exc
 
@@ -279,5 +281,6 @@ class AppUpdater:
             request = Request(require_https(url), headers={"User-Agent": USER_AGENT})
             with urlopen(request, timeout=20, context=_verified_ssl_context()) as response:
                 return response.read().decode("utf-8")
-        except (HTTPError, URLError, UnicodeDecodeError, TimeoutError, ValueError) as exc:
+        except (HTTPError, URLError, OSError, UnicodeDecodeError, TimeoutError, ValueError,
+                http.client.HTTPException) as exc:
             raise UpdateError("Não foi possível consultar novas versões agora.") from exc

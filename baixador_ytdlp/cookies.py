@@ -94,8 +94,14 @@ def cookie_sites(text: str) -> list[str]:
     return found
 
 
+# Sufixos públicos de dois rótulos mais comuns: "bbc.co.uk" tem raiz "bbc.co.uk", não "co.uk".
+_SECOND_LEVEL = frozenset({"co", "com", "org", "net", "gov", "edu", "ac"})
+
+
 def _root_domain(domain: str) -> str:
-    return ".".join(domain.split(".")[-2:])
+    labels = domain.split(".")
+    keep = 3 if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _SECOND_LEVEL else 2
+    return ".".join(labels[-keep:])
 
 
 def merge_cookie_text(existing: str, new: str) -> str:

@@ -17,7 +17,7 @@ from ..config import Settings
 from ..downloader import DownloadOptions
 from ..filename_preview import render_filename_preview
 from ..probe import MediaInfo, hls_section_selector, kill_running, playlist_selector
-from ..security import validate_media_url
+from ..security import extract_urls, validate_media_url
 from ..workers import PlaylistEntriesWorker, ProbeWorker, ThumbnailWorker
 from .playlist_picker import PlaylistPickerDialog
 from . import theme
@@ -232,16 +232,7 @@ class HomePage(QWidget):
             self.batch_edit.setFocus()
 
     def _batch_urls(self) -> list[str]:
-        seen: set[str] = set()
-        urls: list[str] = []
-        for match in URL_LIST_RE.findall(self.batch_edit.toPlainText()):
-            url = match.rstrip(".,;:)]}>")
-            if url not in seen:
-                seen.add(url)
-                urls.append(url)
-            if len(urls) >= MAX_BATCH_URLS:
-                break
-        return urls
+        return extract_urls(self.batch_edit.toPlainText(), MAX_BATCH_URLS)
 
     def _update_batch_count(self) -> None:
         count = len(self._batch_urls())
@@ -613,15 +604,7 @@ class HomePage(QWidget):
             self._warn(f"Não foi possível importar a lista: {exc}")
             return
 
-        seen: set[str] = set()
-        urls: list[str] = []
-        for match in URL_LIST_RE.findall(text):
-            url = match.rstrip(".,;:)]}>")
-            if url not in seen:
-                seen.add(url)
-                urls.append(url)
-            if len(urls) >= MAX_BATCH_URLS:
-                break
+        urls = extract_urls(text, MAX_BATCH_URLS)
         if not urls:
             self._warn("Nenhum link HTTP(S) foi encontrado no arquivo.")
             return
@@ -646,7 +629,7 @@ class HomePage(QWidget):
             for url in urls
         ]
         self.enqueue_many.emit(options)
-        suffix = " (limitado a 500)" if len(URL_LIST_RE.findall(text)) > MAX_BATCH_URLS else ""
+        suffix = " (limitado a 500)" if len(extract_urls(text, MAX_BATCH_URLS + 1)) > MAX_BATCH_URLS else ""
         Toast.success(
             "Lista importada",
             f"{len(options)} link(s) enviados para a fila{suffix}.",

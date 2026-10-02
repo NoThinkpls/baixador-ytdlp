@@ -6,6 +6,7 @@ frágil em cima da saída humana.
 """
 from __future__ import annotations
 
+import math
 import re
 import shlex
 import subprocess
@@ -16,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Callable
 
-from .config import IS_WINDOWS, Settings
+from .config import IS_WINDOWS, Settings, is_valid_rate_limit, usable_extractor_args
 from .cookies import cookie_args
 from .processes import popen_isolated, terminate_process_tree
 from .tools import CREATE_NO_WINDOW, Toolchain, decode_external_output, run_hidden
@@ -210,10 +211,16 @@ def build_args(
     if cfg.sponsorblock:
         args += ["--sponsorblock-remove", "sponsor,selfpromo,interaction"]
     args += cookie_args(cfg)
-    if cfg.extractor_args:
-        args += ["--extractor-args", cfg.extractor_args]
-    if cfg.limit_rate:
-        args += ["--limit-rate", cfg.limit_rate]
+    if extractor := usable_extractor_args(cfg.extractor_args):
+        args += ["--extractor-args", extractor]
+    elif cfg.extractor_args.strip():
+        log_event("Argumentos de extrator inválidos ignorados: %r", cfg.extractor_args)
+    if cfg.limit_rate.strip():
+        if is_valid_rate_limit(cfg.limit_rate):
+            args += ["--limit-rate", cfg.limit_rate.strip()]
+        else:
+            # O yt-dlp recusa o valor e falha o download inteiro; melhor baixar sem limite.
+            log_event("Limite de banda inválido ignorado: %r", cfg.limit_rate)
     if cfg.proxy:
         args += ["--proxy", cfg.proxy]
     # O histórico de IDs do yt-dlp não verifica se o arquivo ainda existe.
@@ -285,17 +292,21 @@ def _section_range(opts: DownloadOptions) -> str:
 
 
 def _time_seconds(value: str) -> float:
-    """Aceita segundos, mm:ss ou hh:mm:ss sem depender da localidade."""
+    """Aceita segundos, mm:ss ou hh:mm:ss (com vírgula ou ponto decimal).
+
+    Valores negativos, ``nan`` e ``inf`` valem 0: o FFmpeg escreve ``N/A`` e tempos
+    negativos no ``-progress``, e o teclado brasileiro digita ``1:30,5``.
+    """
     try:
-        parts = [float(part) for part in value.strip().split(":")]
-    except (TypeError, ValueError):
+        parts = [float(part) for part in value.strip().replace(",", ".").split(":")]
+    except (AttributeError, ValueError):
         return 0.0
-    if not 1 <= len(parts) <= 3:
+    if not 1 <= len(parts) <= 3 or any(not math.isfinite(part) or part < 0 for part in parts):
         return 0.0
     seconds = 0.0
     for part in parts:
         seconds = seconds * 60 + part
-    return seconds
+    return seconds if math.isfinite(seconds) else 0.0
 
 
 def _section_duration(opts: DownloadOptions) -> float:
@@ -436,12 +447,14 @@ class DownloadRunner:
         prog.status = "processing"
         prog.stage = prog.stage or "Processando o trecho com FFmpeg…"
         duration = _section_duration(self.opts)
+        if key not in ("out_time_us", "out_time") or value.strip() in ("", "N/A"):
+            return True   # "N/A" é o FFmpeg antes do primeiro quadro, não o tempo 0
         if key == "out_time_us":
             elapsed = _to_float(value) / 1_000_000
-        elif key == "out_time":
-            elapsed = _time_seconds(value)
+        elif value.strip().startswith("-"):
+            return True   # lista de edição com início negativo
         else:
-            return True
+            elapsed = _time_seconds(value)
         if not duration or elapsed < 0:
             return True
         if elapsed + 1.0 < self._section_elapsed:

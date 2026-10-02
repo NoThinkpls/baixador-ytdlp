@@ -3,6 +3,53 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [Não lançado]
+
+### Corrigido
+
+- Legenda queimada (Ferramentas → Legendas no vídeo) falhava quando o caminho tinha aspa simples
+  (`It's.srt`, pasta `João's`): o caminho agora segue os dois níveis de escape do FFmpeg, sem aspas.
+- Logs: a redação de segredos deixava passar o token depois de `Bearer`/`Basic`, os pares seguintes
+  de `Cookie: A=1; B=2`, o valor de `--add-headers`, `access_token`/`refresh_token`/`password`/
+  `client_secret` na URL e `po_token`/`visitor_data` em `--extractor-args`.
+- Miniatura: um redirecionamento (302) para `127.0.0.1` ou rede local contornava a checagem de
+  endereço privado, que só valia para a primeira URL. Cada redirecionamento é conferido de novo.
+- Atualizador: conexão cortada no meio (`IncompleteRead`, reset) escapava como erro cru; agora vira
+  o aviso normal e o `.part` é apagado.
+- Configurações: `null` em campos de texto virava a string `"None"` (`--proxy None`) e `true` em
+  campo numérico virava 1.
+- Trecho: `1:30,5` (vírgula do teclado brasileiro) valia 0 s; `nan`, `inf` e negativos agora valem 0.
+  `out_time=N/A` do FFmpeg deixava de ser ignorado e podia contar como nova passada na barra de progresso.
+- Cookies: importar um site `.co.uk`/`.com.br`-like apagava os cookies de todos os outros do mesmo sufixo.
+- Histórico: um item com tipo errado (`"when": "ontem"`) derrubava a página; `history_limit` negativo
+  apagava a lista inteira.
+- Legendas: com palavras longas, o grupo cabia em 2×o limite de caracteres mas o quebrador gerava 3
+  linhas e a terceira era cortada (texto perdido no SRT/VTT/ASS). O grupo agora fecha antes de estourar.
+- Filtro de alucinações: "musical", "precisos" e "compartilhei" eram descartados por conterem
+  "music", "risos" e "compartilhe"; a comparação agora é por palavra inteira.
+- Fila: o mesmo link como vídeo único e como playlist (ou com outros itens da playlist) era tratado
+  como repetição e recusado.
+- Lote e importação de lista: `)` que faz parte do link (`…/Foo_(bar)`) era cortado; a extração
+  ficou num só lugar (`security.extract_urls`).
+- Processo de transcrição avulso devolvia a mensagem crua do motor em vez da amigável.
+- Mensagens de erro: `[WinError 53]` (caminho de rede) aparecia como "sem permissão" e `[Errno 360]`
+  como "caminho longo demais", porque o código era procurado como prefixo de texto; agora o número é
+  comparado inteiro (5, 28, 36, 112, 206).
+- Tamanhos: 1023,6 KB aparecia como "1024 KB" (e 1 GB menos 1 byte como "1024.00 MB").
+- Limite de banda: um valor que o yt-dlp recusa (`abc`) fazia todo download falhar com "invalid rate
+  limit". Configurações agora recusa o valor com aviso e o download ignora um valor inválido já salvo.
+- Preparação do ambiente: `tools_state.json` com JSON válido que não é objeto (`[]`, `null`) derrubava
+  a preparação com `AttributeError` em toda abertura; agora o estado volta vazio e é regravado.
+- Argumentos do extrator: um valor que o yt-dlp recusa (`lixo`, sem `extrator:`) fazia toda análise e
+  todo download falhar com "wrong --extractor-args form". Configurações recusa o valor com aviso e
+  análise/download ignoram um valor inválido já salvo.
+
+### Testes
+
+- `tests/test_integracao_real.py`: valida toda combinação de opções de `build_args` com o parser do
+  próprio yt-dlp e executa cada ferramenta de mídia com o FFmpeg real (caminhos com `'`, `[ ]`, `,`, `;`).
+- `tests/test_bugs_caca_1132.py` e `tests/test_bugs_rodada2.py`, `tests/test_bugs_rodada3.py`, `tests/test_bugs_rodada4.py`: regressões dos itens acima.
+
 ## [1.13.2] - 2026-09-30
 
 ### Adicionado
