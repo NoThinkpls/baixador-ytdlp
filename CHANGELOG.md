@@ -3,7 +3,7 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
-## [Não lançado]
+## [1.13.3] - 2026-10-02
 
 ### Corrigido
 
