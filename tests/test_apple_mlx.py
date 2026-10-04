@@ -1,6 +1,7 @@
 """Regressões do backend MLX para transcrição no Apple Silicon."""
 from __future__ import annotations
 
+import importlib.util
 import sys
 import tempfile
 import unittest
@@ -42,8 +43,10 @@ class AppleMlxTests(unittest.TestCase):
         transcriber.backend = "mlx"
         transcriber._model_path = Path("/modelos/whisper-medium-mlx-fixado")
         options = TranscriptionOptions(Path("entrada.wav"), Path("saida.srt"), model_size="medium")
-        with patch.dict(sys.modules, {"mlx_whisper": SimpleNamespace(transcribe=transcribe)}):
+        with patch.dict(sys.modules, {"mlx_whisper": SimpleNamespace(transcribe=transcribe)}), \
+                patch("baixador_ytdlp.transcription._load_wav_samples", return_value="amostras"):
             raw, info = transcriber._decode(Path("entrada.wav"), options, duration=10)
+        self.assertEqual(calls[0][0][0], "amostras")
 
         self.assertEqual(info.language, "pt")
         self.assertEqual(raw[0]["text"], "Olá, ação!")
@@ -51,6 +54,24 @@ class AppleMlxTests(unittest.TestCase):
         self.assertEqual(calls[0][1]["path_or_hf_repo"],
                          str(Path("/modelos/whisper-medium-mlx-fixado")))
         self.assertTrue(calls[0][1]["word_timestamps"])
+
+    @unittest.skipUnless(importlib.util.find_spec("numpy"), "numpy ausente")
+    def test_wav_is_loaded_in_memory_without_needing_ffmpeg_on_path(self) -> None:
+        import wave
+
+        from baixador_ytdlp.transcription import _load_wav_samples
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            path = Path(temporary_dir) / "audio.wav"
+            with wave.open(str(path), "wb") as handle:
+                handle.setnchannels(1)
+                handle.setsampwidth(2)
+                handle.setframerate(16000)
+                handle.writeframes(b"\x00\x00\x00\x40\x00\xc0")
+            samples = _load_wav_samples(path)
+
+        self.assertEqual(samples.dtype.name, "float32")
+        self.assertEqual(samples.tolist(), [0.0, 0.5, -0.5])
 
     def test_model_download_uses_an_immutable_revision(self) -> None:
         downloads = []

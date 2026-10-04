@@ -37,6 +37,17 @@ _CUDA_ERROR_MARKERS = (
 )
 
 
+def _load_wav_samples(path: Path):
+    """Lê o WAV PCM16 mono gerado pelo app como float32 em [-1, 1]."""
+    import wave
+
+    import numpy as np
+
+    with wave.open(str(path), "rb") as handle:
+        frames = handle.readframes(handle.getnframes())
+    return np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+
+
 FORMATS = {
     "srt": ("SRT — compatível com players", ".srt"),
     "vtt": ("WebVTT — ideal para web", ".vtt"),
@@ -446,8 +457,11 @@ class Transcriber:
         compression = options.pop("compression_ratio_threshold", 2.4)
         log_probability = options.pop("log_prob_threshold", -1.0)
         no_speech = options.pop("no_speech_threshold", 0.6)
+        # O mlx_whisper decodifica caminhos chamando "ffmpeg" pelo PATH, mas o
+        # FFmpeg do app fica na pasta de binários (fora do PATH do Mac). O WAV
+        # 16 kHz mono já foi gerado por _extract_audio; entregamos as amostras.
         result = mlx_whisper.transcribe(
-            str(audio), path_or_hf_repo=str(self._model_path), verbose=None,
+            _load_wav_samples(audio), path_or_hf_repo=str(self._model_path), verbose=None,
             language=None if opts.language == "auto" else opts.language,
             task=opts.task if opts.task in {"transcribe", "translate"} else "transcribe",
             initial_prompt=opts.initial_prompt.strip() or None,
