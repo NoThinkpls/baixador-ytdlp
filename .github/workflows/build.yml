@@ -389,6 +389,17 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$plist"
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string baixador" "$plist"
 
+      - name: Assinar o bundle (ad-hoc) e validar a assinatura
+        run: |
+          # O PyInstaller assina o .app em ad-hoc, mas o passo anterior alterou o
+          # Info.plist e invalidou o selo. No Apple Silicon, um app baixado com
+          # assinatura inválida abre como "está danificado e não pode ser aberto".
+          # A assinatura ad-hoc é gratuita (não é notarização): o Gatekeeper passa
+          # a mostrar o aviso comum de desenvolvedor não identificado.
+          app="dist/baixador-ytdlp.app"
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+
       - name: Conferir o bundle Apple Silicon
         run: |
           app="dist/baixador-ytdlp.app"

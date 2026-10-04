@@ -3,6 +3,16 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.13.5] - 2026-10-04
+
+### Corrigido
+
+- macOS: o app abria como "está danificado e não pode ser aberto". O passo que registra o protocolo
+  `baixador://` altera o `Info.plist` depois que o PyInstaller assinou o bundle, o que invalidava a
+  assinatura. O workflow agora assina o `.app` em ad-hoc (gratuito) depois dessa edição e valida com
+  `codesign --verify --deep --strict` antes de empacotar. Sem notarização, o macOS ainda mostra o aviso
+  comum de desenvolvedor não identificado.
+
 ## [1.13.4] - 2026-10-04
 
 ### Corrigido
