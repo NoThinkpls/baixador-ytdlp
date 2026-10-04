@@ -50,6 +50,8 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 
 > **Nota:** os artefatos distribuídos atualmente não possuem certificado de assinatura de código. Por isso, Windows, macOS ou ferramentas de segurança podem exibir um aviso de aplicativo/desenvolvedor não reconhecido. Os arquivos oficiais do projeto são os publicados diretamente na seção [Releases](../../releases).
 
+**macOS:** como o app não tem assinatura Developer ID nem notarização, o Mac mostra o aviso de desenvolvedor não identificado. Abra **Ajustes do Sistema → Privacidade e Segurança** e clique em **Abrir Mesmo Assim**. Se aparecer "está danificado e não pode ser aberto", rode `xattr -cr /Applications/baixador-ytdlp.app` no Terminal e abra de novo.
+
 **Primeira abertura:** o app baixa yt-dlp, FFmpeg e Deno das fontes oficiais. Depois disso, cada componente só é baixado de novo quando existe versão nova (o FFmpeg, por exemplo, só quando sai um ramo estável mais recente).
 
 ## 🚀 Recursos
