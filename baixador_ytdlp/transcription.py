@@ -12,7 +12,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 import tempfile
 import threading
 from dataclasses import dataclass
@@ -95,7 +94,28 @@ def friendly_transcription_error(exc: BaseException) -> str:
         return tr("Arquivo interno do motor de transcrição ausente ({file}). "
                   "A instalação está incompleta — reinstale a versão mais recente.").format(
                       file=match.group(0))
-    return text
+    from .ui.i18n import tr
+
+    folded = text.casefold()
+    if "no space left" in folded or "errno 28" in folded:
+        hint = tr("Não há espaço livre no disco. Libere espaço e tente de novo.")
+    elif "ffmpeg" in folded and ("no such file" in folded or "errno 2" in folded or "not found" in folded):
+        hint = tr("O FFmpeg do aplicativo não foi encontrado. Abra Configurações e atualize "
+                  "as ferramentas, ou reinstale o aplicativo.")
+    elif any(mark in folded for mark in (
+            "certificate verify", "ssl:", "connection", "timed out", "name resolution",
+            "max retries", "offline")):
+        hint = tr("Não foi possível baixar o modelo. Verifique a conexão com a internet "
+                  "e tente de novo; o download continua de onde parou.")
+    elif "metadata_errors" in folded:
+        hint = tr("Um componente de áudio da instalação está desatualizado. "
+                  "Reinstale a versão mais recente do aplicativo.")
+    elif isinstance(exc, MemoryError) or "out of memory" in folded or "cannot allocate" in folded:
+        hint = tr("Faltou memória para esta transcrição. Feche outros programas ou "
+                  "escolha um modelo menor.")
+    else:
+        return text
+    return f"{hint} ({tr('detalhe técnico')}: {text})"
 
 
 @dataclass(frozen=True)
@@ -154,6 +174,14 @@ class Transcriber:
                 "faster-whisper", "cpu", "int8", "CPU — CUDA interno indisponível (int8)")
         else:
             self.backend, self.device, self.compute_type, self.hardware_label = self._detect_hardware()
+        # Bibliotecas do motor (ex.: mlx_whisper) chamam "ffmpeg" pelo PATH. O do
+        # app fica na pasta de binários; vale só para este processo auxiliar.
+        ffmpeg = getattr(toolchain, "ffmpeg", None)
+        if ffmpeg:
+            folder = str(Path(ffmpeg).parent)
+            paths = os.environ.get("PATH", "").split(os.pathsep)
+            if folder not in paths:
+                os.environ["PATH"] = os.pathsep.join([folder, *paths])
         self.model = None
         self._model_path: Path | None = None
         # O processo persistente conserva o motor na memória entre itens da
@@ -636,15 +664,13 @@ class Transcriber:
 
     @staticmethod
     def _audio_input(audio: Path):
-        """Entrada de áudio do faster-whisper.
+        """Entrega ao faster-whisper o WAV 16 kHz mono que o app gerou, como amostras.
 
-        No macOS o WAV 16 kHz mono que o próprio app gerou é entregue como
-        amostras: o faster-whisper o decodificaria com ``av.open(...,
-        metadata_errors=...)``, que falha com um PyAV antigo no ambiente.
+        Assim ele não decodifica o arquivo de novo com o PyAV (``av.open(...,
+        metadata_errors=...)`` falha com um PyAV antigo) e a transcrição não
+        depende de componentes do ambiente do usuário.
         """
-        if sys.platform == "darwin":
-            return _load_wav_samples(audio)
-        return str(audio)
+        return _load_wav_samples(audio)
 
     def _model_options(self, model: str) -> dict:
         # Equilibra qualidade e velocidade como no legendador original.

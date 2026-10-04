@@ -14,6 +14,10 @@ formato Keep a Changelog.
   is not yet implemented"; essas opções agora são removidas só para o MLX.
 - Mac: o fallback em CPU falhava com `open() got an unexpected keyword argument 'metadata_errors'`
   (PyAV antigo no ambiente, chamado pelo faster-whisper); no macOS o WAV do app é entregue em memória.
+- Legendador: o processo auxiliar passa a enxergar o FFmpeg do app no PATH, o faster-whisper recebe o
+  áudio já preparado em memória (sem redecodificar com o PyAV) e as falhas comuns (FFmpeg ausente,
+  disco cheio, sem rede/certificado, componente desatualizado, pouca memória) viram mensagens claras,
+  mantendo o detalhe técnico entre parênteses.
 - Dependências: `av==18.1.0` agora é fixado nos `requirements*.txt` (e o comentário nos locks). O
   faster-whisper exige um PyAV recente; instalar pelo `.txt` sem a versão podia trazer um `av` antigo.
 - O fallback MLX → CPU passou a registrar no log o tipo da exceção e o rastreio (antes só a

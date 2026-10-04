@@ -75,12 +75,32 @@ class AppleMlxTests(unittest.TestCase):
             self.assertNotIn("beam_size", kwargs)
             self.assertNotIn("patience", kwargs)
 
-    def test_faster_whisper_gets_samples_on_macos_and_a_path_elsewhere(self) -> None:
-        with patch("baixador_ytdlp.transcription.sys.platform", "darwin"), \
-                patch("baixador_ytdlp.transcription._load_wav_samples", return_value="amostras"):
+    def test_faster_whisper_gets_samples_instead_of_decoding_with_pyav(self) -> None:
+        with patch("baixador_ytdlp.transcription._load_wav_samples", return_value="amostras"):
             self.assertEqual(Transcriber._audio_input(Path("a.wav")), "amostras")
-        with patch("baixador_ytdlp.transcription.sys.platform", "win32"):
-            self.assertEqual(Transcriber._audio_input(Path("a.wav")), str(Path("a.wav")))
+
+    def test_helper_process_sees_the_app_ffmpeg_on_path(self) -> None:
+        import os
+
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.dict(os.environ, {"PATH": "/usr/bin"}):
+            Transcriber(SimpleNamespace(ffmpeg=Path(folder) / "ffmpeg"),
+                        lambda _m: None, lambda _p: None, force_cpu=True)
+            self.assertEqual(os.environ["PATH"].split(os.pathsep)[0], folder)
+
+    def test_common_failures_become_plain_portuguese(self) -> None:
+        from baixador_ytdlp.transcription import friendly_transcription_error
+
+        cases = {
+            "[Errno 2] No such file or directory: 'ffmpeg'": "FFmpeg",
+            "[Errno 28] No space left on device": "espaço",
+            "open() got an unexpected keyword argument 'metadata_errors'": "desatualizado",
+            "<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED]>": "conexão",
+        }
+        for raw, expected in cases.items():
+            message = friendly_transcription_error(RuntimeError(raw))
+            self.assertIn(expected, message)
+            self.assertIn(raw, message)
 
     def test_mlx_fallback_logs_the_cause_with_traceback(self) -> None:
         transcriber = Transcriber(SimpleNamespace(), lambda _message: None, lambda _progress: None,
