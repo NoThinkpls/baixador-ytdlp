@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import MODEL_DIR
-from .diagnostics import log_event
+from .diagnostics import get_logger, log_event
 from .hardware import whisper_threads
 from .processes import popen_isolated, terminate_process_tree
 from .tools import CREATE_NO_WINDOW, Toolchain
@@ -35,6 +35,17 @@ _CUDA_ERROR_MARKERS = (
     "cublas", "cudnn", "cudart", "cuda", "cufft", "curand",
     "no cuda-capable device", "cuda driver", "out of memory",
 )
+
+
+def _load_wav_samples(path: Path):
+    """Lê o WAV PCM16 mono gerado pelo app como float32 em [-1, 1]."""
+    import wave
+
+    import numpy as np
+
+    with wave.open(str(path), "rb") as handle:
+        frames = handle.readframes(handle.getnframes())
+    return np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
 
 
 FORMATS = {
@@ -83,7 +94,28 @@ def friendly_transcription_error(exc: BaseException) -> str:
         return tr("Arquivo interno do motor de transcrição ausente ({file}). "
                   "A instalação está incompleta — reinstale a versão mais recente.").format(
                       file=match.group(0))
-    return text
+    from .ui.i18n import tr
+
+    folded = text.casefold()
+    if "no space left" in folded or "errno 28" in folded:
+        hint = tr("Não há espaço livre no disco. Libere espaço e tente de novo.")
+    elif "ffmpeg" in folded and ("no such file" in folded or "errno 2" in folded or "not found" in folded):
+        hint = tr("O FFmpeg do aplicativo não foi encontrado. Abra Configurações e atualize "
+                  "as ferramentas, ou reinstale o aplicativo.")
+    elif any(mark in folded for mark in (
+            "certificate verify", "ssl:", "connection", "timed out", "name resolution",
+            "max retries", "offline")):
+        hint = tr("Não foi possível baixar o modelo. Verifique a conexão com a internet "
+                  "e tente de novo; o download continua de onde parou.")
+    elif "metadata_errors" in folded:
+        hint = tr("Um componente de áudio da instalação está desatualizado. "
+                  "Reinstale a versão mais recente do aplicativo.")
+    elif isinstance(exc, MemoryError) or "out of memory" in folded or "cannot allocate" in folded:
+        hint = tr("Faltou memória para esta transcrição. Feche outros programas ou "
+                  "escolha um modelo menor.")
+    else:
+        return text
+    return f"{hint} ({tr('detalhe técnico')}: {text})"
 
 
 @dataclass(frozen=True)
@@ -142,6 +174,14 @@ class Transcriber:
                 "faster-whisper", "cpu", "int8", "CPU — CUDA interno indisponível (int8)")
         else:
             self.backend, self.device, self.compute_type, self.hardware_label = self._detect_hardware()
+        # Bibliotecas do motor (ex.: mlx_whisper) chamam "ffmpeg" pelo PATH. O do
+        # app fica na pasta de binários; vale só para este processo auxiliar.
+        ffmpeg = getattr(toolchain, "ffmpeg", None)
+        if ffmpeg:
+            folder = str(Path(ffmpeg).parent)
+            paths = os.environ.get("PATH", "").split(os.pathsep)
+            if folder not in paths:
+                os.environ["PATH"] = os.pathsep.join([folder, *paths])
         self.model = None
         self._model_path: Path | None = None
         # O processo persistente conserva o motor na memória entre itens da
@@ -363,6 +403,10 @@ class Transcriber:
     def _switch_mlx_to_cpu(self, model_size: str, reason: Exception) -> None:
         """Fallback seguro quando um Mac não consegue inicializar o MLX."""
         self.status(f"MLX indisponível durante a transcrição ({reason}). Alternando para CPU int8…")
+        # O pacote de diagnóstico só recebia a mensagem da interface; o tipo da
+        # exceção e o rastreio ficam no log para achar a causa (ex.: ffmpeg ausente).
+        get_logger().warning(
+            "Fallback MLX para CPU: %s: %s", type(reason).__name__, reason, exc_info=reason)
         self.backend, self.device, self.compute_type = "faster-whisper", "cpu", "int8"
         self.hardware_label = "Apple Silicon — fallback CPU/NEON (int8)"
         self._discard_model()
@@ -407,7 +451,7 @@ class Transcriber:
                                duration: float) -> tuple[list[dict], object]:
         """Consome o gerador do faster-whisper; erros de DLL podem ocorrer só aqui."""
         segments, info = self.model.transcribe(
-            str(audio), language=None if opts.language == "auto" else opts.language,
+            self._audio_input(audio), language=None if opts.language == "auto" else opts.language,
             task=opts.task if opts.task in {"transcribe", "translate"} else "transcribe",
             initial_prompt=opts.initial_prompt.strip() or None,
             word_timestamps=True, vad_filter=True,
@@ -441,13 +485,20 @@ class Transcriber:
         import mlx_whisper
 
         options = self._model_options(opts.model_size).copy()
+        # O MLX só tem decodificação gulosa/amostragem: beam_size levanta
+        # "Beam search decoder is not yet implemented" e patience exige beam_size.
+        options.pop("beam_size", None)
+        options.pop("patience", None)
         temperature = options.pop("temperature", 0.0)
         condition = options.pop("condition_on_previous_text", True)
         compression = options.pop("compression_ratio_threshold", 2.4)
         log_probability = options.pop("log_prob_threshold", -1.0)
         no_speech = options.pop("no_speech_threshold", 0.6)
+        # O mlx_whisper decodifica caminhos chamando "ffmpeg" pelo PATH, mas o
+        # FFmpeg do app fica na pasta de binários (fora do PATH do Mac). O WAV
+        # 16 kHz mono já foi gerado por _extract_audio; entregamos as amostras.
         result = mlx_whisper.transcribe(
-            str(audio), path_or_hf_repo=str(self._model_path), verbose=None,
+            _load_wav_samples(audio), path_or_hf_repo=str(self._model_path), verbose=None,
             language=None if opts.language == "auto" else opts.language,
             task=opts.task if opts.task in {"transcribe", "translate"} else "transcribe",
             initial_prompt=opts.initial_prompt.strip() or None,
@@ -609,7 +660,17 @@ class Transcriber:
         }
         accepted = inspect.signature(pipeline.transcribe).parameters
         options = {key: value for key, value in options.items() if key in accepted}
-        return pipeline.transcribe(str(audio), **options)
+        return pipeline.transcribe(self._audio_input(audio), **options)
+
+    @staticmethod
+    def _audio_input(audio: Path):
+        """Entrega ao faster-whisper o WAV 16 kHz mono que o app gerou, como amostras.
+
+        Assim ele não decodifica o arquivo de novo com o PyAV (``av.open(...,
+        metadata_errors=...)`` falha com um PyAV antigo) e a transcrição não
+        depende de componentes do ambiente do usuário.
+        """
+        return _load_wav_samples(audio)
 
     def _model_options(self, model: str) -> dict:
         # Equilibra qualidade e velocidade como no legendador original.
