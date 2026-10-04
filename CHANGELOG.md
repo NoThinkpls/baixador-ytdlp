@@ -3,6 +3,16 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [Não lançado]
+
+### Corrigido
+
+- Mac (Apple Silicon): o legendador caía sempre no fallback CPU int8 porque o `mlx_whisper` chama
+  `ffmpeg` pelo PATH e o FFmpeg do app fica na pasta de binários. O WAV 16 kHz mono já gerado pelo
+  app agora é lido em memória e entregue ao MLX, que volta a usar a GPU integrada.
+- O fallback MLX → CPU passou a registrar no log o tipo da exceção e o rastreio (antes só a
+  mensagem da interface, que não chegava ao pacote de diagnóstico).
+
 ## [1.13.3] - 2026-10-02
 
 ### Corrigido

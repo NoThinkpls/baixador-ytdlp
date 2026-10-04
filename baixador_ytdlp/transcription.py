@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import MODEL_DIR
-from .diagnostics import log_event
+from .diagnostics import get_logger, log_event
 from .hardware import whisper_threads
 from .processes import popen_isolated, terminate_process_tree
 from .tools import CREATE_NO_WINDOW, Toolchain
@@ -374,6 +374,10 @@ class Transcriber:
     def _switch_mlx_to_cpu(self, model_size: str, reason: Exception) -> None:
         """Fallback seguro quando um Mac não consegue inicializar o MLX."""
         self.status(f"MLX indisponível durante a transcrição ({reason}). Alternando para CPU int8…")
+        # O pacote de diagnóstico só recebia a mensagem da interface; o tipo da
+        # exceção e o rastreio ficam no log para achar a causa (ex.: ffmpeg ausente).
+        get_logger().warning(
+            "Fallback MLX para CPU: %s: %s", type(reason).__name__, reason, exc_info=reason)
         self.backend, self.device, self.compute_type = "faster-whisper", "cpu", "int8"
         self.hardware_label = "Apple Silicon — fallback CPU/NEON (int8)"
         self._discard_model()

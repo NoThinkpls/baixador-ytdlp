@@ -55,6 +55,18 @@ class AppleMlxTests(unittest.TestCase):
                          str(Path("/modelos/whisper-medium-mlx-fixado")))
         self.assertTrue(calls[0][1]["word_timestamps"])
 
+    def test_mlx_fallback_logs_the_cause_with_traceback(self) -> None:
+        transcriber = Transcriber(SimpleNamespace(), lambda _message: None, lambda _progress: None,
+                                  force_cpu=True)
+        transcriber.backend = "mlx"
+        with patch.object(Transcriber, "_load_model") as load, \
+                self.assertLogs("baixador_ytdlp", level="WARNING") as captured:
+            transcriber._switch_mlx_to_cpu("medium", FileNotFoundError("ffmpeg"))
+        load.assert_called_once_with("medium")
+        self.assertEqual(transcriber.backend, "faster-whisper")
+        self.assertIn("FileNotFoundError", captured.output[0])
+        self.assertIsNotNone(captured.records[0].exc_info)
+
     @unittest.skipUnless(importlib.util.find_spec("numpy"), "numpy ausente")
     def test_wav_is_loaded_in_memory_without_needing_ffmpeg_on_path(self) -> None:
         import wave
