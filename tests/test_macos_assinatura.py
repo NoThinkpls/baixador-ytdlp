@@ -24,6 +24,13 @@ class AssinaturaDoAppMacTests(unittest.TestCase):
         for asset in ("mel_filters.npz", "multilingual.tiktoken", "gpt2.tiktoken"):
             self.assertIn(asset, text)
 
+    def test_ci_executa_o_autoteste_do_app_mac_com_o_mlx(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("Autoteste do app empacotado", text)
+        main = (WORKFLOW.parents[2] / "main.py").read_text(encoding="utf-8")
+        for needle in ('sys.platform == "darwin"', "log_mel_spectrogram", "get_tokenizer", "timing.dtw"):
+            self.assertIn(needle, main)
+
 
 if __name__ == "__main__":
     unittest.main()

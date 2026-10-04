@@ -168,6 +168,20 @@ def _run_self_test(report_path: Path) -> int:
         checkpoint("load_vad")
         report["vad_assets"] = str(Path(get_assets_path()).resolve())
         get_vad_model()
+        if sys.platform == "darwin":
+            # No app empacotado do Mac o legendador usa o MLX: os dados do
+            # mlx_whisper (filtros mel, vocabulário) e o JIT do numba precisam
+            # funcionar aqui, e não só no ambiente de desenvolvimento.
+            checkpoint("mlx_whisper")
+            import numpy as np
+            from mlx_whisper import timing
+            from mlx_whisper.audio import log_mel_spectrogram
+            from mlx_whisper.tokenizer import get_tokenizer
+
+            report["mlx_mel_shape"] = list(log_mel_spectrogram(
+                np.zeros(16000, dtype=np.float32), n_mels=80).shape)
+            get_tokenizer(multilingual=True)
+            timing.dtw(np.zeros((4, 6), dtype=np.float32))
         checkpoint("probe_cuda")
         try:
             report["cuda_devices"] = ctranslate2.get_cuda_device_count()

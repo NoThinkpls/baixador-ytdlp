@@ -422,6 +422,19 @@ jobs:
           done
           echo "OK: $app"
 
+      - name: Autoteste do app empacotado (MLX, dados e JIT)
+        run: |
+          report="$RUNNER_TEMP/baixador-self-test.json"
+          rm -f "$report"
+          BAIXADOR_YTDLP_SELF_TEST_REPORT="$report" \
+            "dist/baixador-ytdlp.app/Contents/MacOS/baixador-ytdlp" || true
+          if [[ ! -f "$report" ]] || ! grep -q '"ok": true' "$report"; then
+            echo "::error::O autoteste do app macOS falhou:"
+            cat "$report" 2>/dev/null || echo "sem relatório"
+            exit 1
+          fi
+          cat "$report"
+
       - name: Empacotar o aplicativo
         env:
           APP_VERSION: ${{ steps.ver.outputs.version }}
