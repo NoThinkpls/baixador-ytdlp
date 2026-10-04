@@ -372,6 +372,7 @@ jobs:
             --collect-all av \
             --collect-all certifi \
             --collect-all mlx \
+            --collect-all mlx_whisper \
             --hidden-import mlx_whisper \
             --exclude-module torch \
             --exclude-module torchvision \
@@ -411,6 +412,14 @@ jobs:
           # -quit evita que o find retorne erro de pipe ao primeiro resultado.
           mlx_file="$(find "$app" -type f -path '*mlx*' -print -quit)"
           test -n "$mlx_file"
+          # O mlx_whisper lê arquivos de dados (filtros mel e vocabulário) ao
+          # transcrever; sem eles o app cai no CPU com "[load_npz] Input must be a zip file".
+          for asset in mel_filters.npz multilingual.tiktoken gpt2.tiktoken; do
+            test -n "$(find "$app" -type f -name "$asset" -print -quit)" || {
+              echo "::error::$asset ausente no bundle (faltou --collect-all mlx_whisper)"
+              exit 1
+            }
+          done
           echo "OK: $app"
 
       - name: Empacotar o aplicativo

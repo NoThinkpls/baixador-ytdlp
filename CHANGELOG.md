@@ -12,6 +12,9 @@ formato Keep a Changelog.
   assinatura. O workflow agora assina o `.app` em ad-hoc (gratuito) depois dessa edição e valida com
   `codesign --verify --deep --strict` antes de empacotar. Sem notarização, o macOS ainda mostra o aviso
   comum de desenvolvedor não identificado.
+- macOS: no app empacotado o legendador caía sempre no CPU com `[load_npz] Input must be a zip file`:
+  os arquivos de dados do `mlx_whisper` (`mel_filters.npz` e os vocabulários) não entravam no `.app`.
+  O build agora usa `--collect-all mlx_whisper` e falha se algum deles faltar no bundle.
 
 ## [1.13.4] - 2026-10-04
 

@@ -18,6 +18,12 @@ class AssinaturaDoAppMacTests(unittest.TestCase):
         self.assertLess(sign, verify)
         self.assertLess(verify, package)
 
+    def test_bundle_inclui_os_dados_do_mlx_whisper_e_confere_no_ci(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("--collect-all mlx_whisper", text)
+        for asset in ("mel_filters.npz", "multilingual.tiktoken", "gpt2.tiktoken"):
+            self.assertIn(asset, text)
+
 
 if __name__ == "__main__":
     unittest.main()
