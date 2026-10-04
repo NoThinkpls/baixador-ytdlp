@@ -154,8 +154,16 @@ def _run_self_test(report_path: Path) -> int:
         if cuda_problem:
             report["cuda_problem"] = cuda_problem
             raise RuntimeError(f"Runtime CUDA inválido nesta build: {cuda_problem}")
+        def distribution_version(distribution: str) -> str:
+            # O .app do macOS (PyInstaller) não leva os metadados de todo pacote;
+            # o import já foi validado acima, então a versão é só informativa.
+            try:
+                return importlib.metadata.version(distribution)
+            except importlib.metadata.PackageNotFoundError:
+                return "sem metadados"
+
         report["versions"] = {
-            distribution: importlib.metadata.version(distribution)
+            distribution: distribution_version(distribution)
             for distribution in (
                 "faster-whisper", "ctranslate2", "av", "onnxruntime",
                 "tokenizers", "huggingface_hub",
