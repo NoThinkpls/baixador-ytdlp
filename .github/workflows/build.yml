@@ -372,6 +372,7 @@ jobs:
             --collect-all av \
             --collect-all certifi \
             --collect-all mlx \
+            --collect-all mlx_whisper \
             --hidden-import mlx_whisper \
             --exclude-module torch \
             --exclude-module torchvision \
@@ -389,6 +390,17 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$plist"
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string baixador" "$plist"
 
+      - name: Assinar o bundle (ad-hoc) e validar a assinatura
+        run: |
+          # O PyInstaller assina o .app em ad-hoc, mas o passo anterior alterou o
+          # Info.plist e invalidou o selo. No Apple Silicon, um app baixado com
+          # assinatura inválida abre como "está danificado e não pode ser aberto".
+          # A assinatura ad-hoc é gratuita (não é notarização): o Gatekeeper passa
+          # a mostrar o aviso comum de desenvolvedor não identificado.
+          app="dist/baixador-ytdlp.app"
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+
       - name: Conferir o bundle Apple Silicon
         run: |
           app="dist/baixador-ytdlp.app"
@@ -400,7 +412,28 @@ jobs:
           # -quit evita que o find retorne erro de pipe ao primeiro resultado.
           mlx_file="$(find "$app" -type f -path '*mlx*' -print -quit)"
           test -n "$mlx_file"
+          # O mlx_whisper lê arquivos de dados (filtros mel e vocabulário) ao
+          # transcrever; sem eles o app cai no CPU com "[load_npz] Input must be a zip file".
+          for asset in mel_filters.npz multilingual.tiktoken gpt2.tiktoken; do
+            test -n "$(find "$app" -type f -name "$asset" -print -quit)" || {
+              echo "::error::$asset ausente no bundle (faltou --collect-all mlx_whisper)"
+              exit 1
+            }
+          done
           echo "OK: $app"
+
+      - name: Autoteste do app empacotado (MLX, dados e JIT)
+        run: |
+          report="$RUNNER_TEMP/baixador-self-test.json"
+          rm -f "$report"
+          BAIXADOR_YTDLP_SELF_TEST_REPORT="$report" \
+            "dist/baixador-ytdlp.app/Contents/MacOS/baixador-ytdlp" || true
+          if [[ ! -f "$report" ]] || ! grep -q '"ok": true' "$report"; then
+            echo "::error::O autoteste do app macOS falhou:"
+            cat "$report" 2>/dev/null || echo "sem relatório"
+            exit 1
+          fi
+          cat "$report"
 
       - name: Empacotar o aplicativo
         env:

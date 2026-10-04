@@ -154,8 +154,16 @@ def _run_self_test(report_path: Path) -> int:
         if cuda_problem:
             report["cuda_problem"] = cuda_problem
             raise RuntimeError(f"Runtime CUDA inválido nesta build: {cuda_problem}")
+        def distribution_version(distribution: str) -> str:
+            # O .app do macOS (PyInstaller) não leva os metadados de todo pacote;
+            # o import já foi validado acima, então a versão é só informativa.
+            try:
+                return importlib.metadata.version(distribution)
+            except importlib.metadata.PackageNotFoundError:
+                return "sem metadados"
+
         report["versions"] = {
-            distribution: importlib.metadata.version(distribution)
+            distribution: distribution_version(distribution)
             for distribution in (
                 "faster-whisper", "ctranslate2", "av", "onnxruntime",
                 "tokenizers", "huggingface_hub",
@@ -168,6 +176,20 @@ def _run_self_test(report_path: Path) -> int:
         checkpoint("load_vad")
         report["vad_assets"] = str(Path(get_assets_path()).resolve())
         get_vad_model()
+        if sys.platform == "darwin":
+            # No app empacotado do Mac o legendador usa o MLX: os dados do
+            # mlx_whisper (filtros mel, vocabulário) e o JIT do numba precisam
+            # funcionar aqui, e não só no ambiente de desenvolvimento.
+            checkpoint("mlx_whisper")
+            import numpy as np
+            from mlx_whisper import timing
+            from mlx_whisper.audio import log_mel_spectrogram
+            from mlx_whisper.tokenizer import get_tokenizer
+
+            report["mlx_mel_shape"] = list(log_mel_spectrogram(
+                np.zeros(16000, dtype=np.float32), n_mels=80).shape)
+            get_tokenizer(multilingual=True)
+            timing.dtw(np.zeros((4, 6), dtype=np.float32))
         checkpoint("probe_cuda")
         try:
             report["cuda_devices"] = ctranslate2.get_cuda_device_count()
