@@ -12,6 +12,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import threading
 from dataclasses import dataclass
@@ -422,7 +423,7 @@ class Transcriber:
                                duration: float) -> tuple[list[dict], object]:
         """Consome o gerador do faster-whisper; erros de DLL podem ocorrer só aqui."""
         segments, info = self.model.transcribe(
-            str(audio), language=None if opts.language == "auto" else opts.language,
+            self._audio_input(audio), language=None if opts.language == "auto" else opts.language,
             task=opts.task if opts.task in {"transcribe", "translate"} else "transcribe",
             initial_prompt=opts.initial_prompt.strip() or None,
             word_timestamps=True, vad_filter=True,
@@ -456,6 +457,10 @@ class Transcriber:
         import mlx_whisper
 
         options = self._model_options(opts.model_size).copy()
+        # O MLX só tem decodificação gulosa/amostragem: beam_size levanta
+        # "Beam search decoder is not yet implemented" e patience exige beam_size.
+        options.pop("beam_size", None)
+        options.pop("patience", None)
         temperature = options.pop("temperature", 0.0)
         condition = options.pop("condition_on_previous_text", True)
         compression = options.pop("compression_ratio_threshold", 2.4)
@@ -627,7 +632,19 @@ class Transcriber:
         }
         accepted = inspect.signature(pipeline.transcribe).parameters
         options = {key: value for key, value in options.items() if key in accepted}
-        return pipeline.transcribe(str(audio), **options)
+        return pipeline.transcribe(self._audio_input(audio), **options)
+
+    @staticmethod
+    def _audio_input(audio: Path):
+        """Entrada de áudio do faster-whisper.
+
+        No macOS o WAV 16 kHz mono que o próprio app gerou é entregue como
+        amostras: o faster-whisper o decodificaria com ``av.open(...,
+        metadata_errors=...)``, que falha com um PyAV antigo no ambiente.
+        """
+        if sys.platform == "darwin":
+            return _load_wav_samples(audio)
+        return str(audio)
 
     def _model_options(self, model: str) -> dict:
         # Equilibra qualidade e velocidade como no legendador original.

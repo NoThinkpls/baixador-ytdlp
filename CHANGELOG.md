@@ -10,6 +10,10 @@ formato Keep a Changelog.
 - Mac (Apple Silicon): o legendador caía sempre no fallback CPU int8 porque o `mlx_whisper` chama
   `ffmpeg` pelo PATH e o FFmpeg do app fica na pasta de binários. O WAV 16 kHz mono já gerado pelo
   app agora é lido em memória e entregue ao MLX, que volta a usar a GPU integrada.
+- Mac: o MLX recebia `beam_size`/`patience` do perfil de qualidade e abortava com "Beam search decoder
+  is not yet implemented"; essas opções agora são removidas só para o MLX.
+- Mac: o fallback em CPU falhava com `open() got an unexpected keyword argument 'metadata_errors'`
+  (PyAV antigo no ambiente, chamado pelo faster-whisper); no macOS o WAV do app é entregue em memória.
 - O fallback MLX → CPU passou a registrar no log o tipo da exceção e o rastreio (antes só a
   mensagem da interface, que não chegava ao pacote de diagnóstico).
 

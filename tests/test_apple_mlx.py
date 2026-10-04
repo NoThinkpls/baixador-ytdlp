@@ -55,6 +55,33 @@ class AppleMlxTests(unittest.TestCase):
                          str(Path("/modelos/whisper-medium-mlx-fixado")))
         self.assertTrue(calls[0][1]["word_timestamps"])
 
+    def test_mlx_does_not_receive_beam_search_options(self) -> None:
+        calls = []
+
+        def transcribe(*args, **kwargs):
+            calls.append(kwargs)
+            return {"language": "pt", "segments": []}
+
+        transcriber = Transcriber(SimpleNamespace(), lambda _message: None, lambda _progress: None,
+                                  force_cpu=True)
+        transcriber.backend = "mlx"
+        transcriber._model_path = Path("/modelos/mlx")
+        for model in ("medium", "large-v3"):
+            options = TranscriptionOptions(Path("e.wav"), Path("s.srt"), model_size=model)
+            with patch.dict(sys.modules, {"mlx_whisper": SimpleNamespace(transcribe=transcribe)}), \
+                    patch("baixador_ytdlp.transcription._load_wav_samples", return_value="x"):
+                transcriber._decode(Path("e.wav"), options, duration=10)
+        for kwargs in calls:
+            self.assertNotIn("beam_size", kwargs)
+            self.assertNotIn("patience", kwargs)
+
+    def test_faster_whisper_gets_samples_on_macos_and_a_path_elsewhere(self) -> None:
+        with patch("baixador_ytdlp.transcription.sys.platform", "darwin"), \
+                patch("baixador_ytdlp.transcription._load_wav_samples", return_value="amostras"):
+            self.assertEqual(Transcriber._audio_input(Path("a.wav")), "amostras")
+        with patch("baixador_ytdlp.transcription.sys.platform", "win32"):
+            self.assertEqual(Transcriber._audio_input(Path("a.wav")), str(Path("a.wav")))
+
     def test_mlx_fallback_logs_the_cause_with_traceback(self) -> None:
         transcriber = Transcriber(SimpleNamespace(), lambda _message: None, lambda _progress: None,
                                   force_cpu=True)
