@@ -752,7 +752,7 @@ class Transcriber:
         "a", "e", "o", "as", "os", "um", "uma", "mas", "ou", "que", "se", "eu", "ele", "ela", "nós",
         "você", "vocês", "isso", "isto", "aquele", "aquela", "então", "só", "para", "pra", "por",
         "porque", "como", "quando", "daí", "aí", "também", "não", "nem", "era", "foi", "é", "tem",
-        "ainda", "agora", "assim", "aqui", "lá", "mesmo", "depois", "antes", "ou", "sem", "com",
+        "ainda", "agora", "assim", "aqui", "lá", "mesmo", "depois", "antes", "sem", "com",
     })
     _SOFT_PAUSE = 0.25   # segundos: pausa menor que isso entre duas frases é a mesma fala corrida
     _LONG_PAUSE = 0.6
@@ -783,10 +783,9 @@ class Transcriber:
                 gap = following["start"] - token["end"]
                 if words[-1].rstrip(".").lower() in self._WEAK_ENDINGS:
                     replacement = ""
-                elif next_words and (next_words[0][:1].islower() or gap < self._SOFT_PAUSE):
-                    replacement = ","
-                elif (sentence_first in self._CONDITIONAL_OPENERS and not has_comma
-                      and gap < self._LONG_PAUSE):
+                elif (next_words and (next_words[0][:1].islower() or gap < self._SOFT_PAUSE)) or (
+                        sentence_first in self._CONDITIONAL_OPENERS and not has_comma
+                        and gap < self._LONG_PAUSE):
                     replacement = ","
             if replacement is not None:
                 token["text"] = text[:-1] + replacement
