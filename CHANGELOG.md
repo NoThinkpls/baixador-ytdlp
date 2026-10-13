@@ -3,6 +3,21 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.13.6] - 2026-10-13
+
+### Adicionado
+
+- Baixar → "Nome personalizado": define o nome do arquivo (sem a extensão) antes de iniciar o
+  download. Vazio, vale o modelo das Configurações; não vale para playlists. Caracteres inválidos
+  viram `_` e o "Nome previsto" já mostra o resultado.
+
+### Alterado
+
+- Legendas: o ponto final que o Whisper coloca onde a fala continua (pausa curta, frase que
+  começa com "se"/"quando" sem fechar, palavra que não termina a ideia) vira vírgula ou some.
+  A palavra seguinte volta a minúscula quando é comum ("mas", "eu", "para"…); nomes próprios
+  não são alterados. Ponto em pausa longa, `?`, `!` e reticências ficam como estavam.
+
 ## [1.13.5] - 2026-10-04
 
 ### Corrigido

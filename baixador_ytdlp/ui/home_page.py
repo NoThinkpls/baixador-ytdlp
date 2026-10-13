@@ -393,6 +393,19 @@ class HomePage(QWidget):
         self.filename_row.hide()  # só faz sentido depois de analisar
         group.add_row(self.filename_row)
 
+        self.custom_name_edit = TextField("Deixe vazio para usar o nome previsto", group)
+        self.custom_name_edit.setMinimumWidth(320)
+        self.custom_name_edit.setAccessibleName("Nome personalizado do arquivo")
+        self.custom_name_edit.textChanged.connect(self._refresh_filename_preview)
+        self.custom_name_row = SettingRow(
+            "Nome personalizado",
+            "Nome do arquivo sem a extensão. Não vale para playlists.",
+            self.custom_name_edit,
+            group,
+        )
+        self.custom_name_row.hide()
+        group.add_row(self.custom_name_row)
+
         self.transcribe_switch = Switch(group)
         self.transcribe_switch.checkedChanged.connect(self._toggle_transcription_after)
         group.add_row(SettingRow(
@@ -916,6 +929,7 @@ class HomePage(QWidget):
         self.table.hide()
         self.pick_items_btn.hide()
         self.filename_row.hide()
+        self.custom_name_row.hide()
         self._update_playlist_hint()
         self._refresh_filename_preview()
         self.download_btn.setEnabled(False)
@@ -939,6 +953,8 @@ class HomePage(QWidget):
         self.chapter_combo.blockSignals(False)
         self.chapter_row.setVisible(self.trim_check.isChecked() and bool(info.chapters))
         self.filename_row.show()
+        self.custom_name_row.setVisible(not info.is_playlist)
+        self.custom_name_edit.clear()
 
         self.media_title.setText(info.title)
         meta = [p for p in (info.uploader, f"duração {info.duration}") if p]
@@ -1035,8 +1051,12 @@ class HomePage(QWidget):
         if extension == "original":
             extension = str((self.info.raw if self.info else {}).get("ext") or "ext")
         metadata = self.info.raw if self.info else None
+        custom = self.custom_name_edit.text().strip() if hasattr(self, "custom_name_edit") else ""
+        template = (custom.replace("%", "%%") + ".%(ext)s"
+                    if custom and not (self.info and self.info.is_playlist)
+                    else self.cfg.filename_template)
         self.filename_preview.setText(render_filename_preview(
-            self.cfg.filename_template,
+            template,
             metadata,
             extension,
         ))
@@ -1101,6 +1121,7 @@ class HomePage(QWidget):
             transcribe_after=self.transcribe_switch.isChecked(),
             embed_transcription=self.embed_transcription_switch.isChecked(),
             media_duration=_duration_seconds(self.info.raw),
+            custom_name=self.custom_name_edit.text().strip(),
         )
         self.enqueue.emit(opts)
 

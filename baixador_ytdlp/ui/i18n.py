@@ -18,7 +18,10 @@ EN: dict[str, str] = {
     "Colar": "Paste", "Importar lista": "Import list", "Vários links": "Multiple links",
     "Analisar": "Analyze", "Saída": "Output", "Formato do arquivo": "File format",
     "Somente áudio": "Audio only", "Formato do áudio": "Audio format",
-    "Nome previsto": "Estimated name", "Gerar legenda ao terminar": "Create captions when finished",
+    "Nome previsto": "Estimated name", "Nome personalizado": "Custom name",
+    "Nome do arquivo sem a extensão. Não vale para playlists.":
+        "File name without the extension. Does not apply to playlists.",
+    "Deixe vazio para usar o nome previsto": "Leave empty to use the estimated name", "Gerar legenda ao terminar": "Create captions when finished",
     "Incorporar legenda como faixa": "Embed captions as a track",
     "Baixar só um trecho": "Download a clip",
     "Qualidade": "Quality", "Arquivos": "Files", "Modelo": "Model",

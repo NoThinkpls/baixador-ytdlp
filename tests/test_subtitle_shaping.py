@@ -18,7 +18,35 @@ def _slow_segment(words: int, step: float = 0.9) -> dict:
             "words": items}
 
 
+def _spoken(*items: tuple[str, float, float]) -> list[dict]:
+    words = [{"text": t, "start": s, "end": e} for t, s, e in items]
+    return [{"start": words[0]["start"], "end": words[-1]["end"],
+             "text": " ".join(w["text"] for w in words), "words": words}]
+
+
 class SubtitleShapingTests(unittest.TestCase):
+    def test_ponto_em_pausa_curta_vira_virgula_e_em_pausa_longa_fica(self) -> None:
+        engine = _transcriber()
+        short = engine._soften_periods(_spoken(
+            ("Eu", 0, .2), ("sei.", .2, .5), ("Eu", .6, .8), ("estava", .8, 1.0), ("ali.", 1.0, 1.4)))
+        self.assertEqual(short[0]["text"], "Eu sei, eu estava ali.")
+        long_pause = engine._soften_periods(_spoken(
+            ("Eu", 0, .2), ("sei.", .2, .5), ("Eu", 1.5, 1.7), ("estava", 1.7, 2.0), ("ali.", 2.0, 2.4)))
+        self.assertEqual(long_pause[0]["text"], "Eu sei. Eu estava ali.")
+
+    def test_ponto_apos_palavra_que_nao_fecha_ideia_some(self) -> None:
+        engine = _transcriber()
+        result = engine._soften_periods(_spoken(
+            ("na", 0, .2), ("hora", .2, .5), ("do.", .5, .7), ("louvor", 2.0, 2.4), ("hoje.", 2.4, 2.9)))
+        self.assertEqual(result[0]["text"], "na hora do louvor hoje.")
+
+    def test_oracao_condicional_aberta_vira_virgula_mas_pergunta_e_reticencias_ficam(self) -> None:
+        engine = _transcriber()
+        result = engine._soften_periods(_spoken(
+            ("Se", 0, .2), ("a", .2, .3), ("empresa", .3, .6), ("trabalha.", .6, 1.0),
+            ("Mas", 1.4, 1.6), ("lá?", 1.6, 2.0), ("Ué...", 2.0, 2.4), ("Tá.", 3.5, 3.8)))
+        self.assertEqual(result[0]["text"], "Se a empresa trabalha, mas lá? Ué... Tá.")
+
     def test_bloco_por_palavra_respeita_a_duracao_maxima(self) -> None:
         engine = _transcriber()
         engine.max_chars_per_line = 100  # isola o limite de tempo do de caracteres

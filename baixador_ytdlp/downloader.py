@@ -58,6 +58,7 @@ class DownloadOptions:
     repeat_index: int = 0          # sufixo (2), (3)… em repetição confirmada
     media_duration: float = 0.0    # segundos, da análise; dá % a trecho sem fim definido
     section_selector: str = ""      # alternativa HLS equivalente para recortes
+    custom_name: str = ""           # nome do arquivo sem extensão; vazio = modelo das Configurações
 
 
 @dataclass
@@ -102,9 +103,15 @@ def is_retryable_error(message: str) -> bool:
             or _RETRYABLE_WORDS.search(text) is not None)
 
 
+_INVALID_NAME_CHARS = frozenset('/\\:*?"<>|')
+
+
 def _output_template(opts: DownloadOptions, cfg: Settings) -> str:
     """Escolhe a nomenclatura final sem alterar a preferência base do usuário."""
     template = cfg.filename_template
+    custom = "".join("_" if c in _INVALID_NAME_CHARS or ord(c) < 32 else c for c in (opts.custom_name or "")).strip(" .")
+    if custom and not opts.playlist:
+        template = custom.replace("%", "%%") + ".%(ext)s"
     if opts.repeat_index >= 2:
         marker = ".%(ext)s"
         suffix = f" ({opts.repeat_index})"

@@ -629,7 +629,7 @@ class Transcriber:
             self.max_chars_per_line = max(20, min(100, int(opts.max_chars_per_line)))
             self.min_duration = max(0.2, min(5.0, float(opts.min_duration)))
             self.max_duration = max(self.min_duration, min(15.0, float(opts.max_duration)))
-            result = self._fix_timing(self._split_segments(self._clean(raw)))
+            result = self._fix_timing(self._split_segments(self._soften_periods(self._clean(raw))))
             self._write(opts.output_path, opts.output_format, result, language)
             self.progress(100)
             self.status(f"Legenda criada: {opts.output_path.name}")
@@ -739,6 +739,66 @@ class Transcriber:
             })
         self.status(f"Filtro de qualidade: {len(segments) - len(cleaned)} segmentos removidos")
         return cleaned
+
+    # Palavras que não fecham uma ideia: um ponto logo depois delas é pausa da fala, não fim de frase.
+    _WEAK_ENDINGS = frozenset({
+        "a", "o", "as", "os", "um", "uma", "de", "do", "da", "dos", "das", "em", "no", "na", "nos",
+        "nas", "para", "pra", "com", "por", "ao", "à", "e", "ou", "que", "se", "meu", "minha",
+        "seu", "sua", "nosso", "nossa", "porque", "como", "quando", "mas", "até", "sem", "sobre",
+    })
+    _CONDITIONAL_OPENERS = frozenset({"se", "quando", "enquanto", "embora", "caso"})
+    # Palavras comuns que podem voltar a minúscula quando o ponto antes delas some; nomes próprios ficam de fora.
+    _LOWERCASE_AFTER_SOFTENING = frozenset({
+        "a", "e", "o", "as", "os", "um", "uma", "mas", "ou", "que", "se", "eu", "ele", "ela", "nós",
+        "você", "vocês", "isso", "isto", "aquele", "aquela", "então", "só", "para", "pra", "por",
+        "porque", "como", "quando", "daí", "aí", "também", "não", "nem", "era", "foi", "é", "tem",
+        "ainda", "agora", "assim", "aqui", "lá", "mesmo", "depois", "antes", "ou", "sem", "com",
+    })
+    _SOFT_PAUSE = 0.25   # segundos: pausa menor que isso entre duas frases é a mesma fala corrida
+    _LONG_PAUSE = 0.6
+
+    def _soften_periods(self, segments: list[dict]) -> list[dict]:
+        """Troca por vírgula (ou tira) o ponto que o Whisper põe onde a fala continua.
+
+        O modelo fecha com ponto todo trecho que acaba numa pausa, mesmo no meio da
+        frase. Só mexe em ponto simples: reticências, ? e ! ficam como vieram, e o
+        ponto continua onde há pausa real ou a frase parece completa.
+        """
+        tokens: list[dict] = []
+        for segment in segments:
+            tokens.extend(segment["words"] or [segment])
+        sentence_first, has_comma = "", False
+        for index, token in enumerate(tokens):
+            words = token["text"].split()
+            if not words:
+                continue
+            if not sentence_first:
+                sentence_first, has_comma = words[0].strip("\"“¿").lower(), False
+            has_comma = has_comma or "," in token["text"]
+            text = token["text"]
+            replacement = None
+            if text.endswith(".") and not text.endswith("..") and index + 1 < len(tokens):
+                following = tokens[index + 1]
+                next_words = following["text"].split()
+                gap = following["start"] - token["end"]
+                if words[-1].rstrip(".").lower() in self._WEAK_ENDINGS:
+                    replacement = ""
+                elif next_words and (next_words[0][:1].islower() or gap < self._SOFT_PAUSE):
+                    replacement = ","
+                elif (sentence_first in self._CONDITIONAL_OPENERS and not has_comma
+                      and gap < self._LONG_PAUSE):
+                    replacement = ","
+            if replacement is not None:
+                token["text"] = text[:-1] + replacement
+                first = following["text"].split(" ", 1)
+                if first[0].lower() in self._LOWERCASE_AFTER_SOFTENING:
+                    following["text"] = first[0].lower() + (" " + first[1] if len(first) > 1 else "")
+            elif text.endswith((".", "!", "?")):
+                sentence_first = ""
+        for segment in segments:
+            if segment["words"]:
+                segment["text"] = " ".join(word["text"] for word in segment["words"])
+        return segments
 
     def _lines(self, text: str) -> list[str]:
         lines, current = [], ""

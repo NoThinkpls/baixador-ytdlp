@@ -73,6 +73,18 @@ class DownloadArgumentsTests(unittest.TestCase):
         args = build_args(opts, cfg, tools)
         self.assertIn(" (2).%(ext)s", args[args.index("--output") + 1])
 
+    def test_custom_name_replaces_template_and_is_sanitized(self) -> None:
+        cfg = Settings()
+        tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))
+        opts = DownloadOptions("https://example.invalid/video", "downloads",
+                               custom_name='Culto: 100% "ao vivo"/final')
+        args = build_args(opts, cfg, tools)
+        self.assertEqual(args[args.index("--output") + 1],
+                         "Culto_ 100%% _ao vivo__final.%(ext)s")
+        opts.repeat_index = 2
+        args = build_args(opts, cfg, tools)
+        self.assertTrue(args[args.index("--output") + 1].endswith(" (2).%(ext)s"))
+
     def test_audio_keeps_metadata_cover_and_organized_name(self) -> None:
         cfg = Settings(embed_thumbnail=True, embed_metadata=True, embed_chapters=True,
                        organize_audio_by_uploader=True)
