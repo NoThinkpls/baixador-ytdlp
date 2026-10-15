@@ -56,6 +56,7 @@ and video tools. Free, open source, and nothing leaves your computer.
 
 - Video, audio, playlists and **clips** with format and quality choices. Clips are not re-encoded (long ones are split into parallel parts); the start may shift to the nearest keyframe.
 - Metadata preview with thumbnail, estimated file name, sizes, codecs, audio languages and available subtitles.
+- **Custom name**: set the file name before downloading; left empty, the template from Settings applies.
 - Batch URLs, one-click sending from the browser through the `baixador://` protocol, and playlist item picking.
 - Persistent queue with **pause and resume**, partial-file resume and automatic retries.
 - Cover, metadata and chapters also for audio; optional music organisation by channel/artist.
@@ -65,6 +66,7 @@ and video tools. Free, open source, and nothing leaves your computer.
 ### Captions and transcription
 
 - Local Whisper up to **Large v3 Turbo**, translation to English and context vocabulary.
+- More natural punctuation: periods Whisper puts mid-speech become commas; periods stay where the speech actually ends.
 - SRT, VTT, ASS, karaoke ASS, TXT and JSON output, for several files and folders at once.
 - **Download and caption** flow: when a download finishes, the file joins the Whisper queue and can get the subtitles as a track, without re-encoding.
 - CUDA on NVIDIA GPUs, **MLX** on Apple Silicon, optimised CPU elsewhere.

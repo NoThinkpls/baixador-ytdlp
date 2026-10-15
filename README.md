@@ -58,6 +58,7 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 
 - Vídeo, áudio, playlists e **trechos** com escolha de qualidade e formato. O trecho não é recodificado; o início pode variar até o quadro-chave mais próximo.
 - Análise prévia com miniatura, nome final estimado, tamanhos, codecs, idiomas de áudio e legendas manuais/automáticas.
+- **Nome personalizado**: defina o nome do arquivo antes de baixar; vazio, vale o modelo das Configurações.
 - Vários links de uma vez, envio direto do navegador pelo protocolo `baixador://` e escolha dos itens de uma playlist.
 - Fila persistente com **pausar e retomar**, retomada de arquivos parciais e novas tentativas automáticas.
 - Capa, metadados e capítulos também em áudio; organização de músicas por canal/artista.
@@ -68,6 +69,7 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 
 - Whisper local até o **Large v3 Turbo**, tradução para inglês e vocabulário de contexto.
 - Saídas SRT, VTT, ASS, karaoke, TXT e JSON, para um ou vários arquivos e pastas de uma vez.
+- Pontuação mais natural: o ponto que o Whisper coloca no meio da fala vira vírgula; o ponto fica onde a fala termina.
 - Fluxo **Baixar e legendar**: ao terminar o download, o arquivo entra na fila do Whisper e pode receber a legenda como faixa, sem recodificar.
 - CUDA nas placas NVIDIA; **MLX** na GPU do Apple Silicon; CPU otimizada nas demais.
 
