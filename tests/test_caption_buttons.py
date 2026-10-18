@@ -1,6 +1,7 @@
 """Botões da moldura: semáforo nativo no Mac e glifos iguais em todas as janelas do Windows."""
 from __future__ import annotations
 
+import sys
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -61,6 +62,10 @@ class CaptionButtonTests(unittest.TestCase):
             self.assertIsNone(install_caption_buttons(window, 44))
         self.assertFalse(window.titleBar.closeBtn.isHidden())
 
+    # No macOS o SetupDialog é o diálogo Cocoa do qframelesswindow, que chama o Objective-C
+    # sobre a janela e derruba o processo no Qt offscreen (por isso test_update_flow também
+    # só roda no Windows). O comportamento verificado aqui é o do Windows.
+    @unittest.skipIf(sys.platform == "darwin", "diálogo Cocoa não abre no Qt offscreen")
     def test_setup_dialog_uses_the_same_buttons_as_the_main_window_on_windows(self) -> None:
         # A tela de preparação abre antes do app e mostrava o X em SVG, maior que os outros.
         from baixador_ytdlp.ui.setup_dialog import SetupDialog
