@@ -24,13 +24,13 @@ class CaptionButton(QAbstractButton):
 
     WIDTH = 46
 
-    def __init__(self, action: str, parent=None):
+    def __init__(self, action: str, parent=None, height: int = theme.TITLEBAR_HEIGHT):
         super().__init__(parent)
         self.action = action
         # Botões de moldura não entram na ordem do Tab: sem isto a janela abria com o
         # foco (contorno azul) no minimizar, e Enter ou Espaço a minimizava.
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.setFixedSize(self.WIDTH, theme.TITLEBAR_HEIGHT)
+        self.setFixedSize(self.WIDTH, height)
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.setToolTip(tr({"minimize": "Minimizar", "maximize": "Maximizar", "close": "Fechar"}[action]))
         self.setAccessibleName(self.toolTip())
@@ -96,18 +96,86 @@ class CaptionButton(QAbstractButton):
 class CaptionControls(QWidget):
     """Grupo compacto de minimizar, maximizar/restaurar e fechar."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, height: int = theme.TITLEBAR_HEIGHT):
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        self.buttons = [CaptionButton(action, self) for action in ("minimize", "maximize", "close")]
+        self.buttons = [CaptionButton(action, self, height)
+                        for action in ("minimize", "maximize", "close")]
         for button in self.buttons:
             layout.addWidget(button)
 
     def refresh(self) -> None:
         for button in self.buttons:
             button.update()
+
+
+# Semáforo do macOS: margem até o primeiro botão e o espaço que a marca deixa
+# livre à esquerda para não ficar por baixo dos três círculos.
+MAC_TRAFFIC_LIGHTS_LEFT = 18
+MAC_TRAFFIC_LIGHTS_RESERVED = 90
+
+
+def install_caption_buttons(window, height: int) -> CaptionControls | None:
+    """Botões da moldura iguais em todas as janelas do app.
+
+    - macOS: os botões nativos (semáforo), como nos outros apps do sistema;
+    - Windows: ``CaptionControls``, com os três glifos na mesma métrica. Antes só a
+      janela principal os usava e a tela de preparação mostrava o ``X`` em SVG
+      do qframelesswindow, maior que os outros dois;
+    - Linux: os botões do qframelesswindow.
+    """
+    title_bar = getattr(window, "titleBar", None)
+    if title_bar is None:
+        return None
+    native = sys.platform == "darwin" and callable(
+        getattr(window, "setSystemTitleBarButtonVisible", None))
+    windows = sys.platform.startswith("win") and getattr(title_bar, "hBoxLayout", None) is not None
+    if not (native or windows):
+        return None
+    for name in ("minBtn", "maxBtn", "closeBtn"):
+        button = getattr(title_bar, name, None)
+        if button is not None:
+            button.hide()
+    if native:
+        window.setSystemTitleBarButtonVisible(True)
+        return None
+    controls = CaptionControls(title_bar, height)
+    title_bar.hBoxLayout.addWidget(controls, 0, Qt.AlignmentFlag.AlignRight)
+    return controls
+
+
+def place_mac_traffic_lights(window, height: int) -> None:
+    """Centraliza o semáforo nativo na barra do app, mais alta que a do sistema.
+
+    O qframelesswindow centraliza pela barra nativa (~28 px), e os botões ficariam
+    no alto da nossa. Como o Electron faz com ``trafficLightPosition``, o
+    contêiner da barra nativa ganha a altura da nossa e os botões são
+    centralizados nele; fora do contêiner eles não receberiam cliques.
+    """
+    try:
+        import Cocoa
+        import objc
+
+        ns_window = objc.objc_object(c_void_p=int(window.winId())).window()
+        if ns_window is None or ns_window.styleMask() & Cocoa.NSWindowStyleMaskFullScreen:
+            return  # em tela cheia o sistema mostra a própria barra
+        buttons = [ns_window.standardWindowButton_(kind) for kind in (
+            Cocoa.NSWindowCloseButton, Cocoa.NSWindowMiniaturizeButton, Cocoa.NSWindowZoomButton)]
+        if any(button is None for button in buttons):
+            return
+        spacing = buttons[1].frame().origin.x - buttons[0].frame().origin.x
+        container = buttons[0].superview().superview()
+        frame = container.frame()
+        container.setFrame_(Cocoa.NSMakeRect(
+            frame.origin.x, ns_window.frame().size.height - height, frame.size.width, height))
+        for index, button in enumerate(buttons):
+            size = button.frame().size
+            button.setFrameOrigin_(Cocoa.NSMakePoint(
+                MAC_TRAFFIC_LIGHTS_LEFT + index * spacing, (height - size.height) / 2))
+    except Exception:  # noqa: BLE001 - roda no paintEvent; nunca pode derrubar a janela
+        pass
 
 
 class NavItem(QAbstractButton):
@@ -331,7 +399,8 @@ class AppShell(_Base):
         brand = QWidget(title_bar)
         brand.setObjectName("brandBlock")
         row = QHBoxLayout(brand)
-        row.setContentsMargins(18, 0, 0, 0)
+        left = MAC_TRAFFIC_LIGHTS_RESERVED if sys.platform == "darwin" else 18
+        row.setContentsMargins(left, 0, 0, 0)
         row.setSpacing(9)
         row.addWidget(self.brand_icon)
         row.addWidget(self.brand_name)
@@ -349,19 +418,12 @@ class AppShell(_Base):
                 button.setFixedWidth(46)
                 button.show()
 
-        # Apenas no Windows: a versão do qframelesswindow presente na build
-        # desenha o fechar via SVG escalado e os demais via linhas fixas. Isso
-        # explica o X maior observado na barra personalizada.
-        if sys.platform.startswith("win") and layout is not None:
-            for name in ("minBtn", "maxBtn", "closeBtn"):
-                button = getattr(title_bar, name, None)
-                if button is not None:
-                    button.hide()
-            self.caption_controls = CaptionControls(title_bar)
-            layout.addWidget(self.caption_controls, 0, Qt.AlignmentFlag.AlignRight)
-        else:
-            self.caption_controls = None
+        self.caption_controls = install_caption_buttons(self, theme.TITLEBAR_HEIGHT)
         self.refresh_title_bar_colors()
+
+    def _updateSystemButtonRect(self) -> None:  # noqa: N802 - chamado pelo qframelesswindow no macOS
+        if self.isSystemButtonVisible():
+            place_mac_traffic_lights(self, theme.TITLEBAR_HEIGHT)
 
     def refresh_title_bar_colors(self) -> None:
         """Reaplica as cores dos botões da janela quando o tema muda."""

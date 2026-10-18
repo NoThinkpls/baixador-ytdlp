@@ -10,6 +10,7 @@ from ..tools import ToolManager
 from ..workers import SetupWorker
 from . import theme
 from .components import Body, BusyBar, Button, Muted, ProgressBar, Title
+from .shell import install_caption_buttons, place_mac_traffic_lights
 
 class SetupDialog(_Base):
     """Mostra o progresso da checagem de dependências. Fecha sozinho quando termina."""
@@ -84,13 +85,21 @@ class SetupDialog(_Base):
         outer.addWidget(container)
 
         title_bar = getattr(self, "titleBar", None)
+        self.caption_controls = None
         if title_bar is not None:
             title_bar.raise_()
             for name in ("minBtn", "maxBtn"):
                 button = getattr(title_bar, name, None)
                 if button:
                     button.show()
+            # Mesmos botões da janela principal (semáforo no Mac, glifos iguais no Windows).
+            self.caption_controls = install_caption_buttons(self, title_bar.height())
         self._apply_background()
+
+    def _updateSystemButtonRect(self) -> None:  # noqa: N802 - chamado pelo qframelesswindow no macOS
+        if self.isSystemButtonVisible():
+            title_bar = getattr(self, "titleBar", None)
+            place_mac_traffic_lights(self, title_bar.height() if title_bar is not None else 32)
 
     def _apply_background(self) -> None:
         self.setStyleSheet(
