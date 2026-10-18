@@ -661,14 +661,19 @@ class MainWindow(AppShell):
 
     def _cleanup_old_installers(self) -> None:
         """Remove instaladores de sessões anteriores (centenas de MB cada)."""
+        import shutil
+
         from ..config import UPDATE_DIR
+        from ..updater import MACOS_STAGING
 
         try:
-            for leftover in UPDATE_DIR.glob("*.exe"):
+            # .zip é o pacote do Mac; a pasta extraída fica se a troca falhou.
+            for leftover in (*UPDATE_DIR.glob("*.exe"), *UPDATE_DIR.glob("*.zip")):
                 try:  # noqa: SIM105 - o motivo está no comentário do except
                     leftover.unlink()
                 except OSError:
                     pass  # ainda aberto pelo instalador que acabou de rodar
+            shutil.rmtree(UPDATE_DIR / MACOS_STAGING, ignore_errors=True)
         except OSError:
             pass
 
