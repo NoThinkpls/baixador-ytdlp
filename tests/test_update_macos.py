@@ -138,7 +138,7 @@ class MacLaunchTests(unittest.TestCase):
         argv = popen.call_args.args[0]
         self.assertEqual(argv[:3], ["/bin/sh", "-c", _MAC_SWAP_SCRIPT])
         self.assertEqual(argv[4], str(os.getpid()))
-        self.assertEqual(argv[5], "/Applications/baixador-ytdlp.app")
+        self.assertEqual(argv[5], str(Path("/Applications/baixador-ytdlp.app")))
         self.assertEqual(argv[6], str(folder / MACOS_STAGING / "baixador-ytdlp-portable"
                                       / "baixador-ytdlp.app"))
         self.assertTrue(popen.call_args.kwargs["start_new_session"])

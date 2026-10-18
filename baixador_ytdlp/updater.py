@@ -396,7 +396,7 @@ def mac_app_bundle(executable: str | None = None, frozen: bool | None = None) ->
     bundle = next((parent for parent in path.parents if parent.suffix == ".app"), None)
     if bundle is None:
         raise UpdateError("O aplicativo não está num pacote .app; baixe a nova versão manualmente.")
-    if "/AppTranslocation/" in str(bundle):
+    if "AppTranslocation" in bundle.parts:
         raise UpdateError(
             "O macOS abriu o app numa cópia temporária somente leitura. Arraste-o para a "
             "pasta Aplicativos, abra de lá e tente atualizar de novo.")
