@@ -745,6 +745,19 @@ jobs:
             }
           done
 
+      - name: Reunir os hashes de todas as plataformas
+        if: steps.release.outputs.publish == 'true'
+        shell: bash
+        run: |
+          # Só o SHA256SUMS.txt é assinado. O atualizador do macOS procura o .zip
+          # nele; os arquivos por plataforma continuam publicados para conferência
+          # manual. O caminho do runner (dist/installer/) sai, fica só o nome.
+          printf '\n' >> release-assets/SHA256SUMS.txt  # o do Windows pode não terminar em quebra de linha
+          for extra in release-assets/SHA256SUMS-macos.txt release-assets/SHA256SUMS-linux.txt; do
+            sed -E 's#^([0-9A-Fa-f]{64})[[:space:]]+\*?.*/#\1  #' "$extra" >> release-assets/SHA256SUMS.txt
+          done
+          cat release-assets/SHA256SUMS.txt
+
       - name: Assinar o SHA256SUMS.txt (Ed25519)
         if: steps.release.outputs.publish == 'true'
         shell: bash
