@@ -3,6 +3,27 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.13.8] - 2026-10-18
+
+### Corrigido
+
+- Mac: a verificação de atualização dizia "você já está na versão mais recente" mesmo com versão
+  nova publicada, porque o atualizador só existia para o Windows. Agora o app do Mac encontra a
+  versão nova, baixa o `.zip`, confere o SHA-256 e a assinatura do `.app` (`codesign`) e, ao
+  fechar, troca o aplicativo e o reabre. Se a troca falhar, a versão anterior volta para o lugar.
+  Quem está na 1.13.7 ou anterior precisa baixar esta versão manualmente uma única vez; dela em
+  diante a atualização é automática.
+- Mac: quando o app não pode ser substituído (aberto direto da imagem de disco ou da pasta de
+  Downloads, sem permissão de escrita), o aviso explica o motivo antes de baixar.
+- Windows: o "X" da tela de preparação era maior e mais grosso que os botões de minimizar e
+  maximizar. Ela passa a usar os mesmos três botões da janela principal.
+
+### Alterado
+
+- Mac: as janelas usam os botões nativos do sistema (fechar, minimizar e zoom coloridos), no lugar
+  dos botões no estilo Windows.
+- Releases: os hashes dos pacotes do Mac e do Linux entram no `SHA256SUMS.txt` assinado.
+
 ## [1.13.7] - 2026-10-18
 
 ### Corrigido
