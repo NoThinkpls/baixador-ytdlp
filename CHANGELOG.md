@@ -3,6 +3,23 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.13.7] - 2026-10-18
+
+### Corrigido
+
+- Mac (Apple Silicon): a barra do legendador ficava parada em 14% até o fim da transcrição, que
+  parecia travada. O `mlx_whisper` só devolve o resultado depois de processar o áudio inteiro; o app
+  agora acompanha o avanço real dele a cada janela de 30 s, de 16% a 90%. Pausar e cancelar passam a
+  valer no meio da transcrição, e não só no fim.
+- Mac: os pesos do modelo MLX são carregados na etapa "Carregando Whisper", e não dentro da
+  transcrição, para a barra começar a andar logo no início.
+
+### Alterado
+
+- Legendar: o texto de andamento mostra a posição no áudio ("Transcrevendo: 12:30 de 47:26 do
+  áudio") e, depois do primeiro minuto de áudio, o tempo restante estimado pelo ritmo real da
+  máquina. Vale para MLX, CUDA e CPU.
+
 ## [1.13.6] - 2026-10-13
 
 ### Adicionado

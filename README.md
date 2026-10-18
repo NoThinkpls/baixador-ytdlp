@@ -72,6 +72,7 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 - Pontuação mais natural: o ponto que o Whisper coloca no meio da fala vira vírgula; o ponto fica onde a fala termina.
 - Fluxo **Baixar e legendar**: ao terminar o download, o arquivo entra na fila do Whisper e pode receber a legenda como faixa, sem recodificar.
 - CUDA nas placas NVIDIA; **MLX** na GPU do Apple Silicon; CPU otimizada nas demais.
+- Barra com o avanço real da transcrição, posição no áudio e tempo restante estimado; pausar e cancelar valem no meio do arquivo.
 
 <div align="center">
 <img src="docs/images/legendar-dark.png" alt="Página Legendar" width="720">

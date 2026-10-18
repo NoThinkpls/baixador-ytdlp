@@ -148,6 +148,89 @@ class AppleMlxTests(unittest.TestCase):
         self.assertEqual(downloads[0]["repo_id"], "Systran/faster-whisper-medium")
         self.assertRegex(downloads[0]["revision"], r"^[0-9a-f]{40}$")
 
+    def _fake_mlx(self, transcriber, frames: int = 18000, on_window=None):
+        """mlx_whisper falso que, como o 0.4.3, só devolve o resultado no fim."""
+        seen = []
+        module = SimpleNamespace(tqdm=SimpleNamespace(tqdm=None))
+
+        def transcribe(*_args, **_kwargs):
+            with module.tqdm.tqdm(total=frames, unit="frames", disable=True) as bar:
+                for _ in range(frames // 3000):
+                    bar.update(3000)
+                    seen.append(list(progress))
+                    if on_window:
+                        on_window()
+            return {"language": "pt", "segments": [
+                {"start": 0.0, "end": frames / 100.0, "text": "fim", "words": []}]}
+
+        progress: list[int] = []
+        statuses: list[str] = []
+        transcriber.progress = progress.append
+        transcriber.status = statuses.append
+        package = SimpleNamespace(transcribe=transcribe)
+        modules = {"mlx_whisper": package, "mlx_whisper.transcribe": module}
+        return modules, progress, statuses, seen
+
+    def _mlx_transcriber(self) -> Transcriber:
+        transcriber = Transcriber(SimpleNamespace(), lambda _m: None, lambda _p: None, force_cpu=True)
+        transcriber.backend = "mlx"
+        transcriber._model_path = Path("/modelos/mlx")
+        return transcriber
+
+    def test_mlx_progress_moves_while_the_audio_is_being_decoded(self) -> None:
+        transcriber = self._mlx_transcriber()
+        modules, progress, statuses, seen = self._fake_mlx(transcriber)
+        options = TranscriptionOptions(Path("e.wav"), Path("s.srt"), model_size="large-v3")
+        with patch.dict(sys.modules, modules), \
+                patch("baixador_ytdlp.transcription._load_wav_samples", return_value="x"):
+            transcriber._decode(Path("e.wav"), options, duration=0)
+        # Antes a barra só andava depois de transcribe() terminar o áudio inteiro.
+        self.assertEqual(seen[0], [28])
+        self.assertEqual(seen[-1][-1], 90)
+        self.assertEqual(progress, sorted(progress))
+        self.assertIn("Transcrevendo: 0:30 de 3:00 do áudio", statuses[0])
+        # O tqdm original volta ao lugar depois da chamada.
+        self.assertIsNone(modules["mlx_whisper.transcribe"].tqdm.tqdm)
+
+    def test_mlx_cancel_takes_effect_in_the_middle_of_the_audio(self) -> None:
+        from baixador_ytdlp.transcription import TranscriptionCancelled
+
+        transcriber = self._mlx_transcriber()
+        modules, _progress, _statuses, seen = self._fake_mlx(
+            transcriber, on_window=lambda: transcriber.cancel())
+        options = TranscriptionOptions(Path("e.wav"), Path("s.srt"))
+        with patch.dict(sys.modules, modules), \
+                patch("baixador_ytdlp.transcription._load_wav_samples", return_value="x"), \
+                self.assertRaises(TranscriptionCancelled):
+            transcriber._decode(Path("e.wav"), options, duration=180)
+        self.assertEqual(len(seen), 1)
+
+    def test_mlx_preparation_ends_at_15_with_the_model_ready(self) -> None:
+        transcriber = self._mlx_transcriber()
+        progress: list[int] = []
+        statuses: list[str] = []
+        transcriber.progress = progress.append
+        transcriber.status = statuses.append
+        with patch("baixador_ytdlp.transcription.download_model_snapshot",
+                   return_value=Path("/modelos/mlx")), \
+                patch.object(Transcriber, "_preload_mlx_weights") as preload:
+            transcriber._prepare_mlx("medium")
+        preload.assert_called_once_with()
+        self.assertEqual(progress[-1], 15)
+        self.assertTrue(statuses[-1].startswith("Modelo pronto:"))
+
+    def test_decode_progress_estimates_time_left_from_the_real_pace(self) -> None:
+        from baixador_ytdlp.transcription import DecodeProgress
+
+        now = [0.0]
+        progress: list[int] = []
+        statuses: list[str] = []
+        tracker = DecodeProgress(statuses.append, progress.append, 600, clock=lambda: now[0])
+        now[0] = 40.0
+        tracker.update(120)     # 2 min de áudio em 40 s: faltam 8 min de áudio, ~160 s
+        tracker.update(60)      # tempo repetido não faz a barra voltar
+        self.assertEqual(progress, [16 + int(74 * 120 / 600)])
+        self.assertEqual(statuses, ["Transcrevendo: 2:00 de 10:00 do áudio · cerca de 3 min restantes"])
 
 if __name__ == "__main__":
     unittest.main()

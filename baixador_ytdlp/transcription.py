@@ -14,6 +14,7 @@ import re
 import subprocess
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -141,6 +142,113 @@ class DecodedInfo:
 
     language: str
     language_probability: float = 0.0
+
+
+def _clock(seconds: float) -> str:
+    total = max(0, int(seconds))
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
+
+
+class DecodeProgress:
+    """Converte o áudio já processado em porcentagem (16–90%) e texto de estado.
+
+    A barra nunca volta: o MLX informa por janela de 30 s e, depois, os
+    segmentos repetem tempos já contados. O texto mostra a posição no áudio e,
+    quando já há amostra suficiente, o tempo restante estimado pelo ritmo real.
+    """
+
+    first = 16
+    last = 90
+    status_interval = 5.0   # cada texto também vai para o registro da tela
+    eta_min_audio = 60.0    # áudio processado antes de arriscar uma estimativa
+    eta_min_elapsed = 10.0
+
+    def __init__(self, status: StatusCB, progress: ProgressCB, total_seconds: float,
+                 clock=None):
+        self.status = status
+        self.progress = progress
+        self.total = max(0.0, float(total_seconds or 0.0))
+        self._clock = clock or time.monotonic
+        self._started = self._clock()
+        self._done = 0.0
+        self._percent = -1
+        self._last_status = float("-inf")
+
+    def set_total(self, total_seconds: float) -> None:
+        if total_seconds and total_seconds > 0:
+            self.total = float(total_seconds)
+
+    def update(self, seconds: float) -> None:
+        if not self.total:
+            return
+        seconds = min(self.total, max(0.0, float(seconds)))
+        if seconds <= self._done:
+            return
+        self._done = seconds
+        percent = self.first + int((self.last - self.first) * seconds / self.total)
+        if percent > self._percent:
+            self._percent = percent
+            self.progress(percent)
+        now = self._clock()
+        if now - self._last_status < self.status_interval and seconds < self.total:
+            return
+        self._last_status = now
+        text = f"Transcrevendo: {_clock(seconds)} de {_clock(self.total)} do áudio"
+        elapsed = now - self._started
+        if seconds < self.total and seconds >= self.eta_min_audio and elapsed >= self.eta_min_elapsed:
+            remaining = elapsed * (self.total - seconds) / seconds
+            if remaining < 60:
+                text += " · menos de 1 min restante"
+            else:
+                text += f" · cerca de {round(remaining / 60)} min restantes"
+        self.status(text)
+
+
+@contextlib.contextmanager
+def _mlx_progress_hook(report, on_total, check_interrupt):
+    """Liga a barra interna do mlx_whisper (tqdm por janela de 30 s) à do app.
+
+    ``mlx_whisper.transcribe`` só devolve o resultado no fim; sem isto a barra
+    ficava parada até o áudio inteiro ser processado e pausar/cancelar só
+    valiam depois. Se a versão instalada não usar tqdm, segue sem progresso.
+    """
+    import sys
+    from types import SimpleNamespace
+
+    module = sys.modules.get("mlx_whisper.transcribe")
+    original = getattr(module, "tqdm", None)
+    if module is None or not hasattr(original, "tqdm"):
+        yield
+        return
+
+    class Bar:
+        def __init__(self, *_args, total=None, **_kwargs):
+            self.n = 0
+            if total:
+                # Quadros de mel: 100 por segundo (HOP_LENGTH 160 a 16 kHz).
+                on_total(total / 100.0)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def update(self, n=1):
+            self.n += n
+            report(self.n / 100.0)
+            check_interrupt()
+
+        def close(self):
+            pass
+
+    setattr(module, "tqdm", SimpleNamespace(tqdm=Bar))  # noqa: B010 - módulo de terceiros
+    try:
+        yield
+    finally:
+        setattr(module, "tqdm", original)  # noqa: B010 - módulo de terceiros
 
 
 class Transcriber:
@@ -307,9 +415,27 @@ class Transcriber:
             progress=self.progress,
             progress_range=(5, 14),
         )
+        self._preload_mlx_weights()
         self._loaded_model_size = model_size
         self._loaded_model_profile = (self.backend, self.device, self.compute_type)
-        self.status(f"Carregando Whisper {model_size} em {self.hardware_label}…")
+        self.progress(15)
+        self.status(f"Modelo pronto: {self.hardware_label}")
+
+    def _preload_mlx_weights(self) -> None:
+        """Carrega os pesos na GPU agora, com a barra em 14%, e não no meio da decodificação.
+
+        O mlx_whisper guarda o modelo em ``ModelHolder``; a chamada de
+        ``transcribe`` com o mesmo caminho reaproveita a cópia carregada. Uma
+        falha aqui não interrompe: a decodificação tenta de novo e, se falhar,
+        cai no CPU como antes.
+        """
+        try:
+            import mlx.core as mx
+            from mlx_whisper.transcribe import ModelHolder
+
+            ModelHolder.get_model(str(self._model_path), mx.float16)
+        except Exception as exc:
+            get_logger().warning("Pré-carga do modelo MLX falhou: %s: %s", type(exc).__name__, exc)
 
     @staticmethod
     def _model_spec(model_size: str, *, mlx: bool) -> tuple[str, str]:
@@ -460,6 +586,7 @@ class Transcriber:
             **self._model_options(opts.model_size),
         ) if not (opts.batched and self.device == "cuda") else self._batched_transcribe(audio, opts)
         raw: list[dict] = []
+        tracker = DecodeProgress(self.status, self.progress, duration)
         for item in segments:
             self._check_interrupt()
             words = []
@@ -475,8 +602,7 @@ class Transcriber:
                         "text": item.text.strip(), "words": words,
                         "avg_logprob": item.avg_logprob,
                         "no_speech_prob": item.no_speech_prob})
-            if duration:
-                self.progress(min(90, max(16, int(item.end * 74 / duration) + 16)))
+            tracker.update(item.end)
         return raw, info
 
     def _decode_mlx(self, audio: Path, opts: TranscriptionOptions,
@@ -497,16 +623,18 @@ class Transcriber:
         # O mlx_whisper decodifica caminhos chamando "ffmpeg" pelo PATH, mas o
         # FFmpeg do app fica na pasta de binários (fora do PATH do Mac). O WAV
         # 16 kHz mono já foi gerado por _extract_audio; entregamos as amostras.
-        result = mlx_whisper.transcribe(
-            _load_wav_samples(audio), path_or_hf_repo=str(self._model_path), verbose=None,
-            language=None if opts.language == "auto" else opts.language,
-            task=opts.task if opts.task in {"transcribe", "translate"} else "transcribe",
-            initial_prompt=opts.initial_prompt.strip() or None,
-            word_timestamps=True, temperature=temperature,
-            condition_on_previous_text=condition,
-            compression_ratio_threshold=compression, logprob_threshold=log_probability,
-            no_speech_threshold=no_speech, **options,
-        )
+        tracker = DecodeProgress(self.status, self.progress, duration)
+        with _mlx_progress_hook(tracker.update, tracker.set_total, self._check_interrupt):
+            result = mlx_whisper.transcribe(
+                _load_wav_samples(audio), path_or_hf_repo=str(self._model_path), verbose=None,
+                language=None if opts.language == "auto" else opts.language,
+                task=opts.task if opts.task in {"transcribe", "translate"} else "transcribe",
+                initial_prompt=opts.initial_prompt.strip() or None,
+                word_timestamps=True, temperature=temperature,
+                condition_on_previous_text=condition,
+                compression_ratio_threshold=compression, logprob_threshold=log_probability,
+                no_speech_threshold=no_speech, **options,
+            )
         raw: list[dict] = []
         for item in result.get("segments") or ():
             self._check_interrupt()
@@ -526,8 +654,7 @@ class Transcriber:
                 "words": words, "avg_logprob": item.get("avg_logprob"),
                 "no_speech_prob": item.get("no_speech_prob"),
             })
-            if duration:
-                self.progress(min(90, max(16, int(end * 74 / duration) + 16)))
+            tracker.update(end)
         language = str(result.get("language") or (opts.language if opts.language != "auto" else "auto"))
         probability = float(result.get("language_probability") or 0.0)
         return raw, DecodedInfo(language, probability)
@@ -586,8 +713,10 @@ class Transcriber:
         try:
             self._check_interrupt()
             self._prepare_model_for(opts)
+            self.progress(15)
             audio = self._extract_audio(opts.media_path)
             duration = self._duration(opts.media_path)
+            self.progress(16)
             self.status(f"Transcrevendo {opts.media_path.name}…")
             try:
                 raw, info = self._decode(audio, opts, duration)
