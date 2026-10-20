@@ -91,12 +91,13 @@ class UpdateBanner(QFrame):
         self.title.setText(f"Nova versão {release.tag} disponível")
         size = f"{release.size / 1_000_000:.0f} MB · " if release.size else ""
         self.details.setText(
-            f"{size}Conferida antes de instalar; o aplicativo fecha para concluir."
+            "Baixe o pacote .deb ou a versão portable na página da versão." if release.manual
+            else f"{size}Conferida antes de instalar; o aplicativo fecha para concluir."
         )
         self.update_button.setEnabled(True)
         self.dismiss_button.setEnabled(True)
         self.dismiss_button.setText("Lembrar depois")
-        self.update_button.setText("Atualizar")
+        self.update_button.setText("Abrir download" if release.manual else "Atualizar")
         self.notes_button.setVisible(bool(release.notes))
         self.skip_button.show()
         self.show()

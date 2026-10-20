@@ -52,6 +52,31 @@ class SecurityRegressionTests(unittest.TestCase):
             if os.name != "nt":
                 self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o600)
 
+    @unittest.skipIf(os.name == "nt", "permissões POSIX")
+    def test_cookie_copy_is_never_readable_by_others_while_written(self) -> None:
+        """A cópia nascia 0644 e só virava 0600 depois de escrita (macOS/Linux)."""
+        import shutil
+
+        from baixador_ytdlp import cookies
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "exportado.txt"
+            source.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+            private = root / "privado"
+            modes = []
+            real_copy = shutil.copyfileobj
+
+            def watch(origin, output, *args):
+                modes.append(stat.S_IMODE(os.fstat(output.fileno()).st_mode))
+                return real_copy(origin, output, *args)
+
+            with patch("baixador_ytdlp.cookies.COOKIES_DIR", private), \
+                    patch("baixador_ytdlp.cookies.shutil.copyfileobj", side_effect=watch):
+                cookies.import_cookie_file(source)
+            self.assertEqual(modes, [0o600])
+            self.assertEqual(stat.S_IMODE(private.stat().st_mode), 0o700)
+
     def test_windows_acl_uses_sid_and_absolute_system32_paths(self) -> None:
         """O nome vindo do whoami quebrava com acentos (CP850 x CP1252)."""
         from baixador_ytdlp import cookies

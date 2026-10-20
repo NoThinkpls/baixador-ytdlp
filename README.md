@@ -91,7 +91,7 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 
 - Tema claro e escuro, **português e inglês**, barra lateral compacta e ícones próprios.
 - Progresso na barra de tarefas do Windows, bandeja do sistema e opção de continuar em segundo plano.
-- Atualização do app no Windows, com SHA-256 (e assinatura Ed25519 nas releases assinadas) conferido antes de instalar.
+- Atualização do app no Windows e no Mac, com SHA-256 (e assinatura Ed25519 nas releases assinadas) conferido antes de instalar; no Linux o app avisa da versão nova e abre a página de download.
 
 <div align="center">
 <img src="docs/images/configuracoes-dark.png" alt="Configurações" width="720">

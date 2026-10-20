@@ -11,8 +11,8 @@ import zipfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from baixador_ytdlp.tools import (DENO_EXE, FFMPEG_EXE, ToolManager, pick_btbn_asset,
-                                  pick_deno_release)
+from baixador_ytdlp.tools import (DENO_EXE, FFMPEG_EXE, YTDLP_DIR_EXE, ToolManager,
+                                  pick_btbn_asset, pick_deno_release)
 from baixador_ytdlp.updater import AppUpdater
 
 
@@ -46,10 +46,10 @@ class ToolCheckTests(unittest.TestCase):
             manager = ToolManager(bin_dir=Path(tmp))
             bundle = Path(tmp) / "yt-dlp"
             bundle.mkdir()
-            executable = bundle / "yt-dlp.exe"
+            executable = bundle / YTDLP_DIR_EXE
             executable.write_bytes(b"current")
             manager.state["ytdlp_files"] = {
-                "yt-dlp.exe": hashlib.sha256(b"current").hexdigest()}
+                YTDLP_DIR_EXE: hashlib.sha256(b"current").hexdigest()}
             manager.local_ytdlp_version = Mock(return_value="2026.09.01")
             manager._latest_ytdlp = Mock(return_value=("2026.09.01", "https://example.invalid/yt-dlp", {}))
             manager._download = Mock(side_effect=AssertionError("não deveria baixar"))
@@ -289,3 +289,48 @@ class AppUpdateTests(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+
+class LinuxUpdateNoticeTests(unittest.TestCase):
+    """O Linux dizia "já está usando a versão mais recente" mesmo com versão nova."""
+
+    payload = {
+        "tag_name": "v1.4.4",
+        "html_url": "https://github.com/NoThinkpls/baixador-ytdlp/releases/tag/v1.4.4",
+        "body": "Notas",
+        "assets": [],
+    }
+
+    def _find(self, current: str):
+        with patch("baixador_ytdlp.updater.IS_WINDOWS", False), \
+                patch("baixador_ytdlp.updater.IS_MACOS", False), \
+                patch.object(AppUpdater, "_request_json", return_value=self.payload), \
+                patch.object(AppUpdater, "_request_text",
+                             side_effect=AssertionError("não baixa hashes no Linux")):
+            return AppUpdater().find_update(current)
+
+    def test_linux_reports_new_version_for_manual_download(self) -> None:
+        release = self._find("1.4.3")
+        assert release is not None
+        self.assertTrue(release.manual)
+        self.assertEqual(release.version, "1.4.4")
+        self.assertEqual(release.page_url, self.payload["html_url"])
+        self.assertEqual(release.notes, "Notas")
+
+    def test_linux_current_version_is_up_to_date(self) -> None:
+        self.assertIsNone(self._find("1.4.4"))
+
+    def test_update_button_opens_the_release_page(self) -> None:
+        from types import SimpleNamespace
+
+        from baixador_ytdlp.ui.main_window import MainWindow
+
+        release = self._find("1.4.3")
+        fake = SimpleNamespace(_downloaded_installer=None, _available_update=release,
+                               update_banner=SimpleNamespace(release=None),
+                               _app_update_download=None)
+        with patch("baixador_ytdlp.ui.main_window.QDesktopServices.openUrl") as open_url, \
+                patch("baixador_ytdlp.ui.main_window.AppUpdateDownloadWorker",
+                      side_effect=AssertionError("não baixa no Linux")):
+            MainWindow._download_app_update(fake)
+        self.assertEqual(open_url.call_args.args[0].toString(), self.payload["html_url"])

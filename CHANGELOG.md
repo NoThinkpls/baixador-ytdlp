@@ -3,6 +3,42 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.13.9] - 2026-10-20
+
+Auditoria de paridade entre Windows, macOS e Linux.
+
+### Corrigido
+
+- Linux: o `.deb` e a versão portable eram compilados no Ubuntu 24.04 e exigiam glibc 2.38/2.39;
+  no Ubuntu 22.04 e no Debian 12, que o README cita como suportados, o app não abria. A build passa
+  a ser feita no Ubuntu 22.04, e o CI falha se alguma biblioteca do pacote pedir glibc mais nova que
+  a do Debian 12. O pacote empacotado também passa pelo mesmo autoteste do Windows e do Mac.
+- Linux: navegador e gerenciador de arquivos abertos pelo app ("Abrir pasta", links) herdavam as
+  bibliotecas e os plugins Qt de dentro do pacote (`LD_LIBRARY_PATH`, `QT_PLUGIN_PATH`) e podiam
+  fechar ao abrir. Os programas externos passam a receber o ambiente original do sistema.
+- Linux: "Verificar atualizações" dizia "você já está usando a versão mais recente" mesmo com versão
+  nova. O app agora avisa e o botão **Abrir download** leva à página da versão (o `.deb` continua
+  instalado pela pessoa).
+- macOS e Linux: o `cookies.txt` importado nascia legível por outros usuários da máquina até ser
+  restringido; agora a pasta de cookies é `0700` e o arquivo é criado `0600`.
+- macOS e Linux: a pasta padrão de downloads era sempre `~/Videos`. No Mac passa a ser `~/Movies`
+  e no Linux a pasta de vídeos do sistema (`~/Vídeos` em português), lida do `user-dirs.dirs`.
+  Só vale para quem ainda não escolheu uma pasta.
+
+### Alterado
+
+- macOS e Linux: o yt-dlp passa a ser a distribuição oficial em pasta (`yt-dlp_macos.zip`,
+  `yt-dlp_linux.zip`), como no Windows. Cada análise e download abre o yt-dlp cerca de 2x mais
+  rápido (0,6 s contra 1,2 s medidos no Linux), porque ele não se descompacta mais a cada chamada.
+  No Linux ele deixa de depender do Python do sistema e ganha curl_cffi (imitação de navegador),
+  mutagen (capa em áudio opus/m4a/flac) e secretstorage (cookies do Chrome pelo chaveiro). A troca
+  é automática na próxima checagem; sem rede, o executável antigo continua valendo.
+- Todas as plataformas: a pasta do yt-dlp (45 a 90 MB) não é mais re-hasheada inteira a cada
+  abertura. Tamanho e data são conferidos sempre e o SHA-256 completo a cada 24 h, como já era com
+  FFmpeg e Deno.
+- CI: as três plataformas instalam o yt-dlp como o app faz e confirmam que ele abre com as
+  dependências opcionais (`scripts/check_runtime_tools.py`).
+
 ## [1.13.8] - 2026-10-18
 
 ### Corrigido

@@ -16,6 +16,7 @@ Chromium. Na prática sobram dois caminhos que funcionam no Windows:
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import stat
@@ -153,11 +154,20 @@ def import_cookie_file(source: Path) -> tuple[Path, str]:
     if not source.is_file():
         raise FileNotFoundError("Arquivo cookies.txt não encontrado.")
     COOKIES_DIR.mkdir(parents=True, exist_ok=True)
+    if not IS_WINDOWS:
+        # No macOS/Linux a pasta nascia 0755 e a cópia 0644 até o chmod abaixo:
+        # outro usuário da máquina podia ler a sessão nesse intervalo.
+        with contextlib.suppress(OSError):  # o arquivo em si continua 0600
+            os.chmod(COOKIES_DIR, stat.S_IRWXU)
     destination = COOKIES_DIR / "cookies.txt"
     staged = COOKIES_DIR / "cookies.txt.new"
     warning = ""
     try:
-        shutil.copyfile(source, staged)
+        staged.unlink(missing_ok=True)
+        descriptor = os.open(staged, os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                             stat.S_IRUSR | stat.S_IWUSR)
+        with os.fdopen(descriptor, "wb") as output, open(source, "rb") as origin:
+            shutil.copyfileobj(origin, output)
         if destination.is_file():
             try:
                 merged = merge_cookie_text(

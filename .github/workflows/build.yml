@@ -58,6 +58,9 @@ jobs:
       - name: Verificar a qualidade do código
         run: python -m ruff check .
 
+      - name: Instalar e abrir o yt-dlp como o app faz
+        run: python scripts/check_runtime_tools.py
+
       - name: Verificar os tipos (pyright, só erros novos)
         # Modo básico em catraca: scripts/pyright-baseline.json guarda os avisos herdados; o CI só
         # falha para erro novo. Ferramenta de desenvolvimento: não entra no pacote.
@@ -332,6 +335,9 @@ jobs:
       - name: Executar testes de diagnóstico
         run: QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v
 
+      - name: Instalar e abrir o yt-dlp como o app faz
+        run: python scripts/check_runtime_tools.py
+
       - name: Definir a versão
         id: ver
         run: |
@@ -493,7 +499,10 @@ jobs:
 
   linux:
     name: Compilar no Linux (Ubuntu/Debian)
-    runs-on: ubuntu-latest
+    # O PyInstaller leva o Python e as bibliotecas do runner para dentro do pacote.
+    # Compilado no ubuntu-latest (24.04, glibc 2.39), o .deb da 1.13.8 exigia
+    # GLIBC_2.38 e não abria no Ubuntu 22.04 nem no Debian 12 que o README promete.
+    runs-on: ubuntu-22.04
     timeout-minutes: 45
     defaults:
       run:
@@ -536,6 +545,9 @@ jobs:
       - name: Executar testes de diagnóstico
         run: QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v
 
+      - name: Instalar e abrir o yt-dlp como o app faz
+        run: python scripts/check_runtime_tools.py
+
       - name: Definir a versão
         id: ver
         run: |
@@ -567,7 +579,29 @@ jobs:
           executable="dist/baixador-ytdlp/baixador-ytdlp"
           test -x "$executable"
           test -d "dist/baixador-ytdlp/_internal"
+          # Nenhuma biblioteca do pacote pode pedir glibc mais nova que a do Debian 12.
+          max_glibc="$(find dist/baixador-ytdlp -type f \( -name '*.so*' -o -perm -u+x \) -print0 \
+            | xargs -0 objdump -T 2>/dev/null | grep -o 'GLIBC_[0-9][0-9.]*' | sort -uV | tail -1)"
+          echo "Maior glibc exigida: ${max_glibc:-nenhuma}"
+          if [[ -n "$max_glibc" ]] && [[ "$(printf '%s\n' "$max_glibc" GLIBC_2.36 | sort -V | tail -1)" != GLIBC_2.36 ]]; then
+            echo "::error::O pacote exige $max_glibc; Debian 12 tem GLIBC_2.36."
+            exit 1
+          fi
           echo "OK: $executable (bundle validado)"
+
+      - name: Autoteste do app empacotado
+        run: |
+          report="$RUNNER_TEMP/baixador-self-test.json"
+          rm -f "$report"
+          QT_QPA_PLATFORM=offscreen BAIXADOR_YTDLP_DATA_DIR="$RUNNER_TEMP/perfil-autoteste" \
+            BAIXADOR_YTDLP_SELF_TEST_REPORT="$report" \
+            dist/baixador-ytdlp/baixador-ytdlp || true
+          if [[ ! -f "$report" ]] || ! grep -q '"ok": true' "$report"; then
+            echo "::error::O autoteste do app Linux falhou:"
+            cat "$report" 2>/dev/null || echo "sem relatório"
+            exit 1
+          fi
+          cat "$report"
 
       - name: Empacotar .deb e versão portátil
         env:

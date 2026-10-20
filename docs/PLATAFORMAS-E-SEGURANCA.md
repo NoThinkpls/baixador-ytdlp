@@ -19,7 +19,7 @@ A compilação para macOS é arm64 e destina-se a Macs M1, M2, M3 e M4 com macOS
 - **DMG (instalação normal):** abra o arquivo, arraste `baixador-ytdlp.app` para o atalho **Applications** e ejete o disco.
 - **ZIP portable:** descompacte e abra `baixador-ytdlp.app` de qualquer pasta, sem instalar; os dados ficam dentro do próprio pacote.
 
-Enquanto a assinatura Developer ID e a notarização não estiverem configuradas, o macOS pode pedir uma confirmação adicional em **Privacidade e Segurança**. A atualização automática do aplicativo permanece exclusiva do instalador Windows; no macOS, baixe a nova versão manualmente pela Release. A interface usa a SF Pro já presente no macOS, sem incluir ou redistribuir fontes da Apple.
+Enquanto a assinatura Developer ID e a notarização não estiverem configuradas, o macOS pode pedir uma confirmação adicional em **Privacidade e Segurança**. Desde a 1.13.8 o app do Mac se atualiza sozinho: baixa o `.zip` da Release, confere o SHA-256 e a assinatura do `.app` e troca o aplicativo quando ele fecha. A interface usa a SF Pro já presente no macOS, sem incluir ou redistribuir fontes da Apple.
 
 ## Linux (Ubuntu/Debian)
 
@@ -28,7 +28,9 @@ A distribuição oficial inicial é x86_64 e atende Ubuntu 22.04 ou superior e D
 - **`.deb`:** baixe o pacote e instale com `sudo apt install ./baixador-ytdlp-linux-amd64.deb`.
 - **Portable:** descompacte o `.tar.gz`, entre na pasta criada e execute `./baixador-ytdlp`; os dados ficam na subpasta `data`.
 
-Na primeira abertura, yt-dlp, FFmpeg e Deno são obtidos das fontes oficiais para `~/.local/share/BaixadorYtdlp/bin`. Ferramentas presentes no `PATH` só são usadas quando a opção avançada correspondente é ligada. A atualização do aplicativo no Linux é manual pela Release.
+Na primeira abertura, yt-dlp, FFmpeg e Deno são obtidos das fontes oficiais para `~/.local/share/BaixadorYtdlp/bin`. Ferramentas presentes no `PATH` só são usadas quando a opção avançada correspondente é ligada. A instalação de versões novas do aplicativo no Linux é manual: o app avisa quando sai uma versão e o botão **Abrir download** leva à página da Release.
+
+O pacote é compilado no Ubuntu 22.04 e o CI recusa qualquer biblioteca que exija glibc mais nova que a do Debian 12 (2.36).
 
 ## Desempenho
 
@@ -40,12 +42,13 @@ O primeiro uso de cada modelo baixa os pesos para os dados locais do aplicativo;
 
 - Downloads HTTPS sempre validam o certificado; não existe fallback TLS inseguro.
 - yt-dlp, FFmpeg e Deno só são instalados quando há um SHA-256 válido publicado pelo fornecedor. O hash verificado é guardado e conferido antes das execuções futuras.
+- Nas três plataformas o yt-dlp é a distribuição oficial em pasta (`yt-dlp_win.zip`, `yt-dlp_macos.zip`, `yt-dlp_linux.zip`): abre sem se descompactar a cada chamada e traz curl_cffi, mutagen e secretstorage. Cada arquivo da pasta tem o SHA-256 guardado; tamanho e data são conferidos a cada abertura e o hash completo a cada 24 h.
 - Pesos Whisper e MLX são baixados de revisões imutáveis, nunca diretamente de uma branch mutável.
 - O instalador do aplicativo é validado com SHA-256, e o `SHA256SUMS.txt` é assinado com Ed25519: o atualizador só aceita o hash se a assinatura conferir com a chave pública embutida no app. Os artefatos também recebem atestados de proveniência do GitHub Actions. A assinatura Authenticode/Developer ID ainda depende da obtenção dos certificados próprios do projeto.
 - Dependências Python instaladas por locks com hashes (inclusive transitivas); SBOM CycloneDX gerado do ambiente real de cada build.
 - No Windows, cada subprocesso roda num Job Object: cancelar ou fechar o app encerra a árvore inteira (yt-dlp, FFmpeg, Deno), mesmo se o app cair.
 - O protocolo `baixador://` só analisa o link recebido; nenhum download começa sem confirmação.
 - Subprocessos são iniciados sem shell e com configurações externas do yt-dlp ignoradas.
-- Links, proxy e caminhos de cookies são redigidos antes de entrar nos logs. Cookies, histórico e configurações permanecem locais. Nunca publique `cookies.txt` ou `settings.json`.
+- Links, proxy e caminhos de cookies são redigidos antes de entrar nos logs. Cookies, histórico e configurações permanecem locais. Nunca publique `cookies.txt` ou `settings.json`. No macOS e no Linux a pasta de cookies é `0700` e o arquivo nasce `0600`.
 - Em máquinas corporativas, a execução de um aplicativo que baixa binários no perfil do usuário pode ser bloqueada por políticas de segurança.
 
