@@ -25,6 +25,12 @@ Auditoria de paridade entre Windows, macOS e Linux.
   e no Linux a pasta de vídeos do sistema (`~/Vídeos` em português), lida do `user-dirs.dirs`.
   Só vale para quem ainda não escolheu uma pasta.
 
+### Segurança
+
+- certifi 2026.7.22 → 2026.10.19 nas três plataformas (alerta GHSA-6q48-6c7w-9gw2, apontado pelo
+  `pip-audit` do CI). É o pacote de autoridades certificadoras usado para baixar yt-dlp, FFmpeg,
+  Deno e as atualizações do app.
+
 ### Alterado
 
 - macOS e Linux: o yt-dlp passa a ser a distribuição oficial em pasta (`yt-dlp_macos.zip`,
