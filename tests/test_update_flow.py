@@ -79,7 +79,7 @@ class UpdateFlowTests(unittest.TestCase):
         self.launch.assert_called_once_with(self.installer)
 
     def test_tarefas_ativas_perguntam_antes_de_baixar(self) -> None:
-        self.window._available_update = MagicMock()
+        self.window._available_update = MagicMock(manual=False)
         with patch.object(self.window, "_active_work", return_value=["downloads"]), \
                 patch.object(self.window, "_ask_update_timing", return_value=None) as ask, \
                 patch("baixador_ytdlp.ui.main_window.AppUpdateDownloadWorker") as worker:
@@ -109,7 +109,7 @@ class UpdateFlowTests(unittest.TestCase):
             cancel.assert_called_once()
 
     def test_lembrar_depois_nao_pula_a_versao(self) -> None:
-        release = MagicMock(version="9.9.9", tag="v9.9.9", size=0, notes="")
+        release = MagicMock(version="9.9.9", tag="v9.9.9", size=0, notes="", manual=False)
         self.window._available_update = release
         self.window.update_banner.show_release(release)
         self.window._dismiss_app_update()

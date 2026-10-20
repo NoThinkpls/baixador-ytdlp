@@ -88,7 +88,7 @@ and video tools. Free, open source, and nothing leaves your computer.
 
 - Light and dark themes, **Portuguese and English** (Settings → Appearance), compact sidebar and custom icons.
 - Windows taskbar progress, tray notifications and optional background operation.
-- In-app updates on Windows, verified by SHA-256 (and Ed25519 signature on signed releases) before installing.
+- In-app updates on Windows and Mac, verified by SHA-256 (and Ed25519 signature on signed releases) before installing; on Linux the app announces new versions and opens the download page.
 
 <div align="center">
 <img src="docs/images/configuracoes-dark.png" alt="Settings" width="720">

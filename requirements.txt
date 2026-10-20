@@ -6,7 +6,7 @@ ctranslate2==4.8.2
 # versão fixa, instalar pelo .txt podia trazer um av antigo e quebrar a decodificação.
 av==18.1.0
 huggingface-hub==0.36.2
-certifi==2026.7.22
+certifi==2026.10.19
 send2trash==2.1.0
 # Runtime CUDA incluído no instalador. Desde a 4.5 o CTranslate2 usa cuDNN 9
 # (não aceita cuDNN 8). O wheel do CTranslate2 4.8.2 para Windows já traz o

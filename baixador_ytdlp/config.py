@@ -13,7 +13,7 @@ from .plataforma import is_macos, is_windows, pasta_dados_usuario, pasta_do_exec
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.13.8"
+APP_VERSION = "1.13.9"
 IS_WINDOWS = is_windows()
 
 
@@ -120,7 +120,7 @@ def usable_extractor_args(value: str) -> str:
 
 
 def default_download_dir() -> str:
-    """Pasta padrão de saída: Vídeos/baixador-ytdlp (ou ~/Videos fora do Windows)."""
+    """Pasta padrão de saída: a pasta de vídeos do sistema + baixador-ytdlp."""
     if IS_WINDOWS:
         try:
             import ctypes.wintypes as wt
@@ -133,7 +133,42 @@ def default_download_dir() -> str:
                 return str(Path(buf.value) / APP_NAME)
         except Exception:
             pass
-    return str(Path.home() / "Videos" / APP_NAME)
+    return str(_videos_dir() / APP_NAME)
+
+
+def _videos_dir(home: Path | None = None, environ: dict[str, str] | None = None,
+                platform_name: str | None = None) -> Path:
+    """Pasta de vídeos do sistema fora do Windows.
+
+    No macOS ela é ``~/Movies`` (``~/Videos`` não existe e era criada à parte). No
+    Linux o nome é traduzido (``~/Vídeos`` no Ubuntu em português) e fica em
+    ``user-dirs.dirs``; sem ele, ``~/Videos``.
+    """
+    home = Path.home() if home is None else home
+    if is_macos(platform_name):
+        return home / "Movies"
+    variables = os.environ if environ is None else environ
+    config_home = Path(variables.get("XDG_CONFIG_HOME") or home / ".config")
+    try:
+        lines = (config_home / "user-dirs.dirs").read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        lines = []
+    for line in lines:
+        name, _, value = line.strip().partition("=")
+        if name != "XDG_VIDEOS_DIR":
+            continue
+        value = value.strip().strip('"')
+        if value.startswith("$HOME/"):
+            folder = home / value[len("$HOME/"):]
+        elif value.startswith("/"):
+            folder = Path(value)
+        else:
+            break
+        # "$HOME/" sozinho significa "desativado" pela especificação.
+        if folder.resolve() != home.resolve():
+            return folder
+        break
+    return home / "Videos"
 
 
 @dataclass

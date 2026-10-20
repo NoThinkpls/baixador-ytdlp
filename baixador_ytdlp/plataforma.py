@@ -82,6 +82,30 @@ def asset_ytdlp(platform_name: str | None = None) -> str:
     return "yt-dlp_macos" if is_macos(platform_name) else "yt-dlp"
 
 
+def ytdlp_em_pasta(
+    platform_name: str | None = None,
+    machine: str | None = None,
+) -> tuple[str, str] | None:
+    """(ZIP oficial, executável dentro dele) da distribuição do yt-dlp em pasta.
+
+    O executável de arquivo único se descompacta numa pasta temporária a cada
+    chamada (o dobro do tempo para abrir) e o ``yt-dlp`` do Linux é o zipimport,
+    que depende do Python do sistema e vem sem curl_cffi, mutagen e
+    secretstorage. A versão em pasta abre direto e traz essas dependências.
+    ``None`` quando o projeto não publica a pasta para esta arquitetura.
+    """
+    if is_windows(platform_name):
+        return "yt-dlp_win.zip", "yt-dlp.exe"
+    if is_macos(platform_name):
+        return "yt-dlp_macos.zip", "yt-dlp_macos"
+    arch = arquitetura(machine)
+    if arch in {"x86_64", "amd64"}:
+        return "yt-dlp_linux.zip", "yt-dlp_linux"
+    if arch in {"aarch64", "arm64"}:
+        return "yt-dlp_linux_aarch64.zip", "yt-dlp_linux_aarch64"
+    return None
+
+
 def asset_deno(
     platform_name: str | None = None,
     machine: str | None = None,
@@ -114,3 +138,52 @@ def pasta_dados_usuario(
     else:
         base = Path(variables.get("XDG_DATA_HOME") or user_home / ".local" / "share")
     return base / app_id
+
+
+# Variáveis que o PyInstaller aponta para dentro do pacote no Linux. Herdadas por
+# xdg-open, gerenciador de arquivos e navegador, faziam esses programas carregarem
+# as bibliotecas e os plugins Qt do app em vez dos do sistema (e fechar ao abrir).
+_VARIAVEIS_QT_DO_PACOTE = ("QT_PLUGIN_PATH", "QML2_IMPORT_PATH")
+
+
+def restaurar_bibliotecas_do_sistema(
+    environ: dict[str, str] | None = None,
+    *,
+    frozen: bool | None = None,
+    platform_name: str | None = None,
+) -> None:
+    """Devolve o ``LD_LIBRARY_PATH`` original aos processos filhos no Linux.
+
+    O carregador do glibc só lê a variável quando o processo começa, então o próprio
+    app continua achando as bibliotecas do pacote; só os programas abertos depois
+    deixam de herdar a pasta ``_internal``.
+    """
+    variables = os.environ if environ is None else environ
+    frozen = execucao_empacotada() if frozen is None else frozen
+    if not frozen or not is_linux(platform_name):
+        return
+    original = variables.pop("LD_LIBRARY_PATH_ORIG", None)
+    if original:
+        variables["LD_LIBRARY_PATH"] = original
+    else:
+        variables.pop("LD_LIBRARY_PATH", None)
+
+
+def liberar_caminhos_qt_do_pacote(
+    library_paths: list[str],
+    environ: dict[str, str] | None = None,
+    *,
+    frozen: bool | None = None,
+    platform_name: str | None = None,
+) -> None:
+    """Remove do ambiente os caminhos de plugins Qt do pacote (Linux empacotado).
+
+    Chame com ``QCoreApplication.libraryPaths()`` já calculado: o Qt guarda a lista
+    na primeira consulta, então o app segue achando os próprios plugins.
+    """
+    variables = os.environ if environ is None else environ
+    frozen = execucao_empacotada() if frozen is None else frozen
+    if not frozen or not is_linux(platform_name) or not library_paths:
+        return
+    for name in _VARIAVEIS_QT_DO_PACOTE:
+        variables.pop(name, None)

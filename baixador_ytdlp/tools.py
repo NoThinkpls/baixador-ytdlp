@@ -18,6 +18,7 @@ import platform
 import re
 import shutil
 import ssl
+import stat
 import subprocess
 import sys
 import tarfile
@@ -37,14 +38,19 @@ except ImportError:  # pragma: no cover - só ocorre fora das builds oficiais
 
 from .config import APP_NAME, APP_VERSION, BIN_DIR, DATA_DIR, IS_WINDOWS, STATE_PATH, ensure_dirs
 from .diagnostics import get_logger
-from .plataforma import asset_deno, asset_ytdlp, is_macos, nome_binario, pasta_do_executavel
+from .plataforma import (asset_deno, asset_ytdlp, is_macos, nome_binario, pasta_do_executavel,
+                         ytdlp_em_pasta)
 from .runtime import RuntimeInfo, RuntimeManager
 import contextlib
 
 YTDLP_EXE = nome_binario("yt-dlp")
 FFMPEG_EXE = nome_binario("ffmpeg")
 FFPROBE_EXE = nome_binario("ffprobe")
-YTDLP_ASSET = "yt-dlp_win.zip" if IS_WINDOWS else asset_ytdlp()
+# Distribuição em pasta (ZIP oficial) quando existe para a plataforma; senão o
+# executável único. Ver ``plataforma.ytdlp_em_pasta``.
+YTDLP_ONEDIR = ytdlp_em_pasta(sys.platform, platform.machine())
+YTDLP_ASSET = YTDLP_ONEDIR[0] if YTDLP_ONEDIR else asset_ytdlp()
+YTDLP_DIR_EXE = YTDLP_ONEDIR[1] if YTDLP_ONEDIR else YTDLP_EXE
 
 # O yt-dlp precisa de um runtime JavaScript para resolver o desafio JS do YouTube.
 # Sem ele, a resposta do player volta UNPLAYABLE e o erro exibido é
@@ -329,26 +335,68 @@ class ToolManager:
         return self.bin_dir / "yt-dlp"
 
     def _ytdlp_bundle_ok(self) -> bool:
-        """Confere todos os arquivos da distribuição em pasta antes de executá-la."""
+        """Confere todos os arquivos da distribuição em pasta antes de executá-la.
+
+        A pasta tem de 45 a 90 MB. Recalcular o SHA-256 de tudo a cada abertura,
+        duas vezes (preparação e toolchain), custava ~0,35 s por vez no Linux e
+        mais com antivírus; como em ``_integrity_ok``, tamanho e mtime iguais aos
+        da última conferência completa bastam por ``INTEGRITY_FULL_CHECK_HOURS``.
+        """
         hashes = self.state.get("ytdlp_files")
         if not isinstance(hashes, dict) or not hashes:
             return False
         root = self._ytdlp_folder()
+        signature = self._ytdlp_stat_signature(hashes)
+        if not signature:
+            return False
+        verified = self.state.get("ytdlp_files_verified")
+        verified = verified if isinstance(verified, dict) else {}
+        fresh = (time.time() - float(verified.get("at") or 0)) < INTEGRITY_FULL_CHECK_HOURS * 3600
+        if fresh and verified.get("signature") == signature:
+            return True
         for relative, expected in hashes.items():
-            parts = Path(relative.replace("\\", "/")).parts
-            if not parts or ".." in parts or ":" in parts[0] or relative.startswith(("/", "\\")):
-                return False
             path = root / relative
             if not path.is_file() or self._sha256(path) != expected:
                 return False
+        self.state["ytdlp_files_verified"] = {"signature": signature, "at": time.time()}
+        self._state_dirty = True
         return True
 
+    def _ytdlp_stat_signature(self, hashes: dict) -> str:
+        """Resumo de nome, tamanho e mtime dos arquivos da pasta; vazio se algo falta."""
+        root = self._ytdlp_folder()
+        stats: list[list] = []
+        for relative in sorted(hashes):
+            parts = Path(relative.replace("\\", "/")).parts
+            if not parts or ".." in parts or ":" in parts[0] or relative.startswith(("/", "\\")):
+                return ""
+            try:
+                info = (root / relative).stat()
+            except OSError:
+                return ""
+            stats.append([relative, info.st_size, info.st_mtime_ns])
+        return hashlib.sha256(json.dumps(stats).encode("utf-8")).hexdigest()
+
     def _resolve_ytdlp(self) -> Path:
-        if IS_WINDOWS:
-            target = self._ytdlp_folder() / YTDLP_EXE
+        if YTDLP_ONEDIR:
+            target = self._ytdlp_folder() / YTDLP_DIR_EXE
             if target.is_file():
                 return target if self._ytdlp_bundle_ok() else target.with_suffix(".integrity-failed")
+            # No macOS/Linux a pasta tem o mesmo nome do executável único das
+            # versões anteriores; só o arquivo antigo (não a pasta) é usado aqui.
+            legacy = self.bin_dir / YTDLP_EXE
+            if legacy.exists() and not legacy.is_file():
+                return target
         return self._resolve(YTDLP_EXE)
+
+    def _legacy_ytdlp_version(self) -> str:
+        """Versão do executável único (macOS/Linux até a 1.13.8) ainda não migrado."""
+        legacy = self.bin_dir / YTDLP_EXE
+        if not YTDLP_ONEDIR or IS_WINDOWS or not legacy.is_file():
+            return ""
+        if not self._integrity_ok(YTDLP_EXE, legacy):
+            return ""
+        return self.local_ytdlp_version(legacy)
 
     def toolchain(self) -> Toolchain:
         tc = Toolchain(
@@ -481,7 +529,8 @@ class ToolManager:
         }
         for name, (key, members) in groups.items():
             path = self.bin_dir / name
-            if not path.exists() or self._integrity_ok(name, path):
+            # No macOS/Linux ``bin/yt-dlp`` agora é a pasta, conferida à parte.
+            if not path.is_file() or self._integrity_ok(name, path):
                 continue
             get_logger().error("Binário %s foi alterado fora do aplicativo; reinstalando", name)
             progress(f"O arquivo {name} foi alterado fora do aplicativo e será baixado novamente…", -1)
@@ -596,9 +645,12 @@ class ToolManager:
         return tag, assets.get(YTDLP_ASSET, ""), sums
 
     def ensure_ytdlp(self, progress: ProgressCB, check_now: bool = False) -> None:
-        target = (self._ytdlp_folder() / YTDLP_EXE) if IS_WINDOWS else self.bin_dir / YTDLP_EXE
+        target = (self._ytdlp_folder() / YTDLP_DIR_EXE) if YTDLP_ONEDIR else self.bin_dir / YTDLP_EXE
         current = self.local_ytdlp_version(target) if (
-            not IS_WINDOWS or self._ytdlp_bundle_ok()) else ""
+            not YTDLP_ONEDIR or (target.is_file() and self._ytdlp_bundle_ok())) else ""
+        # Instalação anterior com o executável único: troca pela pasta na próxima
+        # consulta, mas continua valendo se a rede não responder.
+        legacy = "" if current else self._legacy_ytdlp_version()
         system_ytdlp = (shutil.which("yt-dlp")
                          if self.allow_system_tools and not target.exists() else None)
 
@@ -610,8 +662,8 @@ class ToolManager:
         try:
             tag, url, sums = self._latest_ytdlp()
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            if current:
-                progress(f"Sem rede para checar atualização — usando yt-dlp {current}", 100)
+            if current or legacy:
+                progress(f"Sem rede para checar atualização — usando yt-dlp {current or legacy}", 100)
                 return
             if system_ytdlp:
                 progress("Sem rede — usando o yt-dlp disponível no sistema", 100)
@@ -634,22 +686,15 @@ class ToolManager:
             self._download(url, staged, progress, f"Baixando yt-dlp {tag}")
             progress("Conferindo a integridade do yt-dlp…", -1)
             self.require_sha256(staged, sums.get(YTDLP_ASSET, ""), "yt-dlp")
-            if IS_WINDOWS:
+            if YTDLP_ONEDIR:
                 unpacked = Path(temporary) / "unpacked"
                 unpacked.mkdir()
-                with zipfile.ZipFile(staged) as archive:
-                    for member in archive.infolist():
-                        parts = Path(member.filename.replace("\\", "/")).parts
-                        if (not parts or member.filename.startswith(("/", "\\"))
-                                or ":" in parts[0] or ".." in parts):
-                            raise IntegrityError("yt-dlp: caminho inválido no ZIP oficial.")
-                    archive.extractall(unpacked)
-                if not (unpacked / YTDLP_EXE).is_file():
-                    raise IntegrityError("yt-dlp: o ZIP oficial não contém yt-dlp.exe.")
+                self._extract_ytdlp_folder(staged, unpacked)
                 hashes = {str(path.relative_to(unpacked)).replace("\\", "/"): self._sha256(path)
                           for path in unpacked.rglob("*") if path.is_file()}
                 folder = self._ytdlp_folder()
                 backup = Path(temporary) / "previous"
+                # No macOS/Linux, ``folder`` pode ser o executável único antigo.
                 if folder.exists():
                     folder.replace(backup)
                 try:
@@ -659,12 +704,46 @@ class ToolManager:
                         backup.replace(folder)
                     raise
                 self.state["ytdlp_files"] = hashes
+                # Os hashes acabaram de ser calculados: a próxima conferência só olha o stat.
+                self.state["ytdlp_files_verified"] = {
+                    "signature": self._ytdlp_stat_signature(hashes), "at": time.time()}
+                for bucket in ("tool_sha256", "tool_sha256_verified"):
+                    (self.state.get(bucket) or {}).pop(YTDLP_EXE, None)
+                self._version_cache.clear()
             else:
                 self._replace(staged, target)
                 self._record_integrity(YTDLP_EXE, target)
         self.state["ytdlp_version"] = tag
         self._save_state()
         progress(f"yt-dlp atualizado para {tag}", 100)
+
+    @staticmethod
+    def _extract_ytdlp_folder(archive_path: Path, destination: Path) -> None:
+        """Extrai o ZIP oficial em pasta recusando caminhos e links fora dela.
+
+        O ``zipfile`` não restaura permissões: no macOS/Linux os bits de execução
+        gravados no ZIP são reaplicados, e o executável principal sempre recebe +x.
+        """
+        with zipfile.ZipFile(archive_path) as archive:
+            members = archive.infolist()
+            for member in members:
+                parts = Path(member.filename.replace("\\", "/")).parts
+                if (not parts or member.filename.startswith(("/", "\\"))
+                        or ":" in parts[0] or ".." in parts):
+                    raise IntegrityError("yt-dlp: caminho inválido no ZIP oficial.")
+                if stat.S_ISLNK(member.external_attr >> 16):
+                    raise IntegrityError("yt-dlp: o ZIP oficial trouxe um link simbólico.")
+            archive.extractall(destination)
+        executable = destination / YTDLP_DIR_EXE
+        if not executable.is_file():
+            raise IntegrityError(f"yt-dlp: o ZIP oficial não contém {YTDLP_DIR_EXE}.")
+        if IS_WINDOWS:
+            return
+        for member in members:
+            mode = (member.external_attr >> 16) & 0o777
+            if mode & 0o111 and not member.is_dir():
+                (destination / member.filename).chmod(0o755)
+        executable.chmod(0o755)
 
     # ----------------------------------------------------------------- FFmpeg
     def local_ffmpeg_version(self, path: Path | None = None) -> str:

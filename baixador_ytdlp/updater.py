@@ -6,7 +6,8 @@ na mesma release antes de ser executado.
 
 No Windows o instalador Inno Setup faz a troca. No macOS o pacote é o ``.zip``
 com o ``.app``: ele é extraído, conferido com ``codesign`` e um script curto
-troca o ``.app`` em uso depois que o aplicativo fecha, e o reabre.
+troca o ``.app`` em uso depois que o aplicativo fecha, e o reabre. No Linux
+o .deb/portable é instalado pela pessoa: o app só avisa e abre a página da versão.
 """
 from __future__ import annotations
 
@@ -100,6 +101,7 @@ class ReleaseInfo:
     sha256: str
     size: int = 0          # bytes do instalador, informado pelo GitHub
     notes: str = ""        # corpo da release (Markdown)
+    manual: bool = False   # sem instalação pelo app: só abrir ``page_url`` (Linux)
 
 
 def _as_size(value) -> int:
@@ -123,12 +125,9 @@ class AppUpdater:
 
     def find_update(self, current_version: str = APP_VERSION) -> ReleaseInfo | None:
         """Devolve uma release mais nova para esta plataforma, se existir."""
-        # Antes o macOS saía aqui sempre com None, e a interface dizia "já está
-        # atualizado" mesmo com versão nova publicada. Linux segue sem
-        # atualização pelo app (o .deb fica com o gerenciador de pacotes).
-        if not (IS_WINDOWS or IS_MACOS):
-            return None
-
+        # Antes o macOS e o Linux saíam aqui sempre com None, e a interface dizia
+        # "já está atualizado" mesmo com versão nova publicada. No Linux o app
+        # não instala (o .deb fica com o gerenciador de pacotes), mas avisa.
         current = version_key(current_version)
         if current is None:
             raise UpdateError("A versão instalada não pode ser comparada com segurança.")
@@ -143,6 +142,17 @@ class AppUpdater:
             raise UpdateError("A release publicada possui uma versão inválida.")
         if released <= current:
             return None
+        if not (IS_WINDOWS or IS_MACOS):
+            page_url = str(payload.get("html_url") or "")
+            try:
+                require_https(page_url)
+            except ValueError as exc:
+                raise UpdateError("A release não possui uma página de download válida.") from exc
+            return ReleaseInfo(
+                version=tag.lstrip("v"), tag=tag, page_url=page_url, installer_name="",
+                installer_url="", sha256="", notes=str(payload.get("body") or "").strip()[:20000],
+                manual=True,
+            )
 
         assets = payload.get("assets")
         if not isinstance(assets, list):

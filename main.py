@@ -34,7 +34,11 @@ if _SELF_TEST_REPORT:
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
-from baixador_ytdlp.plataforma import pasta_do_executavel  # noqa: E402
+from baixador_ytdlp.plataforma import (  # noqa: E402
+    liberar_caminhos_qt_do_pacote, pasta_do_executavel, restaurar_bibliotecas_do_sistema,
+)
+
+restaurar_bibliotecas_do_sistema()
 
 
 def asset(name: str) -> Path:
@@ -283,6 +287,7 @@ def main() -> int:
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
+    liberar_caminhos_qt_do_pacote(QApplication.libraryPaths())
     instance_lock = InstanceLock()
     if not instance_lock.acquire():
         if forward_to_running(sys.argv[1:]):

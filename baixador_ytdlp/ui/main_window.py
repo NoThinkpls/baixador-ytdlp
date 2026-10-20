@@ -549,6 +549,9 @@ class MainWindow(AppShell):
                 self._install_now()
             return
         release = self._available_update or self.update_banner.release
+        if release and release.manual:
+            QDesktopServices.openUrl(QUrl(release.page_url))
+            return
         if not release or (self._app_update_download and self._app_update_download.isRunning()):
             return
         self._install_mode = "now"

@@ -19,7 +19,7 @@ The macOS build is arm64 for M1, M2, M3, and M4 Macs running macOS 14 or later.
 - **DMG:** open it, drag `baixador-ytdlp.app` to **Applications**, then eject the disk image.
 - **Portable ZIP:** extract it and open `baixador-ytdlp.app` from any folder, without installation.
 
-Until Developer ID signing and notarization are configured, macOS can ask for additional confirmation under **Privacy & Security**. In-app updating is available only through the Windows installer; download new macOS releases manually. The UI uses macOS's existing SF Pro fonts and does not redistribute Apple fonts.
+Until Developer ID signing and notarization are configured, macOS can ask for additional confirmation under **Privacy & Security**. Since 1.13.8 the Mac app updates itself: it downloads the release `.zip`, checks its SHA-256 and the `.app` signature, and swaps the app when it closes. The UI uses macOS's existing SF Pro fonts and does not redistribute Apple fonts.
 
 ## Linux (Ubuntu/Debian)
 
@@ -28,7 +28,7 @@ The first official Linux distribution targets x86_64, Ubuntu 22.04 or later, and
 - **`.deb`:** install with `sudo apt install ./baixador-ytdlp-linux-amd64.deb`.
 - **Portable:** extract the `.tar.gz`, enter the created folder, and run `./baixador-ytdlp`; data stays in the `data` subfolder.
 
-At first launch, yt-dlp, FFmpeg, and Deno are obtained from official sources under `~/.local/share/BaixadorYtdlp/bin`. Tools already on `PATH` are used only when the corresponding advanced option is enabled. Linux app updates are manual through the release page.
+At first launch, yt-dlp, FFmpeg, and Deno are obtained from official sources under `~/.local/share/BaixadorYtdlp/bin`. Tools already on `PATH` are used only when the corresponding advanced option is enabled. Installing new app versions on Linux is manual: the app announces a new release and **Abrir download** opens its release page. The package is built on Ubuntu 22.04 and CI rejects any library that needs a glibc newer than Debian 12 (2.36).
 
 ## Performance and privacy
 
@@ -40,6 +40,7 @@ The first use of each Whisper model downloads its weights to local app data. The
 
 - HTTPS downloads always validate certificates; there is no insecure TLS fallback.
 - yt-dlp, FFmpeg, and Deno are installed only after a valid publisher SHA-256 is available. The verified hash is stored and checked again before future runs.
+- On all three platforms yt-dlp is the official folder build (`yt-dlp_win.zip`, `yt-dlp_macos.zip`, `yt-dlp_linux.zip`): it starts without unpacking itself on every call and ships curl_cffi, mutagen and secretstorage. Every file has its SHA-256 stored; size and date are checked on each launch and the full hash every 24 h.
 - Whisper and MLX weights use immutable revisions, never a mutable branch.
 - The app installer is validated with SHA-256. `SHA256SUMS.txt` is signed with Ed25519, and the updater accepts a hash only when that signature matches the public key built into the app. Packages also carry GitHub Actions provenance attestations.
 - Python dependencies are installed from hash-pinned lock files, including transitive dependencies; a CycloneDX SBOM is generated from each actual build environment.
