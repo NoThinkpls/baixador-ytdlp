@@ -3,7 +3,9 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
-## [Não lançado]
+## [1.13.10] - 2026-10-23
+
+Falsos erros: combinações de formato que o yt-dlp e o FFmpeg recusam.
 
 ### Corrigido
 
