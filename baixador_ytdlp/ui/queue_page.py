@@ -607,7 +607,8 @@ class QueuePage(QWidget):
 
     def _on_warning(self, job_id: int, message: str) -> None:
         if job := self.jobs.get(job_id):
-            job.warning = message
+            # Playlist parcial e conversão que falhou podem chegar no mesmo download.
+            job.warning = f"{job.warning}\n\n{message}" if job.warning else message
 
     def _on_done(self, job_id: int, files: list) -> None:
         job = self.jobs.get(job_id)

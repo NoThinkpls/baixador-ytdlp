@@ -15,7 +15,7 @@ from PySide6.QtCore import QThread, Signal
 
 from .config import Settings
 from .diagnostics import get_logger, log_event, report_exception
-from .downloader import (DownloadOptions, Progress, Transcoder, is_retryable_error,
+from .downloader import (DownloadError, DownloadOptions, Progress, Transcoder, is_retryable_error,
                          vp9_mp4_to_mkv)
 from .gpu import GpuInfo, detect, forget_negative_cache
 from .media_tools import (MediaToolError, MediaToolOptions, build_command,
@@ -430,6 +430,11 @@ class DownloadWorker(QThread):
                     return
                 try:
                     files = self.runner.run(lambda p: self.progress.emit(self.job_id, p))
+                    partial = self.runner.partial_error
+                    if partial and attempt < retries and is_retryable_error(partial):
+                        # Item da playlist caiu por rede: rodar de novo só baixa o que
+                        # faltou (--no-overwrites pula os arquivos prontos).
+                        raise DownloadError(partial)
                 except Exception as exc:  # o detalhe final preserva a saída útil
                     last_error = exc
                     if (self._cancelled.is_set() or self.runner.cancelled
@@ -461,6 +466,11 @@ class DownloadWorker(QThread):
             if self._cancelled.is_set() or self.runner.cancelled:
                 self.failed.emit(self.job_id, "Cancelado", "")
                 return
+
+            if partial := self.runner.partial_error:
+                self.warning.emit(self.job_id, (
+                    f"Playlist concluída com {len(files)} arquivo(s), mas alguns itens "
+                    f"falharam.\n\nÚltimo erro: {partial}"))
 
             if self.cfg.vp9_in_mkv and not self.opts.audio_only and files:
                 self.progress.emit(self.job_id, Progress(

@@ -31,7 +31,7 @@ class TranscodeFailureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             video = Path(folder) / "video.mp4"
             video.write_bytes(b"x")
-            runner = MagicMock(cancelled=False)
+            runner = MagicMock(cancelled=False, partial_error="")
             runner.run.return_value = [video]
             runner.tail.return_value = ""
             transcoder = MagicMock()
@@ -49,6 +49,34 @@ class TranscodeFailureTests(unittest.TestCase):
             self.assertEqual(done, [[video]])
             self.assertEqual(len(warnings), 1)
             self.assertIn("original foi mantido", warnings[0])
+
+
+@unittest.skipUnless(HAS_QT, "requer PySide6 e PySideSix-Frameless-Window")
+class PlaylistParcialTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_item_privado_vira_aviso_e_mantem_os_arquivos(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            video = Path(folder) / "01 - a.mp4"
+            video.write_bytes(b"x")
+            runner = MagicMock(cancelled=False, partial_error="Este vídeo é privado.")
+            runner.run.return_value = [video]
+            runner.tail.return_value = ""
+            cfg = Settings(auto_retry_attempts=2, vp9_in_mkv=False)
+            with patch("baixador_ytdlp.workers.create_runner", return_value=runner):
+                worker = DownloadWorker(1, DownloadOptions("https://x", folder, playlist=True),
+                                        cfg, MagicMock())
+                done, failed, warnings = [], [], []
+                worker.finished_ok.connect(lambda _id, files: done.append(files))
+                worker.failed.connect(lambda *args: failed.append(args))
+                worker.warning.connect(lambda _id, message: warnings.append(message))
+                worker.run()
+            self.assertEqual(failed, [])
+            self.assertEqual(done, [[video]])
+            self.assertEqual(runner.run.call_count, 1)   # erro definitivo não repete
+            self.assertIn("privado", warnings[0])
 
 
 @unittest.skipUnless(HAS_QT, "requer PySide6 e PySideSix-Frameless-Window")

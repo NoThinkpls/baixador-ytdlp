@@ -124,6 +124,14 @@ def _output_template(opts: DownloadOptions, cfg: Settings) -> str:
     return template
 
 
+# WebM só aceita VP8/VP9/AV1 com Opus/Vorbis. Fora disso (H.264 de outros sites, ou
+# "Preferir H.264") o FFmpeg recusa a junção; o MKV aceita qualquer codec.
+_MERGE_FORMATS = {"mp4": "mp4", "mkv": "mkv", "webm": "webm/mkv"}
+# MP4 não aceita VP8 nem Vorbis, que só vêm em WebM: esse vai para MKV, como o VP9
+# já ia com "VP9 em MKV". O que já está no contêiner certo o yt-dlp não toca.
+_REMUX_RULES = {"mp4": "webm>mkv/mp4", "mkv": "mkv", "webm": "webm>webm/mkv"}
+
+
 # Formatos em que o EmbedThumbnail do yt-dlp grava capa. Em qualquer outro (WAV,
 # WebM, AAC cru...) ele aborta o pós-processamento com erro depois do download
 # pronto, e a fila mostrava falha num arquivo que estava inteiro no disco.
@@ -197,11 +205,12 @@ def build_args(
         if sort_keys:
             args += ["-S", ",".join(sort_keys)]
         if opts.container in ("mp4", "mkv", "webm"):
-            # --merge-output-format já resolve o caso vídeo+áudio separados.
-            # --remux-video só entra para o arquivo único que veio em outro container:
-            # o "container>container" faz o yt-dlp pular o remux quando já está certo.
-            args += ["--merge-output-format", opts.container]
-            args += ["--remux-video", f"{opts.container}>{opts.container}"]
+            # --merge-output-format resolve vídeo+áudio separados; --remux-video, o
+            # arquivo único que veio em outro contêiner. "mp4>mp4" (até a 1.13.9)
+            # só casava com origem MP4, ou seja, nunca remuxava nada: um WebM único
+            # continuava WebM e a capa falhava nele.
+            args += ["--merge-output-format", _MERGE_FORMATS[opts.container]]
+            args += ["--remux-video", _REMUX_RULES[opts.container]]
 
     section = _section_range(opts)
     if section:
@@ -358,6 +367,8 @@ class DownloadRunner:
     def __init__(self, opts: DownloadOptions, cfg: Settings, tc: Toolchain):
         self.opts, self.cfg, self.tc = opts, cfg, tc
         self.files: list[Path] = []
+        # Playlist em que só alguns itens falharam: os demais estão no disco.
+        self.partial_error = ""
         # deque com teto: o log de erro não cresce sem limite em playlist longa.
         self.log: deque[str] = deque(maxlen=300)
         self._proc: subprocess.Popen | None = None
@@ -448,7 +459,12 @@ class DownloadRunner:
             return []
         if code != 0:
             log_event("yt-dlp download falhou (código=%s): %s", code, self.tail(300))
-            raise DownloadError(self._last_error())
+            if not (self.opts.playlist and self.files):
+                raise DownloadError(self._last_error())
+            # O yt-dlp segue para o próximo item quando um falha (vídeo privado,
+            # removido) e sai com 1 no fim. Marcar a playlist inteira como erro
+            # escondia os arquivos baixados do histórico e da transcrição.
+            self.partial_error = self._last_error()
         if not self.files:
             raise DownloadError(
                 "O yt-dlp terminou sem informar um arquivo baixado. Confira os detalhes da tarefa."
@@ -676,8 +692,7 @@ class Transcoder:
         except Exception:
             return False
 
-    def run(self, src: Path, on_progress: Callable[[float], None]) -> Path:
-        total = self.duration(src)
+    def output_path(self, src: Path) -> Path:
         codec = self.cfg.transcode_codec
         suffix = {
             "h264_nvenc": "h264", "hevc_nvenc": "hevc", "av1_nvenc": "av1",
@@ -686,7 +701,16 @@ class Transcoder:
             "h264_qsv": "h264", "hevc_qsv": "hevc", "av1_qsv": "av1",
             "h264_vaapi": "h264", "hevc_vaapi": "hevc", "av1_vaapi": "av1",
         }
-        dst = src.with_name(f"{src.stem} [{suffix.get(codec, 'acelerado')}]{src.suffix}")
+        label = suffix.get(codec, "acelerado")
+        # WebM não aceita H.264/HEVC: o FFmpeg recusava a saída e a conversão
+        # sempre "falhava". MKV guarda o resultado sem perder as legendas.
+        extension = ".mkv" if src.suffix.casefold() == ".webm" and label != "av1" else src.suffix
+        return src.with_name(f"{src.stem} [{label}]{extension}")
+
+    def run(self, src: Path, on_progress: Callable[[float], None]) -> Path:
+        total = self.duration(src)
+        codec = self.cfg.transcode_codec
+        dst = self.output_path(src)
         # NVENC, QSV e VAAPI tentam primeiro com decodificação por GPU e repetem sem ela.
         attempts = (True, False) if backend_of(codec) in {"nvenc", "qsv", "vaapi"} else (True,)
         for attempt, hwaccel in enumerate(attempts):
@@ -743,7 +767,9 @@ class Transcoder:
                     "A conversão foi validada, mas o original não pôde ser enviado à Lixeira; "
                     f"os dois arquivos foram preservados ({exc})."
                 ) from exc
-            final = src
+            final = src.with_suffix(dst.suffix)   # WebM convertido continua MKV
+            if final != src and final.exists():
+                return dst   # não sobrescreve outro arquivo com o mesmo nome
             dst.replace(final)
             return final
         return dst

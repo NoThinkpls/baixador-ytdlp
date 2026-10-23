@@ -12,7 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from baixador_ytdlp.config import Settings
 from baixador_ytdlp.downloader import (
-    DownloadError, DownloadOptions, DownloadRunner, build_args, is_retryable_error,
+    DownloadError, DownloadOptions, DownloadRunner, Transcoder, build_args, is_retryable_error,
 )
 from baixador_ytdlp.probe import (
     FormatRow, MediaInfo, _audio_languages, _caption_languages, hls_section_selector,
@@ -121,6 +121,49 @@ class DownloadArgumentsTests(unittest.TestCase):
             args = build_args(DownloadOptions(url, "downloads", container=container),
                               cfg, tools)
             self.assertEqual("--embed-thumbnail" in args, expected, container)
+
+    def test_container_choice_never_asks_ffmpeg_for_an_impossible_mux(self) -> None:
+        # "mp4>mp4" nunca remuxava um WebM único; "--merge-output-format webm" com
+        # H.264 (outros sites ou "Preferir H.264") fazia a junção falhar.
+        tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))
+        expected = {"mp4": ("mp4", "webm>mkv/mp4"), "mkv": ("mkv", "mkv"),
+                    "webm": ("webm/mkv", "webm>webm/mkv")}
+        for container, (merge, remux) in expected.items():
+            args = build_args(DownloadOptions("https://example.invalid/v", "downloads",
+                                              container=container), Settings(), tools)
+            self.assertEqual(args[args.index("--merge-output-format") + 1], merge, container)
+            self.assertEqual(args[args.index("--remux-video") + 1], remux, container)
+
+    def test_gpu_conversion_of_webm_to_h264_goes_to_mkv(self) -> None:
+        tools = SimpleNamespace(ffmpeg=Path("ffmpeg"), ffprobe=Path("ffprobe"))
+        for codec, source, expected in (
+                ("h264_nvenc", "a.webm", "a [h264].mkv"),
+                ("hevc_qsv", "a.WEBM", "a [hevc].mkv"),
+                ("av1_nvenc", "a.webm", "a [av1].webm"),
+                ("h264_nvenc", "a.mp4", "a [h264].mp4")):
+            transcoder = Transcoder(tools, Settings(transcode_codec=codec))
+            self.assertEqual(transcoder.output_path(Path(source)).name, expected, codec)
+
+    def test_playlist_with_some_failed_items_keeps_the_downloaded_files(self) -> None:
+        tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"), env=lambda: {})
+        sep = "\x1f"
+        lines = [f"@F@{sep}C:/v/01 - a.mp4\n", "ERROR: [youtube] xyz: Private video\n",
+                 f"@F@{sep}C:/v/03 - c.mp4\n"]
+
+        def run(playlist: bool):
+            runner = DownloadRunner(DownloadOptions("https://example.invalid/list", "downloads",
+                                                    playlist=playlist), Settings(), tools)
+            process = Mock(stdout=iter(line.encode() for line in lines))
+            process.wait.return_value = 1
+            with patch("baixador_ytdlp.downloader.popen_isolated", return_value=process), \
+                    patch("baixador_ytdlp.downloader.log_event"):
+                return runner, runner.run(Mock())
+
+        runner, files = run(playlist=True)
+        self.assertEqual([f.name for f in files], ["01 - a.mp4", "03 - c.mp4"])
+        self.assertTrue(runner.partial_error)
+        with self.assertRaises(DownloadError):
+            run(playlist=False)
 
     def test_only_transient_failures_are_retried(self) -> None:
         self.assertTrue(is_retryable_error("ERROR: HTTP Error 503: Service Unavailable"))
