@@ -61,7 +61,7 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 - **Nome personalizado**: defina o nome do arquivo antes de baixar; vazio, vale o modelo das Configurações.
 - Vários links de uma vez, envio direto do navegador pelo protocolo `baixador://` e escolha dos itens de uma playlist.
 - Fila persistente com **pausar e retomar**, retomada de arquivos parciais e novas tentativas automáticas.
-- Capa, metadados e capítulos também em áudio; organização de músicas por canal/artista.
+- Capa, metadados e capítulos também em áudio (capa em MP3, M4A, Opus, FLAC, MP4 e MKV; WAV e WebM não guardam capa); organização de músicas por canal/artista.
 - Canal *nightly* do yt-dlp opcional, para correções de sites antes da versão estável.
 - Além do YouTube: Instagram, X, TikTok, Facebook, Reddit, Vimeo, Twitch, SoundCloud e outros sites que o yt-dlp cobre, com avisos de erro que citam o site certo. Stories do Instagram e conteúdo restrito pedem login: o aviso aparece na hora e um único `cookies.txt` (ou o Firefox) serve para todos os sites; importar um depois do outro mantém ambos.
 

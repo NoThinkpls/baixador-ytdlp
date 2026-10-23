@@ -104,6 +104,24 @@ class DownloadArgumentsTests(unittest.TestCase):
         template = args[args.index("--output") + 1]
         self.assertTrue(template.startswith("%(uploader|Canal desconhecido)s/"))
 
+    def test_cover_skipped_where_ytdlp_cannot_embed_it(self) -> None:
+        # WAV com --embed-thumbnail fazia o yt-dlp falhar no pós-processamento
+        # ("Supported filetypes for thumbnail embedding are: ...").
+        cfg = Settings(embed_thumbnail=True)
+        tools = SimpleNamespace(ytdlp=Path("yt-dlp"), bin_dir=Path("bin"))
+        url = "https://example.invalid/video"
+        for fmt, expected in (("wav", False), ("mp3", True), ("m4a", True),
+                              ("opus", True), ("flac", True)):
+            args = build_args(DownloadOptions(url, "downloads", audio_only=True,
+                                              audio_format=fmt), cfg, tools)
+            self.assertEqual("--embed-thumbnail" in args, expected, fmt)
+            self.assertEqual("--convert-thumbnails" in args, expected, fmt)
+        for container, expected in (("mp4", True), ("mkv", True),
+                                    ("webm", False), ("original", False)):
+            args = build_args(DownloadOptions(url, "downloads", container=container),
+                              cfg, tools)
+            self.assertEqual("--embed-thumbnail" in args, expected, container)
+
     def test_only_transient_failures_are_retried(self) -> None:
         self.assertTrue(is_retryable_error("ERROR: HTTP Error 503: Service Unavailable"))
         self.assertTrue(is_retryable_error("ERROR: connection reset by peer"))

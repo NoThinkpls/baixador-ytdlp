@@ -3,6 +3,16 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [Não lançado]
+
+### Corrigido
+
+- Download de áudio em WAV com "Embutir capa" ligado terminava com erro na fila
+  ("Postprocessing: Supported filetypes for thumbnail embedding are: ..."): o WAV não tem onde
+  guardar capa e o yt-dlp abortava o pós-processamento. A capa agora só é pedida nos formatos que
+  a aceitam (MP3, M4A, Opus, FLAC, MP4 e MKV); em WAV, WebM e "Manter original" o download segue
+  sem capa e sem falso erro.
+
 ## [1.13.9] - 2026-10-20
 
 Auditoria de paridade entre Windows, macOS e Linux.

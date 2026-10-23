@@ -124,6 +124,20 @@ def _output_template(opts: DownloadOptions, cfg: Settings) -> str:
     return template
 
 
+# Formatos em que o EmbedThumbnail do yt-dlp grava capa. Em qualquer outro (WAV,
+# WebM, AAC cru...) ele aborta o pós-processamento com erro depois do download
+# pronto, e a fila mostrava falha num arquivo que estava inteiro no disco.
+THUMBNAIL_AUDIO_FORMATS = frozenset({"mp3", "m4a", "opus", "flac"})
+THUMBNAIL_CONTAINERS = frozenset({"mp4", "mkv"})
+
+
+def _supports_embedded_thumbnail(opts: DownloadOptions) -> bool:
+    if opts.audio_only:
+        return opts.audio_format in THUMBNAIL_AUDIO_FORMATS
+    # "original" não sabe a extensão final antes de baixar: vp9+opus vira .webm.
+    return opts.container in THUMBNAIL_CONTAINERS
+
+
 def build_args(
     opts: DownloadOptions,
     cfg: Settings,
@@ -204,7 +218,7 @@ def build_args(
         args.append("--embed-metadata")
     if cfg.embed_chapters:
         args.append("--embed-chapters")
-    if cfg.embed_thumbnail and (opts.audio_only or opts.container != "webm"):
+    if cfg.embed_thumbnail and _supports_embedded_thumbnail(opts):
         args.append("--embed-thumbnail")
         # Capas WebP nem sempre são aceitas por players e tags MP3. Converter
         # somente quando há capa a embutir deixa o áudio consistente sem custo
