@@ -388,6 +388,20 @@ def _subtitle_args(options: MediaToolOptions) -> list[str]:
     return ["-map", stream, "-c:s", codec]
 
 
+def _copy_all_args(options: MediaToolOptions) -> list[str]:
+    """Copia todas as faixas sem reencodar, inclusive para MKV a partir de MP4.
+
+    O MP4 que o app baixa traz capítulos (que o FFmpeg lê como faixa de dados) e,
+    com legendas embutidas, mov_text. O Matroska recusa os dois, então Remux e
+    Corte rápido falhavam justamente nos arquivos baixados pelo próprio app.
+    """
+    args = ["-map", "0", "-map", "-0:d?", "-c", "copy"]
+    if (options.source.suffix.casefold() in MP4_FAMILY
+            and options.destination.suffix.casefold() == ".mkv"):
+        args += ["-c:s", "srt"]
+    return args
+
+
 def _strip_args(destination: Path) -> list[str]:
     """Copia as faixas sem reencodar e sem nenhuma etiqueta: GPS, título, câmera, software."""
     args = ["-map", "0:v?", "-map", "0:a?"]
@@ -431,7 +445,7 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain, *, video_enco
         if options.fast_trim:
             # Corte rápido: nada é reencodado, então é instantâneo e sem perda,
             # mas o início cai no quadro-chave anterior ao ponto escolhido.
-            command += ["-map", "0", "-map_chapters", "-1", "-c", "copy",
+            command += [*_copy_all_args(options), "-map_chapters", "-1",
                         "-avoid_negative_ts", "make_zero"]
         else:
             command += [
@@ -442,7 +456,7 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain, *, video_enco
     elif options.operation == "audio":
         command += ["-vn", *_audio_args(options.destination)]
     elif options.operation == "remux":
-        command += ["-map", "0", "-c", "copy"]
+        command += _copy_all_args(options)
     elif options.operation == "compress":
         command += [
             "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264",

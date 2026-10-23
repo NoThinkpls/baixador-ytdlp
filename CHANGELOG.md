@@ -3,6 +3,30 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.13.10] - 2026-10-23
+
+Falsos erros: combinações de formato que o yt-dlp e o FFmpeg recusam.
+
+### Corrigido
+
+- Download de áudio em WAV com "Embutir capa" ligado terminava com erro na fila
+  ("Postprocessing: Supported filetypes for thumbnail embedding are: ..."): o WAV não tem onde
+  guardar capa e o yt-dlp abortava o pós-processamento. A capa agora só é pedida nos formatos que
+  a aceitam (MP3, M4A, Opus, FLAC, MP4 e MKV); em WAV, WebM e "Manter original" o download segue
+  sem capa e sem falso erro.
+- Ferramentas: **Remux** e **Corte rápido** falhavam em todo MP4 baixado pelo próprio app. Os capítulos
+  embutidos viram uma faixa de dados e a legenda embutida é mov_text, e o MKV recusa as duas. Agora a
+  faixa de dados fica de fora (os capítulos continuam) e a legenda vira SRT.
+- Contêiner WebM: vídeo em H.264 (de outros sites, ou com "Preferir H.264") fazia a junção falhar. Agora
+  vai para MKV.
+- Contêiner MP4 e MKV: o `--remux-video mp4>mp4` só valia para origem MP4, então um vídeo que vinha
+  como arquivo WebM único continuava WebM (e falhava ao embutir a capa). O WebM único agora vai para
+  MKV, que aceita qualquer codec dele; os demais formatos vão para o contêiner escolhido.
+- Conversão na GPU de um `.webm` para H.264/HEVC sempre "falhava" (o WebM não aceita esses codecs). A
+  saída agora é `.mkv`.
+- Playlist com um item privado ou removido aparecia inteira como erro, e os arquivos baixados não iam
+  para o histórico nem para a transcrição. Agora ela termina com aviso e lista o último erro.
+
 ## [1.13.9] - 2026-10-20
 
 Auditoria de paridade entre Windows, macOS e Linux.

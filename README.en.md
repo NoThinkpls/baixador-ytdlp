@@ -55,11 +55,12 @@ and video tools. Free, open source, and nothing leaves your computer.
 ### Downloading
 
 - Video, audio, playlists and **clips** with format and quality choices. Clips are not re-encoded (long ones are split into parallel parts); the start may shift to the nearest keyframe.
+  When the video does not fit the chosen container it is saved as MKV, without re-encoding, instead of failing: in MP4, a video the site only offers as a single WebM file; in WebM, an H.264 video. In a playlist with private or removed items, the rest is downloaded and the queue shows a warning, not an error.
 - Metadata preview with thumbnail, estimated file name, sizes, codecs, audio languages and available subtitles.
 - **Custom name**: set the file name before downloading; left empty, the template from Settings applies.
 - Batch URLs, one-click sending from the browser through the `baixador://` protocol, and playlist item picking.
 - Persistent queue with **pause and resume**, partial-file resume and automatic retries.
-- Cover, metadata and chapters also for audio; optional music organisation by channel/artist.
+- Cover, metadata and chapters also for audio (cover in MP3, M4A, Opus, FLAC, MP4 and MKV; WAV and WebM cannot hold one); optional music organisation by channel/artist.
 - Optional nightly yt-dlp channel for site fixes ahead of the stable release.
 - Beyond YouTube: Instagram, X, TikTok, Facebook, Reddit, Vimeo, Twitch, SoundCloud and other sites yt-dlp supports, with error notices that name the right site. Instagram stories and restricted content need a login: the warning appears immediately, and a single `cookies.txt` (or Firefox) covers every site; importing one after another keeps both.
 

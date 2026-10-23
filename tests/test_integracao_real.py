@@ -129,6 +129,34 @@ class FerramentasDeMidiaComFfmpegRealTests(unittest.TestCase):
                 operacao = {"trim_rapido": "trim", "shorts_sem_desfoque": "shorts"}.get(rotulo, rotulo)
                 self._executa(nome, operation=operacao, **extra)
 
+    def test_remux_e_corte_rapido_de_mp4_igual_ao_baixado(self) -> None:
+        """O MP4 que o app baixa tem capítulos (faixa de dados) e legenda mov_text.
+
+        Até a 1.13.9 o Matroska recusava as duas e Remux/Corte rápido sempre falhavam.
+        """
+        capitulos = self.root / "capitulos.txt"
+        capitulos.write_text(";FFMETADATA1\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=2000\n"
+                             "title=Abertura\n", encoding="utf-8")
+        baixado = self.root / "baixado.mp4"
+        subprocess.run([
+            FFMPEG, "-hide_banner", "-loglevel", "error", "-i", str(self.video),
+            "-i", str(self.srt), "-i", str(capitulos), "-map", "0", "-map", "1",
+            "-map_chapters", "2", "-c", "copy", "-c:s", "mov_text", str(baixado)], check=True)
+        for nome, extra in (("remux_baixado.mkv", dict(operation="remux")),
+                            ("corte_baixado.mkv", dict(operation="trim", start="0:01",
+                                                       end="0:03", fast_trim=True))):
+            with self.subTest(nome):
+                destino = self.root / nome
+                opts = resolve_options(MediaToolOptions(source=baixado, destination=destino,
+                                                        **extra), self.tc)
+                resultado = subprocess.run(build_command(opts, self.tc), capture_output=True,
+                                           text=True, timeout=120)
+                self.assertEqual(0, resultado.returncode, resultado.stderr[-600:])
+                faixas = subprocess.run(
+                    [FFPROBE, "-v", "error", "-show_entries", "stream=codec_type",
+                     "-of", "csv=p=0", str(destino)], capture_output=True, text=True).stdout
+                self.assertIn("subtitle", faixas)
+
     def test_operacoes_com_escolha_em_todas_as_opcoes(self) -> None:
         extensao = {"audio": "{c}", "convert": "{c}", "frame": "{c}", "extract_subs": "{c}"}
         for operacao, valores in CHOICES.items():

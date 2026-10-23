@@ -84,6 +84,7 @@ class ParallelSectionRunner:
         self.opts, self.cfg, self.tc = opts, cfg, tc
         self.pieces = pieces
         self.files: list[Path] = []
+        self.partial_error = ""   # só playlists têm falha parcial; trecho nunca é playlist
         self.log: deque[str] = deque(maxlen=300)
         self._cancelled = threading.Event()
         self._lock = threading.Lock()
