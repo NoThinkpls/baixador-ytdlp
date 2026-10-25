@@ -3,6 +3,25 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.14.2] - 2026-10-25
+
+### Adicionado
+
+- Cortes: campo **Plano da IA**. Uma linha de JSON compacto (`{"bx":1,"c":[…]}`) que uma IA de
+  texto entrega depois de ler a transcrição preenche os cortes, os títulos e onde entra cada som e
+  zoom. O app procura a palavra indicada no tempo exato do Whisper (o SRT só tem o tempo da frase),
+  leva o whoosh para a emenda mais próxima e converte tudo para o vídeo já sem pausas. Formato e
+  texto pronto para qualquer IA em `docs/PLANO-DA-IA.md`.
+- Cortes: cinco sons (whoosh, pop, impacto, ding e subida), refeitos em estéreo com filtro que
+  varia no tempo e reverb curto, e a opção **Seus sons**: uma pasta com arquivos chamados pelo
+  tipo substitui os sons padrão.
+- Cortes: **Altura do título**, no campo ou arrastando o título na prévia.
+
+### Alterado
+
+- A regra automática (sem plano) ficou mais contida: whoosh a cada 6 s no mínimo e uma ênfase a
+  cada 8 s.
+
 ## [1.14.1] - 2026-10-25
 
 ### Adicionado

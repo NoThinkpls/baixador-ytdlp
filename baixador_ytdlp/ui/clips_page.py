@@ -5,16 +5,19 @@ import contextlib
 import re
 import subprocess
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, QSize, QThread, QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import (QColor, QDesktopServices, QFont, QFontDatabase, QFontMetricsF, QImage,
                            QLinearGradient, QPainter, QPainterPath, QPen)
-from PySide6.QtWidgets import (QAbstractButton, QColorDialog, QFileDialog, QGridLayout,
-                               QHBoxLayout, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractButton, QApplication, QColorDialog, QFileDialog,
+                               QGridLayout, QHBoxLayout, QVBoxLayout, QWidget)
 
-from ..clips import (HEIGHT, HIGHLIGHT_HEX, CaptionStyle, ClipError, ClipOptions,
-                     format_clock, is_light, is_url, make_range, parse_time)
+from ..clips import (HEIGHT, HIGHLIGHT_HEX, TITLE_MAX, TITLE_MIN, CaptionStyle, ClipError,
+                     ClipOptions, format_clock, is_light, is_url, make_range, parse_time)
+from ..effects import Marker
+from ..plano_ia import markers_text, parse_plan
 from ..processes import CREATE_NO_WINDOW
 from ..workers import ClipWorker
 from . import theme
@@ -131,6 +134,7 @@ class CaptionPreview(QWidget):
     """
 
     position_changed = Signal(int)
+    title_position_changed = Signal(int)
     PREVIEW_WIDTH = 162
 
     def __init__(self, parent=None):
@@ -138,9 +142,10 @@ class CaptionPreview(QWidget):
         self.caption = CaptionStyle()
         self.framing = "blur"
         self.frame = QImage()
+        self._dragging_title = False
         self.setFixedSize(self.PREVIEW_WIDTH, round(self.PREVIEW_WIDTH * 16 / 9))
         self.setCursor(Qt.CursorShape.SizeVerCursor)
-        self.setToolTip(tr("Arraste para cima ou para baixo para posicionar a legenda"))
+        self.setToolTip(tr("Arraste a legenda ou o título para cima ou para baixo"))
         self.setAccessibleName(tr("Prévia da legenda"))
 
     def set_style(self, style: CaptionStyle) -> None:
@@ -157,10 +162,18 @@ class CaptionPreview(QWidget):
 
     def _move_to(self, y: float) -> None:
         value = round(y / max(1, self.height()) * 100)
-        self.position_changed.emit(max(POSITION_MIN, min(POSITION_MAX, value)))
+        if self._dragging_title:
+            self.title_position_changed.emit(max(TITLE_MIN, min(TITLE_MAX, value)))
+        else:
+            self.position_changed.emit(max(POSITION_MIN, min(POSITION_MAX, value)))
 
     def mousePressEvent(self, event):  # noqa: N802 - assinatura do Qt
         if event.button() == Qt.MouseButton.LeftButton:
+            # Clicou perto do título: arrasta o título; no resto, a legenda.
+            y = event.position().y() / max(1, self.height()) * 100
+            title = self.caption.resolved_title_position()
+            caption = self.caption.position
+            self._dragging_title = abs(y - title) < abs(y - caption)
             self._move_to(event.position().y())
 
     def mouseMoveEvent(self, event):  # noqa: N802 - assinatura do Qt
@@ -216,7 +229,7 @@ class CaptionPreview(QWidget):
         scale = height / HEIGHT
         family = QFont(style.font)
         family.setBold(True)
-        # Título na caixa da cor de destaque: no topo, ou embaixo se a legenda estiver no alto.
+        # Título na caixa da cor de destaque, na altura escolhida.
         title_font = QFont(family)
         title_font.setPixelSize(max(6, round(style.size * 0.84 * scale)))
         painter.setFont(title_font)
@@ -224,7 +237,7 @@ class CaptionPreview(QWidget):
         title = tr("Título do corte")
         box_width = metrics.horizontalAdvance(title) + 12
         box_height = metrics.height() + 6
-        top = 300 * scale if style.position >= 35 else height - 300 * scale - box_height
+        top = height * style.resolved_title_position() / 100 - box_height / 2
         box = QRectF((width - box_width) / 2, top, box_width, box_height)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(style.highlight_color))
@@ -305,6 +318,14 @@ class FrameGrabber(QThread):
         self.ready.emit(self.source, image)
 
 
+def field_time(seconds: float) -> str:
+    """Tempo para o campo de início/fim, com décimos quando o plano trouxer (12:03.5)."""
+    centis = round(max(0.0, seconds) * 100)
+    whole, fraction = divmod(centis, 100)
+    text = format_clock(whole)
+    return f"{text}.{fraction:02}".rstrip("0") if fraction else text
+
+
 class ClipRow(QWidget):
     """Uma linha da lista de cortes: início, fim, título, duração e remover."""
 
@@ -323,6 +344,9 @@ class ClipRow(QWidget):
         self.end = TextField("fim 02:15", self)
         self.end.setFixedWidth(118)
         self.title = TextField("Título animado (opcional)", self)
+        self.markers: tuple[Marker, ...] = ()
+        self.plan_badge = Muted("", self, wrap=False)
+        self.plan_badge.hide()
         self.length = Muted("", self, wrap=False)
         self.length.setMinimumWidth(64)
         self.remove = IconButton("trash", "Remover corte", self)
@@ -334,12 +358,21 @@ class ClipRow(QWidget):
         layout.addWidget(self.start)
         layout.addWidget(self.end)
         layout.addWidget(self.title, 1)
+        layout.addWidget(self.plan_badge)
         layout.addWidget(self.length)
         layout.addWidget(self.remove)
         self.set_number(number)
 
     def set_number(self, number: int) -> None:
         self.number.setText(f"{number}.")
+
+    def set_markers(self, markers: tuple[Marker, ...]) -> None:
+        """Pontos de som e zoom vindos do plano da IA (mostrados como "✦ 3")."""
+        self.markers = tuple(markers)
+        self.plan_badge.setVisible(bool(self.markers))
+        self.plan_badge.setText(f"✦ {len(self.markers)}")
+        self.plan_badge.setToolTip(
+            tr("Efeitos do plano da IA") + ":\n" + markers_text(self.markers))
 
     def is_filled(self) -> bool:
         return bool(self.start.text().strip() and self.end.text().strip())
@@ -441,6 +474,21 @@ class ClipsPage(QWidget):
         add_line.addWidget(self.add_button)
         add_line.addStretch(1)
         column.addLayout(add_line)
+        column.addWidget(Headline("Plano da IA", host))
+        column.addWidget(Muted(
+            "Cole a linha {\"bx\":1,…} que a IA entrega no fim da resposta (veja docs/PLANO-DA-IA.md): "
+            "ela preenche os cortes, os títulos e onde entra cada som e zoom. Com o campo vazio, "
+            "o botão lê a área de transferência (pode ser a resposta inteira).", host))
+        plan_line = QHBoxLayout()
+        plan_line.setSpacing(10)
+        self.plan_edit = TextField('{"bx":1,"c":[…]}', host)
+        self.plan_edit.setClearButtonEnabled(True)
+        self.plan_edit.returnPressed.connect(self._apply_plan)
+        self.plan_button = Button("Aplicar plano", "success", "secondary", host)
+        self.plan_button.clicked.connect(self._apply_plan)
+        plan_line.addWidget(self.plan_edit, 1)
+        plan_line.addWidget(self.plan_button)
+        column.addLayout(plan_line)
         group.add_row(host)
         return group
 
@@ -520,6 +568,14 @@ class ClipsPage(QWidget):
         position_line.addWidget(self.position_stepper)
         position_line.addWidget(Muted("% da altura; arraste na prévia", host, wrap=False))
         position_line.addStretch(1)
+        self.title_stepper = Stepper(host)
+        self.title_stepper.setRange(TITLE_MIN, TITLE_MAX)
+        self.title_stepper.setValue(style.resolved_title_position())
+        title_line = QHBoxLayout()
+        title_line.setSpacing(10)
+        title_line.addWidget(self.title_stepper)
+        title_line.addWidget(Muted("% da altura; arraste o título na prévia", host, wrap=False))
+        title_line.addStretch(1)
         self.words_combo = Select(host)
         for count in range(1, 5):
             self.words_combo.addItem(
@@ -536,6 +592,7 @@ class ClipsPage(QWidget):
 
         rows = [("Animação", self.animation_combo), ("Fonte", self.font_combo),
                 ("Tamanho", self.size_combo), ("Cores", colors), ("Altura", position_line),
+                ("Altura do título", title_line),
                 ("Palavras", self.words_combo), ("Maiúsculas", self.upper_switch),
                 ("Caixa atrás", self.background_switch)]
         for index, (label, control) in enumerate(rows):
@@ -561,6 +618,8 @@ class ClipsPage(QWidget):
         self.upper_switch.toggled.connect(self._save_style)
         self.background_switch.toggled.connect(self._save_style)
         self.position_stepper.valueChanged.connect(self._save_style)
+        self.title_stepper.valueChanged.connect(self._save_style)
+        self.preview.title_position_changed.connect(self.title_stepper.setValue)
         self.preview.set_style(style)
         return group
 
@@ -584,16 +643,27 @@ class ClipsPage(QWidget):
         self.sfx_switch = Switch(group)
         self.sfx_switch.setChecked(bool(getattr(cfg, "clips_sound_effects", False)))
         group.add_row(SettingRow(
-            "Efeitos sonoros automáticos",
-            "Um \"whoosh\" quando a fala muda de assunto (pausa longa removida) e um "
-            "\"pop\" nas palavras ditas com mais força. Com distância mínima entre eles, "
-            "para não poluir.", self.sfx_switch, group))
+            "Efeitos sonoros",
+            "Com plano da IA, cada som entra na palavra que ela indicou (whoosh, pop, impacto, "
+            "ding ou subida). Sem plano, uma regra simples: whoosh nas pausas longas cortadas "
+            "e pop nas palavras ditas bem mais alto.", self.sfx_switch, group))
+        self.sounds_edit = TextField("Sons do próprio app", group)
+        self.sounds_edit.setText(str(getattr(cfg, "clips_sounds_folder", "") or ""))
+        self.sounds_edit.setClearButtonEnabled(True)
+        self.sounds_edit.editingFinished.connect(self._save_style)
+        sounds_button = Button("Escolher pasta", "folder", "secondary", group)
+        sounds_button.clicked.connect(self._choose_sounds)
+        group.add_row(self._path_row(
+            group, "Seus sons (opcional)",
+            "Uma pasta com arquivos chamados whoosh, pop, impacto, ding e subida (WAV, MP3, OGG…) "
+            "troca os sons padrão pelos seus. O que faltar continua com o som do app.",
+            self.sounds_edit, sounds_button))
         self.punch_switch = Switch(group)
         self.punch_switch.setChecked(bool(getattr(cfg, "clips_emphasis_zoom", False)))
         group.add_row(SettingRow(
             "Zoom na ênfase",
-            "Aproxima rápido a imagem na palavra dita com mais força, no máximo uma vez a "
-            "cada 7 segundos.", self.punch_switch, group))
+            "Aproxima rápido a imagem nos pontos do plano da IA ou, sem plano, na palavra dita "
+            "com mais força.", self.punch_switch, group))
         self.progress_switch = Switch(group)
         self.progress_switch.setChecked(bool(getattr(cfg, "clips_progress_bar", False)))
         group.add_row(SettingRow(
@@ -728,10 +798,45 @@ class ClipsPage(QWidget):
         if focus:
             row.start.setFocus(Qt.FocusReason.OtherFocusReason)
 
+    def apply_plan_text(self, text: str) -> int:
+        """Troca a lista de cortes pelos do plano; devolve quantos cortes entraram."""
+        ranges = parse_plan(text)
+        while len(self.rows) > 1:
+            row = self.rows.pop()
+            self.rows_layout.removeWidget(row)
+            row.deleteLater()
+        for index, clip in enumerate(ranges):
+            if index:
+                self._add_row()
+            row = self.rows[index]
+            row.start.setText(field_time(clip.start))
+            row.end.setText(field_time(clip.end))
+            row.title.setText(clip.title)
+            row.set_markers(clip.markers)
+        if any(clip.markers for clip in ranges):
+            # Quem colou um plano com sons quer ouvir os sons.
+            self.sfx_switch.setChecked(any(m.sound for c in ranges for m in c.markers))
+            self.punch_switch.setChecked(any(m.zoom for c in ranges for m in c.markers))
+        self._refresh_rows()
+        return len(ranges)
+
+    def _apply_plan(self) -> None:
+        text = self.plan_edit.text().strip() or QApplication.clipboard().text()
+        try:
+            count = self.apply_plan_text(text)
+        except ClipError as exc:
+            Toast.error("Plano da IA", tr(str(exc)), parent=self.window(), duration=7000)
+            return
+        effects = sum(len(row.markers) for row in self.rows)
+        self.plan_edit.clear()
+        Toast.success("Plano da IA", f"{count} {tr('corte(s)')} e {effects} "
+                      f"{tr('ponto(s) de efeito carregados.')}", parent=self.window())
+
     def _remove_row(self, row: ClipRow) -> None:
         if len(self.rows) == 1:
             for field in (row.start, row.end, row.title):
                 field.clear()
+            row.set_markers(())
             return
         self.rows.remove(row)
         self.rows_layout.removeWidget(row)
@@ -769,6 +874,7 @@ class ClipsPage(QWidget):
             uppercase=bool(getattr(cfg, "clips_uppercase", True)),
             animation=str(getattr(cfg, "clips_animation", "highlight")),
             background=bool(getattr(cfg, "clips_background", False)),
+            title_position=int(getattr(cfg, "clips_title_position", 0) or 0),
         ).normalized()
 
     def caption_style(self) -> CaptionStyle:
@@ -782,6 +888,7 @@ class ClipsPage(QWidget):
             uppercase=self.upper_switch.isChecked(),
             animation=str(self.animation_combo.currentData() or "highlight"),
             background=self.background_switch.isChecked(),
+            title_position=self.title_stepper.value(),
         ).normalized()
 
     def _preview_moved(self, value: int) -> None:
@@ -808,6 +915,8 @@ class ClipsPage(QWidget):
         cfg.clips_uppercase = style.uppercase
         cfg.clips_animation = style.animation
         cfg.clips_background = style.background
+        cfg.clips_title_position = style.title_position
+        cfg.clips_sounds_folder = self.sounds_edit.text().strip()
         cfg.clips_title_seconds = float(self.title_combo.currentData() or 0.0)
         cfg.clips_zoom_cuts = self.zoom_switch.isChecked()
         cfg.clips_progress_bar = self.progress_switch.isChecked()
@@ -869,6 +978,13 @@ class ClipsPage(QWidget):
             self.output_edit.clear()
             self.source_edit.setText(path)
 
+    def _choose_sounds(self) -> None:
+        path = QFileDialog.getExistingDirectory(self, "Pasta com os seus sons",
+                                                self.sounds_edit.text().strip())
+        if path:
+            self.sounds_edit.setText(path)
+            self._save_style()
+
     def _choose_output(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Salvar cortes em",
                                                 self.output_edit.text().strip())
@@ -898,7 +1014,8 @@ class ClipsPage(QWidget):
             if not (row.start.text().strip() or row.end.text().strip()):
                 continue
             try:
-                ranges.append(make_range(row.start.text(), row.end.text(), row.title.text()))
+                ranges.append(replace(make_range(row.start.text(), row.end.text(),
+                                                 row.title.text()), markers=row.markers))
             except ClipError as exc:
                 raise ClipError(f"{tr('Corte')} {number}: {tr(str(exc))}") from exc
         if not ranges:
@@ -916,6 +1033,8 @@ class ClipsPage(QWidget):
             progress_bar=self.progress_switch.isChecked(),
             sound_effects=self.sfx_switch.isChecked(),
             emphasis_zoom=self.punch_switch.isChecked(),
+            sounds_folder=Path(self.sounds_edit.text().strip())
+            if self.sounds_edit.text().strip() else None,
             normalize_audio=self.loudness_switch.isChecked(),
             save_srt=self.srt_switch.isChecked(),
             language=str(self.language_combo.currentData() or "pt"),

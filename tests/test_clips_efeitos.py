@@ -14,7 +14,7 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from baixador_ytdlp import effects
+from baixador_ytdlp import effects, sfx
 from baixador_ytdlp.clips import ClipOptions, ClipRange, filter_graph, remap_words, render_command
 from baixador_ytdlp.effects import Effect
 from baixador_ytdlp.tools import Toolchain
@@ -36,7 +36,7 @@ class PlanoTests(unittest.TestCase):
         intervals = [(0.0, 2.0), (3.5, 5.5), (7.0, 11.0), (11.3, 20.0)]
         plan = effects.plan_effects(intervals, [], 17.2)
         self.assertEqual([effect.kind for effect in plan], ["whoosh"])
-        self.assertAlmostEqual(plan[0].time, 2.0 - effects.WHOOSH_SECONDS * effects.WHOOSH_PEAK)
+        self.assertAlmostEqual(plan[0].time, 2.0)   # o instante da emenda; ``schedule`` adianta
 
     def test_nada_colado_no_comeco_ou_no_fim(self) -> None:
         plan = effects.plan_effects([(0.0, 0.5), (2.0, 5.0)], [], 3.5)
@@ -77,20 +77,50 @@ class PlanoTests(unittest.TestCase):
 
 
 class SonsTests(unittest.TestCase):
-    def test_sons_curtos_e_audiveis(self) -> None:
-        for sound, seconds in ((effects.whoosh_sound(), effects.WHOOSH_SECONDS),
-                               (effects.pop_sound(), effects.POP_SECONDS)):
-            self.assertEqual(len(sound), int(seconds * effects.SAMPLE_RATE))
-            self.assertGreater(float(np.abs(sound).max()), 0.3)
-            self.assertLessEqual(float(np.abs(sound).max()), 1.0)
+    def test_cinco_sons_estereo_e_sem_estourar(self) -> None:
+        for kind in sfx.SOUNDS:
+            sound = sfx.MAKERS[kind]()
+            self.assertEqual(sound.shape[1], 2, kind)
+            self.assertGreater(len(sound), 0.08 * sfx.SAMPLE_RATE, kind)
+            self.assertGreater(float(np.abs(sound).max()), 0.5, kind)
+            self.assertLessEqual(float(np.abs(sound).max()), 0.9, kind)
+
+    def test_pico_do_whoosh_na_antecedencia(self) -> None:
+        sound = sfx.whoosh()
+        energy = (sound ** 2).sum(axis=1)
+        window = int(0.02 * sfx.SAMPLE_RATE)
+        smooth = np.convolve(energy, np.ones(window) / window, mode="same")
+        peak = int(np.argmax(smooth)) / sfx.SAMPLE_RATE
+        self.assertAlmostEqual(peak, sfx.lead_seconds("whoosh"), delta=0.06)
 
     def test_grava_so_os_sons_usados(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            files = effects.write_sounds(Path(tmp), [Effect(1.0, "pop")])
-            self.assertEqual(list(files), ["pop"])
-            samples, rate = effects.read_wav(files["pop"])
-            self.assertEqual(rate, effects.SAMPLE_RATE)
+            files = sfx.prepare(Path(tmp), {"pop", "impacto"})
+            self.assertEqual(sorted(files), ["impacto", "pop"])
+            samples, rate = effects.read_wav(files["pop"][0])
+            self.assertEqual(rate, sfx.SAMPLE_RATE)
             self.assertGreater(len(samples), 0)
+
+    def test_som_da_pessoa_tem_prioridade(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            own = Path(tmp) / "meus"
+            own.mkdir()
+            (own / "Impacto.MP3").write_bytes(b"x")
+            (own / "leiame.txt").write_text("x")
+            files = sfx.prepare(Path(tmp), {"impacto", "ding"}, own, duration_of=lambda _p: 2.0)
+            self.assertEqual(files["impacto"], (own / "Impacto.MP3", 0.01))
+            self.assertEqual(files["ding"][0].name, "efeito-ding.wav")
+            # Subida da pessoa termina no ponto; whoosh tem o pico no meio.
+            self.assertEqual(sfx.lead_seconds("subida", 2.0), 2.0)
+            self.assertEqual(sfx.lead_seconds("whoosh", 2.0), 1.0)
+
+    def test_arquivo_da_pessoa_ilegivel_volta_ao_padrao(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "pop.wav").write_bytes(b"x")
+            out = Path(tmp) / "saida"
+            out.mkdir()
+            files = sfx.prepare(out, {"pop"}, Path(tmp), duration_of=lambda _p: 0.0)
+            self.assertEqual(files["pop"][0].name, "efeito-pop.wav")
 
 
 class GrafoTests(unittest.TestCase):
@@ -126,7 +156,7 @@ class GrafoTests(unittest.TestCase):
 
 @unittest.skipUnless(FFMPEG and FFPROBE, "FFmpeg não instalado")
 class WorkerComEfeitosTests(unittest.TestCase):
-    def test_corte_real_com_sons_e_zoom(self) -> None:
+    def _render(self, clip: ClipRange) -> tuple[dict, str, list[str]]:
         from PySide6.QtCore import QCoreApplication
 
         from baixador_ytdlp.config import Settings
@@ -154,7 +184,7 @@ class WorkerComEfeitosTests(unittest.TestCase):
                             "-preset", "ultrafast", "-c:a", "aac", str(source)], check=True)
             tc = Toolchain(ytdlp=root / "yt-dlp", ffmpeg=Path(FFMPEG), ffprobe=Path(FFPROBE),
                            bin_dir=root)
-            options = ClipOptions(source=str(source), ranges=(ClipRange(0.0, 12.0, ""),),
+            options = ClipOptions(source=str(source), ranges=(clip,),
                                   output_dir=root / "saida", framing="crop",
                                   sound_effects=True, emphasis_zoom=True)
             worker = ClipWorker(options, tc, Settings())
@@ -173,13 +203,29 @@ class WorkerComEfeitosTests(unittest.TestCase):
                     patch("baixador_ytdlp.workers.preferred_video_encoder", return_value=""):
                 worker.run()
             self.assertNotIn("error", results, results.get("error"))
-            render = next(command for command in commands if "-filter_complex" in command)
-            graph = render[render.index("-filter_complex") + 1]
-            self.assertIn("amix", graph)          # whoosh na pausa de 2 s e pop na palavra alta
-            self.assertIn("efeito-whoosh.wav", " ".join(render))
-            self.assertIn("efeito-pop.wav", " ".join(render))
-            self.assertIn("[vpm]", graph)          # zoom na ênfase
             self.assertTrue(Path(results["ok"][0]).is_file())
+        render = next(command for command in commands if "-filter_complex" in command)
+        return results, render[render.index("-filter_complex") + 1], render
+
+    def test_corte_real_com_sons_e_zoom(self) -> None:
+        _results, graph, render = self._render(ClipRange(0.0, 12.0, ""))
+        self.assertIn("amix", graph)          # whoosh na pausa de 2 s e pop na palavra alta
+        self.assertIn("efeito-whoosh.wav", " ".join(render))
+        self.assertIn("efeito-pop.wav", " ".join(render))
+        self.assertIn("[vpm]", graph)          # zoom na ênfase
+
+    def test_plano_da_ia_manda_nos_sons(self) -> None:
+        from baixador_ytdlp.effects import Marker
+        clip = ClipRange(0.0, 12.0, "", (Marker(10.5, "impacto", "fala21", True),
+                                         Marker(5.0, "subida")))
+        _results, graph, render = self._render(clip)
+        joined = " ".join(render)
+        self.assertIn("efeito-impacto.wav", joined)
+        self.assertIn("efeito-subida.wav", joined)
+        self.assertNotIn("efeito-pop.wav", joined)      # a regra automática não entra
+        # fala21 começa em 10,5 s; com 1,86 s de pausa cortada, cai em 8,64 s.
+        self.assertIn("between(t,8.640,", graph)
+        self.assertIn("adelay=delays=2420:all=1", graph)   # subida termina na emenda (4,02 s)
 
 
 if __name__ == "__main__":

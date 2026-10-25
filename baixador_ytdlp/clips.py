@@ -7,7 +7,7 @@ Cada corte passa por (ver ``workers.ClipWorker``):
 3. as pausas longas, que viram cortes (``keep_intervals``) e deslocam os tempos das palavras;
 4. uma legenda ASS de 2–3 palavras com a palavra falada em destaque e um título animado;
 5. um único FFmpeg que recorta, emenda, enquadra em 1080x1920 e grava a legenda;
-6. opcionalmente, os efeitos automáticos de ``effects`` (whoosh, pop e zoom na ênfase).
+6. opcionalmente, os sons e o zoom rápido de ``effects`` (do plano da IA ou automáticos).
 
 Tudo aqui é cálculo puro (sem Qt e sem subprocesso), para ser testado sem FFmpeg.
 """
@@ -16,11 +16,12 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from .effects import EFFECT_VOLUME, PUNCH, Effect
+from .effects import PUNCH, Effect, Marker
 from .gpu import backend_of, quality_args
+from .sfx import GAIN
 from .media_tools import TIME_RE, _escape_filter_path, available_destination, time_seconds
 
 WIDTH, HEIGHT = 1080, 1920
@@ -38,6 +39,8 @@ FRAMINGS = ("blur", "crop", "track")
 ANIMATIONS = ("highlight", "color", "karaoke", "word", "pop", "none")
 ZOOM = 1.08                  # aproximação nas emendas, para disfarçar o salto da pausa removida
 PROGRESS_HEIGHT = 12         # barra de progresso do corte, em pixels
+TITLE_HIGH, TITLE_LOW = 17, 83   # título automático: no alto, ou embaixo
+TITLE_MIN, TITLE_MAX = 6, 94
 
 
 class ClipError(RuntimeError):
@@ -49,6 +52,7 @@ class ClipRange:
     start: float
     end: float
     title: str = ""
+    markers: tuple[Marker, ...] = ()     # pontos do plano da IA (tempo do vídeo original)
 
     @property
     def length(self) -> float:
@@ -74,6 +78,7 @@ class ClipOptions:
     save_srt: bool = False           # grava também a legenda .srt ao lado do vídeo
     sound_effects: bool = False      # whoosh nas trocas de assunto e pop nas ênfases
     emphasis_zoom: bool = False      # zoom rápido na palavra dita com mais força
+    sounds_folder: Path | None = None   # sons da pessoa (whoosh.wav, impacto.mp3…)
 
 
 def is_url(source: str) -> bool:
@@ -136,7 +141,7 @@ def clamp_range(clip: ClipRange, duration: float) -> ClipRange:
         raise ClipError(
             f"O corte que começa em {format_clock(clip.start)} está depois do fim do vídeo "
             f"({format_clock(duration)}).")
-    clamped = ClipRange(clip.start, min(clip.end, duration), clip.title)
+    clamped = replace(clip, end=min(clip.end, duration))
     if clamped.length < MIN_CLIP_SECONDS:
         raise ClipError(
             f"O corte que começa em {format_clock(clip.start)} fica com menos de 1 segundo: o "
@@ -323,6 +328,9 @@ class CaptionStyle:
     uppercase: bool = True
     animation: str = "highlight"     # ver ANIMATIONS
     background: bool = False         # caixa escura atrás da legenda
+    # Centro do título, em % da altura; 0 = automático (no alto, ou embaixo se a
+    # legenda estiver lá em cima, para não encostar).
+    title_position: int = 0
 
     def normalized(self) -> CaptionStyle:
         # Vírgula separaria os campos da linha "Style:" do ASS.
@@ -333,11 +341,21 @@ class CaptionStyle:
             position=max(8, min(92, int(self.position))), words=max(1, min(4, int(self.words))),
             uppercase=bool(self.uppercase),
             animation=self.animation if self.animation in ANIMATIONS else "highlight",
-            background=bool(self.background))
+            background=bool(self.background), title_position=self.resolved_title_position())
+
+    def resolved_title_position(self) -> int:
+        value = int(self.title_position or 0)
+        if value <= 0:
+            return TITLE_LOW if int(self.position) < 35 else TITLE_HIGH
+        return max(TITLE_MIN, min(TITLE_MAX, value))
 
     @property
     def y(self) -> int:
         return round(HEIGHT * self.normalized().position / 100)
+
+    @property
+    def title_y(self) -> int:
+        return round(HEIGHT * self.resolved_title_position() / 100)
 
 
 def ass_header(style: CaptionStyle) -> str:
@@ -354,8 +372,6 @@ def ass_header(style: CaptionStyle) -> str:
         border, outline, shadow, outline_colour = 3, max(10, style.size // 5), 0, "&H60000000"
     else:
         border, outline, shadow, outline_colour = 1, max(4, style.size // 12), 3, "&H00000000"
-    # Título no topo; se a legenda estiver lá em cima, ele vai para baixo para não encostar.
-    title_alignment = 2 if style.position < 35 else 8
     return (
         "[Script Info]\n"
         "Title: Baixador YT-DLP - corte vertical\n"
@@ -370,10 +386,11 @@ def ass_header(style: CaptionStyle) -> str:
         f"Style: Caption,{style.font},{style.size},{primary},{secondary},"
         f"{outline_colour},&H78000000,-1,0,0,0,100,100,0,0,{border},{outline},{shadow},"
         "5,80,80,0,1\n"
-        # Título: caixa na cor de destaque (BorderStyle 3), texto que contrasta.
+        # Título: caixa na cor de destaque (BorderStyle 3), texto que contrasta. A altura
+        # vem do \\pos do evento (``title_position``).
         f"Style: Title,{style.font},{round(style.size * 0.84)},{title_text},&H000000FF,"
         f"{highlight},&H00000000,-1,0,0,0,"
-        f"100,100,0,0,3,22,0,{title_alignment},90,90,300,1\n\n"
+        "100,100,0,0,3,22,0,5,90,90,0,1\n\n"
         "[Events]\n"
         "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n"
     )
@@ -448,11 +465,12 @@ def caption_events(groups: list[list[dict]], total: float,
     return rows
 
 
-def title_event(title: str, seconds: float, total: float) -> str:
+def title_event(title: str, seconds: float, total: float, y: int | None = None) -> str:
     """Título que entra crescendo, dá um leve "pulo" e some em fade."""
     text = ass_text(title)
     end = min(max(0.5, seconds), total) if total else max(0.5, seconds)
-    animation = ("{\\fad(120,280)\\fscx40\\fscy40"
+    y = round(HEIGHT * TITLE_HIGH / 100) if y is None else y
+    animation = (f"{{\\pos({WIDTH // 2},{y})\\fad(120,280)\\fscx40\\fscy40"
                  "\\t(0,220,\\fscx108\\fscy108)\\t(220,360,\\fscx100\\fscy100)}")
     return f"Dialogue: 1,{ass_time(0)},{ass_time(end)},Title,,0,0,0,,{animation}{text}"
 
@@ -462,7 +480,8 @@ def build_ass(words: list[dict], total: float, *, title: str = "", title_seconds
     style = style.normalized()
     rows = caption_events(caption_groups(words, style.words), total, style)
     if title.strip():
-        rows.insert(0, title_event(title, title_seconds if title_seconds > 0 else total, total))
+        rows.insert(0, title_event(title, title_seconds if title_seconds > 0 else total, total,
+                                   style.title_y))
     return ass_header(style) + "\n".join(rows) + ("\n" if rows else "")
 
 
@@ -596,7 +615,7 @@ def _effects_graph(effects: Sequence[Effect], inputs: dict[str, int], speech: st
         for name, time in zip(names, times, strict=True):
             delayed = name.replace("[sx", "[sd")
             parts.append(f"{name}adelay=delays={round(time * 1000)}:all=1,"
-                         f"volume={EFFECT_VOLUME}{delayed}")
+                         f"volume={GAIN.get(kind, 0.5)}{delayed}")
             labels.append(delayed)
     parts.append(f"{speech}{''.join(labels)}amix=inputs={len(labels) + 1}:duration=first:"
                  f"normalize=0{output}")
