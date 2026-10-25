@@ -209,6 +209,15 @@ def _run_self_test(report_path: Path) -> int:
             if cudnn_error:
                 raise RuntimeError(cudnn_error)
 
+        checkpoint("filelock")
+        with tempfile.TemporaryDirectory(prefix="baixador-self-test-") as temporary:
+            # O huggingface_hub usa FileLock e SoftFileLock ao baixar o modelo. No filelock 4.2
+            # o SoftFileLock é importado sob demanda e ficava fora do pacote compilado.
+            from filelock import FileLock, SoftFileLock
+            for lock_type in (FileLock, SoftFileLock):
+                with lock_type(str(Path(temporary) / f"{lock_type.__name__}.lock"), timeout=5):
+                    pass
+
         checkpoint("decode_audio")
         with tempfile.TemporaryDirectory(prefix="baixador-self-test-") as temporary:
             wav_path = Path(temporary) / "silence.wav"

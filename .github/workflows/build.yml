@@ -138,6 +138,7 @@ jobs:
             --include-package=nvidia.cuda_runtime `
             --include-package=nvidia.cublas `
             --include-package=nvidia.cudnn `
+            --include-package=filelock `
             --nofollow-import-to=pip `
             --nofollow-import-to=onnxruntime.tools `
             --nofollow-import-to=onnxruntime.transformers `
@@ -376,6 +377,7 @@ jobs:
             --collect-all faster_whisper \
             --collect-all ctranslate2 \
             --collect-all av \
+            --collect-submodules filelock \
             --collect-all certifi \
             --collect-all mlx \
             --collect-all mlx_whisper \
@@ -567,6 +569,7 @@ jobs:
             --collect-all faster_whisper \
             --collect-all ctranslate2 \
             --collect-all av \
+            --collect-submodules filelock \
             --exclude-module torch \
             --exclude-module torchvision \
             --exclude-module torchaudio \
