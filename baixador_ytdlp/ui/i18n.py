@@ -109,7 +109,7 @@ EN: dict[str, str] = {
         "Analyze a link on the Download page and it will appear here with its progress.",
     "A fila está vazia": "The queue is empty", "Agora não": "Not now",
     "Arquivo de legenda": "Caption file", "Arquivo de origem": "Source file",
-    "Atualizar": "Update", "Atualização disponível": "Update available",
+    "Atualizar": "Update", "Reinstalar": "Reinstall", "Atualização disponível": "Update available",
     "Baixar legendas": "Download subtitles", "Canal": "Channel",
     "Canal do yt-dlp": "yt-dlp channel", "Caracteres por linha": "Characters per line",
     "Caber em um limite": "Fit within a size limit", "MP4 abre em qualquer lugar; MKV nunca reconverte o vídeo.":
@@ -416,6 +416,13 @@ EN: dict[str, str] = {
     "O que você baixar, transcrever, cortar ou converter aparece nesta lista, só na sua máquina.":
         "What you download, transcribe, clip or convert shows up in this list, only on your computer.",
     "Acabamento": "Finishing",
+    "Efeitos sonoros automáticos": "Automatic sound effects",
+    "Um \"whoosh\" quando a fala muda de assunto (pausa longa removida) e um \"pop\" nas palavras ditas com mais força. Com distância mínima entre eles, para não poluir.":
+        "A \"whoosh\" when the speech changes topic (long pause removed) and a \"pop\" on the words said "
+        "loudest. Always spaced apart so it never gets cluttered.",
+    "Zoom na ênfase": "Zoom on emphasis",
+    "Aproxima rápido a imagem na palavra dita com mais força, no máximo uma vez a cada 7 segundos.":
+        "Quickly punches in on the word said loudest, at most once every 7 seconds.",
     "Animação": "Animation",
     "Caixa atrás": "Box behind",
     "Destaque — cor e maior": "Highlight — color and larger",

@@ -14,7 +14,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
-from . import reframe
+from . import effects, reframe
 from .clips import (HEIGHT, WIDTH, ClipError, ClipOptions, ClipRange, Tracking, audio_command,
                     build_ass, build_srt, clamp_range, clip_destination, is_url, keep_intervals,
                     output_length, remap_time, remap_words, render_command,
@@ -97,7 +97,8 @@ class AppUpdateCheckWorker(QThread):
                 return
 
             release = AppUpdater().find_update()
-            if (release and not self.force
+            # Reinstalar a versão oficial não se pula: o executável não confere.
+            if (release and not self.force and not release.repair
                     and release.version == self.dismissed_version):
                 release = None
             self.finished_ok.emit(release, now)
@@ -383,8 +384,38 @@ class ClipWorker(QThread):
             self.progress.emit(self._label("não deu para acompanhar a pessoa; usando o centro…"))
             return None
 
+    def _effects(self, audio: Path, words: list[dict], intervals, total: float,
+                 folder: Path) -> tuple[dict, dict[str, Path]]:
+        """Plano dos efeitos automáticos; uma falha aqui só deixa o corte sem eles."""
+        options = self.options
+        if not (options.sound_effects or options.emphasis_zoom):
+            return {}, {}
+        try:
+            samples, rate = effects.read_wav(audio)
+            levels = effects.word_loudness(samples, rate, words)
+            leveled = [{**word, "level": level} for word, level in zip(words, levels, strict=True)]
+            emphasis = effects.emphasis_words(remap_words(leveled, intervals), total)
+            extras: dict = {}
+            sounds: dict[str, Path] = {}
+            if options.emphasis_zoom and emphasis:
+                extras["punch"] = effects.punch_windows(emphasis, total)
+            if options.sound_effects:
+                planned = effects.plan_effects(
+                    intervals if options.remove_pauses else [(0.0, total)], emphasis, total)
+                if planned:
+                    extras["effects"] = planned
+                    sounds = effects.write_sounds(folder, planned)
+            log_event("Efeitos automáticos: %d ênfase(s), %d som(ns)", len(emphasis),
+                      len(extras.get("effects", ())))
+            return extras, sounds
+        except Exception as exc:  # noqa: BLE001 - efeito é acabamento, não pode derrubar o corte
+            report_exception("efeitos automáticos do corte", exc)
+            return {}, {}
+
     def _render(self, source: Path, offset: float, length: float, intervals, subtitles: Path,
-                destination: Path, tracking: Tracking | None = None) -> None:
+                destination: Path, tracking: Tracking | None = None,
+                effect_extras: dict | None = None,
+                sounds: dict[str, Path] | None = None) -> None:
         encoder = preferred_video_encoder(self.tc)
         for selected in ([encoder, ""] if encoder else [""]):
             label = "GPU" if selected else "CPU"
@@ -395,7 +426,8 @@ class ClipWorker(QThread):
                 subtitles, destination, video_encoder=selected, tracking=tracking,
                 zoom_cuts=options.zoom_cuts and options.remove_pauses,
                 progress_colour=options.style.highlight_color if options.progress_bar else "",
-                normalize_audio=options.normalize_audio)
+                normalize_audio=options.normalize_audio, sounds=sounds,
+                **(effect_extras or {}))
             code, message = self._ffmpeg(command, output_length(intervals), "render")
             if code == 0:
                 break
@@ -448,11 +480,13 @@ class ClipWorker(QThread):
             style=self.options.style), encoding="utf-8")
         tracking = (self._track(source, offset, length, intervals, folder)
                     if self.options.framing == "track" else None)
+        effect_extras, sounds = self._effects(audio, words, intervals, total, folder)
 
         self.options.output_dir.mkdir(parents=True, exist_ok=True)
         destination = clip_destination(self.options.output_dir, stem, self._index + 1, clip.title)
         try:
-            self._render(source, offset, length, intervals, subtitles, destination, tracking)
+            self._render(source, offset, length, intervals, subtitles, destination, tracking,
+                         effect_extras, sounds)
         except BaseException:
             # Cancelado ou com erro: não deixa um MP4 pela metade na pasta da pessoa.
             destination.unlink(missing_ok=True)

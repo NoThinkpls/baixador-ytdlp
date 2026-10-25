@@ -88,18 +88,27 @@ class UpdateBanner(QFrame):
 
     def show_release(self, release: ReleaseInfo) -> None:
         self._release = release
-        self.title.setText(f"Nova versão {release.tag} disponível")
         size = f"{release.size / 1_000_000:.0f} MB · " if release.size else ""
-        self.details.setText(
-            "Baixe o pacote .deb ou a versão portable na página da versão." if release.manual
-            else f"{size}Conferida antes de instalar; o aplicativo fecha para concluir."
-        )
+        if release.repair:
+            self.title.setText(f"Esta instalação não confere com a {release.tag} oficial")
+            self.details.setText(
+                "O executável está corrompido, foi alterado ou veio de outra compilação. "
+                + ("Baixe de novo o pacote na página da versão." if release.manual
+                   else f"{size}Reinstale a versão publicada no GitHub; o aplicativo fecha "
+                        "para concluir."))
+        else:
+            self.title.setText(f"Nova versão {release.tag} disponível")
+            self.details.setText(
+                "Baixe o pacote .deb ou a versão portable na página da versão." if release.manual
+                else f"{size}Conferida antes de instalar; o aplicativo fecha para concluir."
+            )
         self.update_button.setEnabled(True)
         self.dismiss_button.setEnabled(True)
         self.dismiss_button.setText("Lembrar depois")
-        self.update_button.setText("Abrir download" if release.manual else "Atualizar")
-        self.notes_button.setVisible(bool(release.notes))
-        self.skip_button.show()
+        self.update_button.setText("Abrir download" if release.manual
+                                   else "Reinstalar" if release.repair else "Atualizar")
+        self.notes_button.setVisible(bool(release.notes) and not release.repair)
+        self.skip_button.setVisible(not release.repair)
         self.show()
 
     def show_download_progress(self, received: int, total: int) -> None:

@@ -6,7 +6,8 @@ Cada corte passa por (ver ``workers.ClipWorker``):
 2. o áudio do trecho, transcrito pelo processo isolado do Whisper com o tempo de cada palavra;
 3. as pausas longas, que viram cortes (``keep_intervals``) e deslocam os tempos das palavras;
 4. uma legenda ASS de 2–3 palavras com a palavra falada em destaque e um título animado;
-5. um único FFmpeg que recorta, emenda, enquadra em 1080x1920 e grava a legenda.
+5. um único FFmpeg que recorta, emenda, enquadra em 1080x1920 e grava a legenda;
+6. opcionalmente, os efeitos automáticos de ``effects`` (whoosh, pop e zoom na ênfase).
 
 Tudo aqui é cálculo puro (sem Qt e sem subprocesso), para ser testado sem FFmpeg.
 """
@@ -14,9 +15,11 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .effects import EFFECT_VOLUME, PUNCH, Effect
 from .gpu import backend_of, quality_args
 from .media_tools import TIME_RE, _escape_filter_path, available_destination, time_seconds
 
@@ -69,6 +72,8 @@ class ClipOptions:
     progress_bar: bool = False       # barra fina na cor de destaque mostrando o andamento
     normalize_audio: bool = False    # volume equilibrado em -14 LUFS (padrão das redes)
     save_srt: bool = False           # grava também a legenda .srt ao lado do vídeo
+    sound_effects: bool = False      # whoosh nas trocas de assunto e pop nas ênfases
+    emphasis_zoom: bool = False      # zoom rápido na palavra dita com mais força
 
 
 def is_url(source: str) -> bool:
@@ -239,7 +244,8 @@ def remap_words(words: list[dict], intervals: list[tuple[float, float]]) -> list
         start, end = remap_time(word["start"], intervals), remap_time(word["end"], intervals)
         if end - start < 0.01:
             continue   # palavra inteira dentro de um trecho removido
-        result.append({"text": word["text"], "start": start, "end": end})
+        # Só o tempo muda: o resto (volume medido para os efeitos) acompanha a palavra.
+        result.append({**word, "start": start, "end": end})
     return result
 
 
@@ -520,8 +526,14 @@ def zoom_windows(intervals: list[tuple[float, float]]) -> list[tuple[float, floa
 
 def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: Path | None,
                  tracking: Tracking | None = None, *, zoom_cuts: bool = False,
-                 progress_colour: str = "", normalize_audio: bool = False) -> str:
-    """Recorta cada trecho com fala, emenda vídeo e áudio juntos, enquadra e grava a legenda."""
+                 progress_colour: str = "", normalize_audio: bool = False,
+                 effects: Sequence[Effect] = (), effect_inputs: dict[str, int] | None = None,
+                 punch: Sequence[tuple[float, float]] = ()) -> str:
+    """Recorta cada trecho com fala, emenda vídeo e áudio juntos, enquadra e grava a legenda.
+
+    ``effects`` são os sons automáticos; ``effect_inputs`` diz em qual entrada do
+    FFmpeg está o WAV de cada tipo. ``punch`` são as janelas do zoom rápido na ênfase.
+    """
     if not intervals:
         raise ClipError("Não sobrou nenhum trecho para montar o corte.")
     parts: list[str] = []
@@ -530,11 +542,17 @@ def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: 
         parts.append(f"[0:v:0]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{index}]")
         parts.append(f"[0:a:0]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{index}]")
         pads.append(f"[v{index}][a{index}]")
-    audio = "[ac0]" if normalize_audio else "[ac]"
+    inputs = effect_inputs or {}
+    effects = [effect for effect in effects if effect.kind in inputs]
+    audio = "[ac0]" if normalize_audio or effects else "[ac]"
     parts.append(f"{''.join(pads)}concat=n={len(intervals)}:v=1:a=1[vc]{audio}")
+    if effects:
+        mixed = "[ac1]" if normalize_audio else "[ac]"
+        parts.append(_effects_graph(effects, inputs, "[ac0]", mixed))
+        audio = mixed
     if normalize_audio:
         # -14 LUFS é o alvo do YouTube, TikTok e Reels; uma passada só, sem arquivo extra.
-        parts.append("[ac0]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[ac]")
+        parts.append(f"{audio}loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[ac]")
     parts.append(_framing_graph(framing if framing in FRAMINGS else "blur", tracking))
     video = "[vf]"
     windows = zoom_windows(intervals) if zoom_cuts else []
@@ -546,6 +564,13 @@ def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: 
         parts.append(f"[vf]split=2[vn][vz];[vz]scale={zoomed},crop={WIDTH}:{HEIGHT}[vzc];"
                      f"[vn][vzc]overlay=0:0:enable='{enable}'[vzm]")
         video = "[vzm]"
+    if punch:
+        # Zoom rápido (e mais forte) na palavra enfatizada, por cima do zoom das emendas.
+        enable = "+".join(f"between(t,{start:.3f},{end - 0.001:.3f})" for start, end in punch)
+        zoomed = f"{round(WIDTH * PUNCH / 2) * 2}:{round(HEIGHT * PUNCH / 2) * 2}"
+        parts.append(f"{video}split=2[pn][pz];[pz]scale={zoomed},crop={WIDTH}:{HEIGHT}[pzc];"
+                     f"[pn][pzc]overlay=0:0:enable='{enable}'[vpm]")
+        video = "[vpm]"
     tail = f"subtitles=filename={_escape_filter_path(subtitles)}," if subtitles else ""
     if progress_colour:
         total = max(0.1, output_length(intervals))
@@ -555,6 +580,26 @@ def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: 
                      f"[vs][bar]overlay=x='-w+w*t/{total:.3f}':y=H-h:shortest=1,format=yuv420p[v]")
     else:
         parts.append(f"{video}{tail}format=yuv420p[v]")
+    return ";".join(parts)
+
+
+def _effects_graph(effects: Sequence[Effect], inputs: dict[str, int], speech: str,
+                   output: str) -> str:
+    """Cada som entra atrasado até o seu instante e é somado à voz, sem mudar o volume dela."""
+    parts, labels = [], []
+    for kind, index in sorted(inputs.items()):
+        times = [effect.time for effect in effects if effect.kind == kind]
+        if not times:
+            continue
+        names = [f"[sx{kind}{number}]" for number in range(len(times))]
+        parts.append(f"[{index}:a]asplit=outputs={len(times)}{''.join(names)}")
+        for name, time in zip(names, times, strict=True):
+            delayed = name.replace("[sx", "[sd")
+            parts.append(f"{name}adelay=delays={round(time * 1000)}:all=1,"
+                         f"volume={EFFECT_VOLUME}{delayed}")
+            labels.append(delayed)
+    parts.append(f"{speech}{''.join(labels)}amix=inputs={len(labels) + 1}:duration=first:"
+                 f"normalize=0{output}")
     return ";".join(parts)
 
 
@@ -571,14 +616,22 @@ def video_codec_args(encoder: str = "") -> list[str]:
 def render_command(ffmpeg: Path, source: Path, offset: float, length: float,
                    intervals: list[tuple[float, float]], framing: str, subtitles: Path | None,
                    destination: Path, *, video_encoder: str = "",
-                   tracking: Tracking | None = None, **extras) -> list[str]:
+                   tracking: Tracking | None = None, sounds: dict[str, Path] | None = None,
+                   **extras) -> list[str]:
     """Um FFmpeg só, sem shell: o arquivo de origem nunca é alterado."""
     if source.resolve() == destination.resolve():
         raise ClipError("Escolha outra pasta de saída para preservar o arquivo original.")
+    sound_inputs: list[str] = []
+    effect_inputs: dict[str, int] = {}
+    for kind, path in sorted((sounds or {}).items()):
+        effect_inputs[kind] = 1 + len(effect_inputs)
+        sound_inputs += ["-i", str(path)]
     return [
         str(ffmpeg), "-hide_banner", "-n",
         "-ss", f"{max(0.0, offset):.3f}", "-t", f"{length:.3f}", "-i", str(source),
-        "-filter_complex", filter_graph(intervals, framing, subtitles, tracking, **extras),
+        *sound_inputs,
+        "-filter_complex", filter_graph(intervals, framing, subtitles, tracking,
+                                        effect_inputs=effect_inputs, **extras),
         "-map", "[v]", "-map", "[ac]",
         *video_codec_args(video_encoder),
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000",

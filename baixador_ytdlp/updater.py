@@ -8,6 +8,11 @@ No Windows o instalador Inno Setup faz a troca. No macOS o pacote é o ``.zip``
 com o ``.app``: ele é extraído, conferido com ``codesign`` e um script curto
 troca o ``.app`` em uso depois que o aplicativo fecha, e o reabre. No Linux
 o .deb/portable é instalado pela pessoa: o app só avisa e abre a página da versão.
+
+Integridade: a partir da 1.14.1 o SHA256SUMS.txt também traz o hash do executável
+principal de cada plataforma. Na mesma versão, um executável com hash diferente
+(arquivo corrompido, alterado ou de outra compilação) recebe a oferta de
+reinstalar a versão oficial, que não pode ser pulada.
 """
 from __future__ import annotations
 
@@ -19,7 +24,7 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from collections.abc import Callable
 from urllib.error import HTTPError, URLError
@@ -50,6 +55,14 @@ SIGNATURE_ASSET = "SHA256SUMS.txt.sig"
 # Releases até a 1.13.7 só tinham os hashes do Mac neste arquivo, sem assinatura.
 MACOS_CHECKSUM_ASSET = "SHA256SUMS-macos.txt"
 MACOS_STAGING = "macos-nova-versao"
+# Nome do executável principal no SHA256SUMS.txt (sem "/": o workflow reduz
+# caminhos ao nome do arquivo ao juntar os hashes das plataformas).
+APP_HASH_NAMES = {
+    "windows": "app-windows-baixador-ytdlp.exe",
+    "macos": "app-macos-arm64-baixador-ytdlp",
+    "linux": "app-linux-x86_64-baixador-ytdlp",
+}
+_APP_EXECUTABLES = {"baixador-ytdlp", "baixador-ytdlp.exe"}
 
 # Roda depois que o app fecha: um .app aberto não deve ser trocado por baixo do
 # processo. Se a troca falhar, a versão anterior volta para o lugar. Os caminhos
@@ -102,6 +115,7 @@ class ReleaseInfo:
     size: int = 0          # bytes do instalador, informado pelo GitHub
     notes: str = ""        # corpo da release (Markdown)
     manual: bool = False   # sem instalação pelo app: só abrir ``page_url`` (Linux)
+    repair: bool = False   # mesma versão, mas o executável não confere com o publicado
 
 
 def _as_size(value) -> int:
@@ -124,7 +138,7 @@ class AppUpdater:
     """Consulta releases e baixa instaladores sem depender da thread da interface."""
 
     def find_update(self, current_version: str = APP_VERSION) -> ReleaseInfo | None:
-        """Devolve uma release mais nova para esta plataforma, se existir."""
+        """Devolve uma release mais nova, ou a mesma para reinstalar, se houver."""
         # Antes o macOS e o Linux saíam aqui sempre com None, e a interface dizia
         # "já está atualizado" mesmo com versão nova publicada. No Linux o app
         # não instala (o .deb fica com o gerenciador de pacotes), mas avisa.
@@ -140,8 +154,44 @@ class AppUpdater:
         released = version_key(tag)
         if released is None:
             raise UpdateError("A release publicada possui uma versão inválida.")
-        if released <= current:
+        if released < current:
             return None
+        if released == current:
+            return self._repair_offer(payload, tag)
+        return self._release_info(payload, tag)
+
+    def _repair_offer(self, payload: dict, tag: str) -> ReleaseInfo | None:
+        """Mesma versão: confere o executável em uso com o hash publicado.
+
+        Qualquer falha aqui (release antiga sem o hash, rede, rodando pelo
+        código-fonte) mantém o comportamento anterior: nada a oferecer.
+        """
+        local = installed_executable_sha256()
+        if local is None:
+            return None
+        assets = payload.get("assets")
+        if not isinstance(assets, list):
+            return None
+        sums = next((asset for asset in assets if asset.get("name") == "SHA256SUMS.txt"), None)
+        sums_url = str((sums or {}).get("browser_download_url") or "")
+        if not sums_url:
+            return None
+        try:
+            checksum_text = self._request_text(sums_url)
+            self._verify_checksum_signature(assets, checksum_text)
+        except UpdateError:
+            return None
+        published = self._checksum_for(APP_HASH_NAMES[_platform_key()], checksum_text)
+        if published is None or published.lower() == local:
+            return None
+        try:
+            info = self._release_info(payload, tag, checksum_text)
+        except UpdateError:
+            return None
+        return replace(info, repair=True)
+
+    def _release_info(self, payload: dict, tag: str,
+                      checksum_text: str | None = None) -> ReleaseInfo:
         if not (IS_WINDOWS or IS_MACOS):
             page_url = str(payload.get("html_url") or "")
             try:
@@ -189,8 +239,9 @@ class AppUpdater:
             raise UpdateError("A release não possui links de download válidos.")
 
         installer_name = str(installer.get("name") or "")
-        checksum_text = self._request_text(checksum_url)
-        self._verify_checksum_signature(assets, checksum_text)
+        if checksum_text is None:
+            checksum_text = self._request_text(checksum_url)
+            self._verify_checksum_signature(assets, checksum_text)
         sha256 = self._checksum_for(installer_name, checksum_text)
         if sha256 is None and not IS_WINDOWS and not RELEASE_PUBLIC_KEYS:
             # Releases antigas: o hash do Mac só existe no arquivo da plataforma.
@@ -393,6 +444,29 @@ class AppUpdater:
         except (HTTPError, URLError, OSError, UnicodeDecodeError, TimeoutError, ValueError,
                 http.client.HTTPException) as exc:
             raise UpdateError("Não foi possível consultar novas versões agora.") from exc
+
+
+def _platform_key() -> str:
+    return "windows" if IS_WINDOWS else "macos" if IS_MACOS else "linux"
+
+
+def installed_executable_sha256(executable: str | None = None,
+                                frozen: bool | None = None) -> str | None:
+    """SHA-256 do executável principal em uso, ou None se não houver um a conferir.
+
+    Pelo código-fonte, ``sys.executable`` é o Python, não o app: não há o que
+    comparar. No pacote (PyInstaller ou Nuitka) é o próprio baixador-ytdlp.
+    """
+    frozen = execucao_empacotada() if frozen is None else frozen
+    if not frozen:
+        return None
+    path = Path(executable or sys.executable)
+    if path.name not in _APP_EXECUTABLES:
+        return None
+    try:
+        return AppUpdater._file_sha256(path)
+    except OSError:
+        return None
 
 
 def mac_app_bundle(executable: str | None = None, frozen: bool | None = None) -> Path:

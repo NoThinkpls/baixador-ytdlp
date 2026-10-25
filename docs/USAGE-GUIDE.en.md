@@ -50,7 +50,7 @@ The **Clips** page turns parts of a video into vertical videos for Shorts, Reels
 
 - **Follow the person — automatic** zooms in and follows whoever is on screen, like CapCut's auto reframe: the app looks for faces a few frames per second and, when there is none, follows the motion. The camera only moves when the person leaves the center, and it moves slowly, without jitter. **Blurred background** shows the whole frame; **Center crop** fills the screen with the middle of the video.
 - In **Caption**, choose the animation (highlight, color only, karaoke, one word at a time, group pops in or no highlight), the font, size, text color, spoken-word color, height (as % of the screen), words per caption (1 to 4), casing and a dark box behind the text. The preview shows the result over a frame of the video; drag the caption in it to move it up or down. Your choices are saved for the next clips.
-- In **Finishing**, choose how long the title stays on screen and optionally turn on zoom on cuts, the progress bar, balanced volume and a `.srt` copy of the caption.
+- In **Finishing**, choose how long the title stays on screen and optionally turn on zoom on cuts, automatic sound effects (a whoosh when the topic changes and a pop on the words said loudest), zoom on emphasis, the progress bar, balanced volume and a `.srt` copy of the caption.
 - Every finished clip shows up in **History**, with buttons to open the file, show it in the folder, caption it and make more clips from the same video. Results from the **Tools** tab and videos with embedded captions go to History too.
 
 ## Tray and background work
@@ -59,7 +59,7 @@ In **Settings**, choose whether completions show system notifications. Closing t
 
 ## Updates and diagnostics
 
-In **Settings → New app version**, you can disable update checks at startup or check manually. On Windows, a lower banner offers the update or lets you dismiss it. The installer is verified using SHA-256 before opening.
+In **Settings → New app version**, you can disable update checks at startup or check manually. On Windows, a lower banner offers the update or lets you dismiss it. The installer is verified using SHA-256 before opening. The check also compares the app's own executable with the hash published in the release: if the version is the same but the file does not match (corrupted or modified), the banner offers to **Reinstall** the official version.
 
 If a site stops working, switch the yt-dlp channel to *Nightly* in **Settings**. To report a problem, export diagnostics from **Settings → Diagnostics**. The ZIP excludes cookies, proxy passwords, URL tokens, and your user-folder name.
 
