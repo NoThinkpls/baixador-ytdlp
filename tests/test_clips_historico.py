@@ -62,7 +62,7 @@ class PaginaCortesTests(unittest.TestCase):
                          (104, "#00FF00", "#FF00AA"))
         self.assertEqual((style.position, style.words, style.uppercase), (35, 2, False))
         self.assertEqual(page.framing_combo.currentData(), "track")
-        self.assertEqual(page.preview.style.position, 35)
+        self.assertEqual(page.preview.caption.position, 35)
 
     def test_mudar_controles_salva_nas_configuracoes(self) -> None:
         page, cfg = self._page()
@@ -72,7 +72,7 @@ class PaginaCortesTests(unittest.TestCase):
         self.assertEqual((cfg.clips_position, cfg.clips_highlight_color, cfg.clips_framing),
                          (40, "#00E5FF", "track"))
         self.assertTrue(cfg.save.called)
-        self.assertEqual(page.preview.style.highlight_color, "#00E5FF")
+        self.assertEqual(page.preview.caption.highlight_color, "#00E5FF")
 
     def test_cor_invalida_no_arquivo_nao_quebra(self) -> None:
         page, _cfg = self._page(clips_text_color="vermelho", clips_position=500)

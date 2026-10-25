@@ -120,14 +120,14 @@ class CaptionPreview(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.style = CaptionStyle()
+        self.caption = CaptionStyle()
         self.setFixedSize(self.PREVIEW_WIDTH, round(self.PREVIEW_WIDTH * 16 / 9))
         self.setCursor(Qt.CursorShape.SizeVerCursor)
         self.setToolTip(tr("Arraste para cima ou para baixo para posicionar a legenda"))
         self.setAccessibleName(tr("Prévia da legenda"))
 
     def set_style(self, style: CaptionStyle) -> None:
-        self.style = style.normalized()
+        self.caption = style.normalized()
         self.update()
 
     def _move_to(self, y: float) -> None:
@@ -143,7 +143,7 @@ class CaptionPreview(QWidget):
             self._move_to(event.position().y())
 
     def paintEvent(self, _event):  # noqa: N802 - assinatura do Qt
-        style = self.style
+        style = self.caption
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         width, height = self.width(), self.height()
