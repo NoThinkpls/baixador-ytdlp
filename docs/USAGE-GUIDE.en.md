@@ -44,6 +44,15 @@ After analyzing a playlist, use **Choose items** to select only the videos you w
 
 The **Tools** page works locally with FFmpeg: trim, extract MP3, remux without recompression, compress, fit a file below a size limit for Discord/WhatsApp/email, create vertical video with a blurred background, and embed captions. Progress is shown in the app and, where supported, on the taskbar. No media is uploaded for these operations.
 
+## Vertical clips
+
+The **Clips** page turns parts of a video into vertical videos for Shorts, Reels and TikTok. Pick a file or paste a YouTube link (only the ranges are downloaded), enter the start and end of each clip (`mm:ss` or `hh:mm:ss`) with an optional title, choose the framing and pause removal, then set up the caption and click **Create clips**. Each clip is saved as `name_corte01_title.mp4`; finished clips are kept even if you cancel or a later clip fails.
+
+- **Follow the person — automatic** zooms in and follows whoever is on screen, like CapCut's auto reframe: the app looks for faces a few frames per second and, when there is none, follows the motion. The camera only moves when the person leaves the center, and it moves slowly, without jitter. **Blurred background** shows the whole frame; **Center crop** fills the screen with the middle of the video.
+- In **Caption**, choose the animation (highlight, color only, karaoke, one word at a time, group pops in or no highlight), the font, size, text color, spoken-word color, height (as % of the screen), words per caption (1 to 4), casing and a dark box behind the text. The preview shows the result over a frame of the video; drag the caption in it to move it up or down. Your choices are saved for the next clips.
+- In **Finishing**, choose how long the title stays on screen and optionally turn on zoom on cuts, the progress bar, balanced volume and a `.srt` copy of the caption.
+- Every finished clip shows up in **History**, with buttons to open the file, show it in the folder, caption it and make more clips from the same video. Results from the **Tools** tab and videos with embedded captions go to History too.
+
 ## Tray and background work
 
 In **Settings**, choose whether completions show system notifications. Closing to the tray keeps active work running; use **Exit** from the tray icon menu to close the app completely.

@@ -125,6 +125,9 @@ if ($Packager -eq 'Nuitka') {
         '--user-package-configuration-file=packaging/nuitka-package.config.yml',
         '--include-package=nvidia.cuda_runtime', '--include-package=nvidia.cublas',
         '--include-package=nvidia.cudnn',
+        # O filelock 4.2 importa SoftFileLock sob demanda (__getattr__), o que a
+        # análise do Nuitka não enxerga; o download do modelo Whisper precisa dele.
+        '--include-package=filelock',
         # Menos código para compilar (o tempo do Nuitka cai pela metade): o pip só
         # serve ao modo de desenvolvimento (BAIXADOR_DEV_RUNTIME) e as partes de
         # ferramentas/transformers/quantização do onnxruntime o app nunca importa.

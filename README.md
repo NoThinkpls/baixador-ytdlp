@@ -88,6 +88,18 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 <img src="docs/images/ferramentas-light.png" alt="Página Ferramentas (tema claro)" width="720">
 </div>
 
+### Cortes verticais
+
+- Escolha um vídeo local ou cole um link do YouTube e informe um ou vários intervalos (início, fim e título). Cada intervalo vira um MP4 **1080x1920** separado; de um link, só os trechos escolhidos são baixados.
+- **Remoção de pausas**: o Whisper marca o tempo de cada palavra e os silêncios acima do limite escolhido (0,4 s a 1,2 s) saem do vídeo, com uma pequena folga para não cortar sílabas.
+- **Legenda palavra a palavra**: 1 a 4 palavras por vez e seis animações: destaque (cor e maior), só cor, karaokê (pinta conforme a fala), uma palavra por vez, grupo que entra com pulo ou **legenda simples, sem destaque**. Fonte, tamanho, cores, altura e caixa atrás da legenda são escolhidos na própria página, com uma prévia sobre um quadro do próprio vídeo em que dá para arrastar a legenda; as escolhas ficam salvas. **Título animado** por 2, 3 ou 5 segundos ou o corte inteiro.
+- **Acabamento opcional**: zoom alternado nas emendas das pausas removidas (o salto vira um corte de câmera), barra de progresso na cor de destaque, volume equilibrado em -14 LUFS e a legenda também em `.srt` ao lado do vídeo.
+- **Seguir a pessoa (automático)**: num vídeo horizontal, a janela 9:16 aproxima e acompanha quem está em cena, como o reenquadrar do CapCut. O detector de rostos YuNet (OpenCV Zoo, MIT) roda no onnxruntime que o app já leva; sem rosto, o app segue o movimento. Uma "câmera virtual" com zona morta e velocidade máxima evita tremidas, na linha do AutoFlip do Google. Também há fundo desfocado (vídeo inteiro) e corte no centro (tela cheia).
+- Tudo com o FFmpeg e o Whisper que o app já usa: sem Node.js nem navegador embutido. A transcrição usa CUDA quando há NVIDIA e a CPU nos demais casos; a montagem tenta NVENC/AMF/Quick Sync e volta para a CPU se a GPU recusar.
+- Cada corte pronto entra no **Histórico**, com atalho para abrir, legendar ou fazer outros cortes do mesmo vídeo. Os resultados da aba Ferramentas e os vídeos com legenda incorporada também entram.
+- Arquivos só de áudio e vídeos sem som são recusados logo no início, com o motivo, em vez de falhar depois da transcrição. Vídeos de celular gravados "deitados" com marca de rotação são tratados como verticais.
+- Limitações: até 20 cortes por vez e 10 minutos por corte. A fonte escolhida precisa estar instalada no computador. O "seguir a pessoa" acompanha na horizontal (não faz zoom variável) e, se a análise falhar, o corte sai centralizado. Num link, o trecho é baixado sem recodificar e o app compensa a sobra até o quadro-chave pela duração; em raros casos o início pode variar uma fração de segundo.
+
 ### Interface
 
 - Tema claro e escuro, **português e inglês**, barra lateral compacta e ícones próprios.

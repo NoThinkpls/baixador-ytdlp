@@ -13,7 +13,7 @@ from .plataforma import is_macos, is_windows, pasta_dados_usuario, pasta_do_exec
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.13.10"
+APP_VERSION = "1.14.0"
 IS_WINDOWS = is_windows()
 
 
@@ -244,6 +244,24 @@ class Settings:
     transcription_max_chars: int = 50
     transcription_min_duration: float = 0.8
     transcription_max_duration: float = 4.5
+    # Cortes verticais: últimas escolhas da página Cortes (só aparência e enquadramento)
+    clips_framing: str = "blur"           # blur | crop | track
+    clips_remove_pauses: bool = True
+    clips_min_pause: float = 0.6
+    clips_font: str = "Arial"
+    clips_font_size: int = 88
+    clips_text_color: str = "#FFFFFF"
+    clips_highlight_color: str = "#FFD700"
+    clips_position: int = 70              # centro da legenda em % da altura
+    clips_words: int = 3
+    clips_uppercase: bool = True
+    clips_animation: str = "highlight"    # highlight | color | karaoke | word | pop | none
+    clips_background: bool = False        # caixa escura atrás da legenda
+    clips_title_seconds: float = 2.0      # 0 = o corte inteiro
+    clips_zoom_cuts: bool = False
+    clips_progress_bar: bool = False
+    clips_normalize_audio: bool = False
+    clips_save_srt: bool = False
     window_geometry: str = ""        # legado (blob do Qt); ignorado desde a 1.8.1
     window_rect: list[int] = field(default_factory=list)  # x, y, largura, altura
     window_maximized: bool = False

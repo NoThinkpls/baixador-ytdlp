@@ -317,7 +317,7 @@ class SettingsPage(QWidget):
         self._section("Atalhos de teclado")
         shortcuts, _shortcut_layout = self._custom_row(
             "Navegação e ações",
-            "Ctrl+1…5 muda de página; Ctrl+, abre Configurações; Ctrl+L foca o link; "
+            "Ctrl+1…6 muda de página; Ctrl+, abre Configurações; Ctrl+L foca o link; "
             "Ctrl+O importa uma lista; Ctrl+Enter inicia; Esc cancela a tarefa atual; "
             "F1 abre o guia.",
         )

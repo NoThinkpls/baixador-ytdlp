@@ -300,6 +300,8 @@ class MediaToolsPage(QWidget):
 
     taskbar_progress = Signal(float)
     operation_finished = Signal(str)
+    # Para o histórico: arquivo gerado, mídia de origem e nome da ferramenta.
+    tool_finished = Signal(str, str, str)
 
     def __init__(self, cfg, parent=None):
         super().__init__(parent)
@@ -662,6 +664,7 @@ class MediaToolsPage(QWidget):
         )
         worker = MediaToolWorker(options, self.toolchain, self)
         self.worker = worker
+        self._running = (str(source), OPERATIONS[options.operation]["title"])
         worker.progress.connect(self.status.setText)
         worker.progress_value.connect(self._set_progress)
         worker.finished_ok.connect(self._done)
@@ -699,6 +702,8 @@ class MediaToolsPage(QWidget):
         self.cancel_button.hide()
         self.status.setText(f"Concluído: {Path(output).name}")
         self.operation_finished.emit(output)
+        source, title = getattr(self, "_running", ("", ""))
+        self.tool_finished.emit(output, source, title)
         Toast.success("Processamento concluído", f"Arquivo salvo em {output}",
                       parent=self.window(), duration=7000)
 

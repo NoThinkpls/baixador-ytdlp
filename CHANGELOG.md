@@ -3,6 +3,47 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.14.0] - 2026-10-25
+
+Nova página **Cortes**: vídeos verticais com legenda palavra a palavra.
+
+### Adicionado
+
+- Página **Cortes** na barra lateral (Ctrl+5). A partir de um arquivo local ou de um link do
+  YouTube, cada intervalo informado (início, fim e título opcional) vira um MP4 1080x1920. Num link,
+  só os trechos são baixados.
+- Remoção de pausas: o Whisper marca o tempo de cada palavra e os silêncios acima do limite
+  escolhido (0,4 s a 1,2 s) saem do vídeo, emendando imagem e som juntos.
+- Legenda de 1 a 4 palavras por vez com a palavra falada em destaque (maior e na cor escolhida) e
+  título animado nos 2 primeiros segundos, gerados em ASS e gravados pelo próprio FFmpeg.
+- Estilo da legenda na própria página: fonte, tamanho, cor do texto, cor de destaque, altura na
+  tela e maiúsculas, com prévia em que dá para arrastar a legenda. As escolhas ficam salvas.
+- Enquadramento **Seguir a pessoa (automático)**: num vídeo horizontal, a janela 9:16 aproxima e
+  acompanha quem está em cena, como o reenquadrar do CapCut. Usa o detector de rostos YuNet
+  (OpenCV Zoo, MIT, 230 KB, no onnxruntime que o app já leva) e, sem rosto, o movimento entre
+  quadros; uma câmera virtual fica parada enquanto a pessoa está perto do centro, acompanha com
+  aceleração e frenagem suaves quando ela anda e assenta quando ela para (mesma ideia do AutoFlip
+  do Google). A posição muda a cada quadro, de pixel em pixel, sem trancos. Se a análise falhar, o corte sai centralizado. Continuam disponíveis o fundo
+  desfocado e o corte no centro.
+- Legenda com seis animações (destaque, só cor, karaokê, uma palavra por vez, grupo com pulo e
+  sem destaque) e caixa escura opcional atrás do texto. A prévia usa um quadro do próprio vídeo.
+- Acabamento opcional: duração do título (2, 3, 5 s ou o corte inteiro), zoom alternado nas
+  emendas das pausas removidas, barra de progresso, volume em -14 LUFS e legenda também em `.srt`.
+- A pasta de destino fica logo abaixo do vídeo de origem, e cada corte mostra a duração (ou o que
+  está errado) enquanto é digitado.
+- Arquivos só de áudio e vídeos sem som são recusados antes da transcrição, com o motivo; vídeos
+  de celular com marca de rotação são tratados como verticais no "seguir a pessoa"; um corte
+  cancelado não deixa MP4 pela metade; o título desce quando a legenda está no alto.
+- Histórico: cada corte pronto, cada resultado da aba Ferramentas e cada vídeo com legenda
+  incorporada entram na aba **Histórico**, com ações para abrir, legendar e fazer outros cortes do
+  mesmo vídeo.
+- Sem dependências novas além do modelo YuNet: usa o FFmpeg e o Whisper que o app já baixa. A transcrição roda no
+  processo isolado do legendador (CUDA com volta para a CPU) e a montagem tenta a GPU antes da CPU.
+
+### Alterado
+
+- O atalho Ctrl+5 passa a abrir **Cortes**; **Histórico** foi para Ctrl+6.
+
 ## [1.13.10] - 2026-10-23
 
 Falsos erros: combinações de formato que o yt-dlp e o FFmpeg recusam.

@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """Receita do PyInstaller. Uso: pyinstaller baixador_ytdlp.spec --noconfirm"""
-from PyInstaller.utils.hooks import collect_all, copy_metadata
+from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
 
 # O faster-whisper roda sobre CTranslate2. As bibliotecas CUDA entram no
 # instalador: o usuário precisa apenas do driver NVIDIA, não do toolkit CUDA.
@@ -29,12 +29,15 @@ a = Analysis(
     pathex=[],
     binaries=(fw_binaries + ct_binaries + av_binaries + cudart_binaries
               + cublas_binaries + cudnn_binaries),
-    datas=([('assets/icon.ico', 'assets'), ('THIRD_PARTY_NOTICES.md', '.')]
+    datas=([('assets/icon.ico', 'assets'), ('assets/models', 'assets/models'),
+            ('THIRD_PARTY_NOTICES.md', '.')]
            + LICENSE_DATAS
            + fw_datas + ct_datas + av_datas
            + cudart_datas + cublas_datas + cudnn_datas + metadata_datas),
     hiddenimports=(['qframelesswindow', 'PySide6.QtSvg'] + fw_hidden + ct_hidden + av_hidden
-                   + cudart_hidden + cublas_hidden + cudnn_hidden),
+                   + cudart_hidden + cublas_hidden + cudnn_hidden
+                   # filelock 4.2 importa SoftFileLock sob demanda (__getattr__).
+                   + collect_submodules('filelock')),
     hookspath=[],
     runtime_hooks=['pyinstaller_runtime.py'],
     excludes=[

@@ -107,6 +107,31 @@ class NuitkaBuildTests(unittest.TestCase):
         runtime = (root / "baixador_ytdlp" / "runtime.py").read_text(encoding="utf-8")
         self.assertNotIn("importlib.metadata.", runtime)
         self.assertNotIn("importlib.util.", runtime)
+    def test_todas_as_builds_levam_o_filelock_inteiro(self) -> None:
+        # filelock 4.2 importa SoftFileLock sob demanda; sem isto o download do modelo
+        # falhava no app compilado com "No module named 'filelock._soft'".
+        root = Path(__file__).resolve().parents[1]
+        self.assertIn("'--include-package=filelock'", (root / "build.ps1").read_text(encoding="utf-8"))
+        workflow = (root / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+        self.assertIn("--include-package=filelock", workflow)
+        self.assertEqual(workflow.count("--collect-submodules filelock"), 2)   # macOS e Linux
+        self.assertIn("collect_submodules('filelock')",
+                      (root / "baixador_ytdlp.spec").read_text(encoding="utf-8"))
+        self.assertIn('checkpoint("filelock")', (root / "main.py").read_text(encoding="utf-8"))
+
+    def test_todas_as_builds_levam_o_detector_de_rostos(self) -> None:
+        # Sem o modelo, "Seguir a pessoa" vira corte centralizado sem ninguém perceber.
+        root = Path(__file__).resolve().parents[1]
+        self.assertTrue((root / "assets" / "models" / "face_detection_yunet_2023mar.onnx").is_file())
+        self.assertIn("'--include-data-dir=assets=assets'",
+                      (root / "build.ps1").read_text(encoding="utf-8"))
+        workflow = (root / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+        self.assertIn("--include-data-dir=assets=assets", workflow)
+        self.assertEqual(workflow.count('--add-data "assets/models:assets/models"'), 2)
+        self.assertIn("('assets/models', 'assets/models')",
+                      (root / "baixador_ytdlp.spec").read_text(encoding="utf-8"))
+        self.assertIn('checkpoint("reframe_model")', (root / "main.py").read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

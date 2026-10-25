@@ -337,6 +337,112 @@ EN: dict[str, str] = {
     "Use .mp4, .mkv ou .webm como extensão de saída.": "Use .mp4, .mkv or .webm as the output extension.",
     "Use .png, .jpg ou .webp como extensão de saída.": "Use .png, .jpg or .webp as the output extension.",
     "Use .srt, .ass ou .vtt como extensão de saída.": "Use .srt, .ass or .vtt as the output extension.",
+    # Cortes verticais
+    "Cortes": "Clips", "Corte": "Clip", "cortes": "clips",
+    "Gere vídeos verticais com legenda palavra a palavra, sem as pausas.":
+        "Create vertical videos with word-by-word captions, without the pauses.",
+    "Arquivo de vídeo ou link do YouTube": "Video file or YouTube link",
+    "Vídeo de origem": "Source video",
+    "Use um arquivo do computador ou cole um link: só os trechos escolhidos são baixados.":
+        "Use a file from your computer or paste a link: only the chosen parts are downloaded.",
+    "Informe início e fim de cada corte em mm:ss ou hh:mm:ss. O título aparece animado nos primeiros segundos.":
+        "Enter the start and end of each clip as mm:ss or hh:mm:ss. The title appears animated in the first seconds.",
+    "início 01:30": "start 01:30", "fim 02:15": "end 02:15",
+    "Título animado (opcional)": "Animated title (optional)", "Remover corte": "Remove clip",
+    "Adicionar corte": "Add clip", "Estilo": "Style", "Transcrição": "Transcription",
+    "Enquadramento 9:16": "9:16 framing",
+    "Fundo desfocado — vídeo inteiro": "Blurred background — whole video",
+    "Cortar no centro — tela cheia": "Crop the center — full screen",
+    "O desfoque mostra o quadro todo; o corte no centro preenche a tela, mas perde as laterais.":
+        "The blur shows the whole frame; cropping the center fills the screen but loses the sides.",
+    "Remover pausas": "Remove pauses",
+    "Corta os silêncios entre as falas usando o tempo de cada palavra.":
+        "Cuts the silences between lines using the timing of each word.",
+    "Pausa mínima": "Minimum pause",
+    "Silêncios menores que isso ficam no vídeo.": "Silences shorter than this stay in the video.",
+    "0,4 s — ritmo acelerado": "0.4 s — fast pace", "0,6 s — recomendado": "0.6 s — recommended",
+    "0,8 s — mais natural": "0.8 s — more natural", "1,2 s — só pausas longas": "1.2 s — long pauses only",
+    "Palavras por legenda": "Words per caption", "2 palavras": "2 words", "3 palavras": "3 words",
+    "A palavra falada aparece em amarelo e um pouco maior.":
+        "The spoken word appears in yellow and slightly larger.",
+    "Legenda em maiúsculas": "Uppercase captions",
+    "Mais fácil de ler na tela do celular.": "Easier to read on a phone screen.",
+    "Idioma da fala": "Spoken language",
+    "O mesmo da aba Legendar. Usa a GPU NVIDIA quando disponível e a CPU nos demais casos.":
+        "Same as the Captions tab. Uses the NVIDIA GPU when available and the CPU otherwise.",
+    "Pasta onde os cortes serão salvos": "Folder where clips will be saved",
+    "Escolher pasta": "Choose folder", "Salvar cortes em": "Save clips to",
+    "Cada corte vira um MP4 1080x1920 separado. O original nunca é alterado.":
+        "Each clip becomes a separate 1080x1920 MP4. The original is never changed.",
+    "Escolha um vídeo e informe os cortes para começar.": "Choose a video and enter the clips to start.",
+    "Criar cortes": "Create clips", "Preparando 1 corte…": "Preparing 1 clip…",
+    "Cortes prontos": "Clips ready", "Cortes concluídos": "Clips finished",
+    "corte(s) salvos em": "clip(s) saved to", "Limite de cortes": "Clip limit",
+    "Não foi possível criar os cortes": "Could not create the clips",
+    "Cortes cancelados.": "Clips cancelled.", "Cancelar os cortes?": "Cancel the clips?",
+    "Adicione pelo menos um corte com início e fim.": "Add at least one clip with a start and end.",
+    "Use mm:ss ou hh:mm:ss para o início e o fim de cada corte.":
+        "Use mm:ss or hh:mm:ss for the start and end of each clip.",
+    "O fim de cada corte precisa ser posterior ao início.": "Each clip must end after it starts.",
+    "Cada corte precisa ter pelo menos 1 segundo.": "Each clip must be at least 1 second long.",
+    "Selecione um arquivo de vídeo existente ou cole um link.":
+        "Select an existing video file or paste a link.",
+    "Enquadramento": "Framing", "Legenda": "Caption",
+    "Seguir a pessoa — automático": "Follow the person — automatic",
+    "Aproxima e acompanha quem está em cena, como o reenquadrar do CapCut. Procura rostos e, sem rosto, segue o movimento. Vídeos já verticais ficam como estão.":
+        "Zooms in and follows whoever is on screen, like CapCut's auto reframe. It looks for faces "
+        "and, without one, follows the motion. Videos that are already vertical stay as they are.",
+    "Mostra o quadro todo, com o próprio vídeo desfocado atrás.":
+        "Shows the whole frame, with the video itself blurred behind it.",
+    "Preenche a tela com o centro do vídeo; as laterais ficam de fora.":
+        "Fills the screen with the center of the video; the sides are left out.",
+    "Fonte": "Font", "Cores": "Colors", "Altura": "Height",
+    "Palavras": "Words", "Maiúsculas": "Uppercase", "Texto": "Text",
+    "Palavra falada": "Spoken word", "Pequena": "Small", "Média": "Medium", "Grande": "Large",
+    "Muito grande": "Very large", "Enorme": "Huge", "1 palavra": "1 word", "palavras": "words",
+    "% da altura; arraste na prévia": "% of the height; drag it in the preview",
+    "A fonte precisa estar instalada no computador. A prévia é aproximada; o título usa a cor da palavra falada.":
+        "The font must be installed on the computer. The preview is approximate; the title uses "
+        "the spoken word color.",
+    "Cor do texto": "Text color", "Cor da palavra falada": "Spoken word color",
+    "Arraste para cima ou para baixo para posicionar a legenda":
+        "Drag up or down to position the caption",
+    "Prévia da legenda": "Caption preview", "Título do corte": "Clip title",
+    "Fazer outros cortes deste vídeo": "Make more clips from this video",
+    "O vídeo de origem não está mais no lugar": "The source video is no longer there",
+    "Abrir o arquivo": "Open the file",
+    "Tudo o que você baixou, legendou, cortou e converteu nesta máquina.":
+        "Everything you downloaded, captioned, clipped and converted on this computer.",
+    "O que você baixar, transcrever, cortar ou converter aparece nesta lista, só na sua máquina.":
+        "What you download, transcribe, clip or convert shows up in this list, only on your computer.",
+    "Acabamento": "Finishing",
+    "Animação": "Animation",
+    "Caixa atrás": "Box behind",
+    "Destaque — cor e maior": "Highlight — color and larger",
+    "Só a cor muda": "Color only",
+    "Karaokê — pinta ao falar": "Karaoke — fills as spoken",
+    "Uma palavra por vez": "One word at a time",
+    "Grupo entra com pulo": "Group pops in",
+    "Sem destaque — legenda simples": "No highlight — plain caption",
+    "2 segundos": "2 seconds",
+    "3 segundos": "3 seconds",
+    "5 segundos": "5 seconds",
+    "O corte inteiro": "The whole clip",
+    "Título na tela": "Title on screen",
+    "Quanto tempo o título de cada corte fica visível.": "How long each clip's title stays visible.",
+    "Zoom nas emendas": "Zoom on cuts",
+    "Alterna uma leve aproximação a cada pausa removida: o salto vira um corte de câmera, como nos vídeos de quem edita à mão.": "Alternates a slight zoom at each removed pause: the jump becomes a camera cut, like hand-edited videos.",
+    "Barra de progresso": "Progress bar",
+    "Uma linha fina no rodapé, na cor de destaque, mostrando quanto falta.": "A thin line at the bottom, in the highlight color, showing how much is left.",
+    "Volume equilibrado": "Balanced volume",
+    "Ajusta o som para -14 LUFS, o padrão do YouTube, TikTok e Reels.": "Sets the sound to -14 LUFS, the YouTube, TikTok and Reels standard.",
+    "Salvar a legenda em .srt": "Save the caption as .srt",
+    "Um arquivo ao lado de cada corte, para enviar como legenda separada.": "A file next to each clip, to upload as a separate caption.",
+    "inválido": "invalid",
+    "Vídeos": "Videos",
+    "Este arquivo só tem áudio. Os cortes verticais precisam de vídeo; para legendar só o áudio, use a aba Legendar.": "This file only has audio. Vertical clips need video; to caption audio only, use the Captions tab.",
+    "Este vídeo não tem som: sem fala não há legenda nem pausas para tirar. Para só deixá-lo vertical, use Ferramentas → Criar versão vertical.": "This video has no sound: without speech there are no captions or pauses to remove. To just make it vertical, use Tools → Create vertical version.",
+    "Não foi possível ler este arquivo como vídeo.": "Could not read this file as a video.",
 }
 
 

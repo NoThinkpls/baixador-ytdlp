@@ -60,6 +60,26 @@ A página **Ferramentas** trabalha localmente com FFmpeg. As tarefas ficam em gr
 
 O formato ou a extensão do resultado vale pelo nome escolhido em "Onde salvar": trocar `.mp3` por `.flac` muda o codec junto. O percentual aparece na tela e, quando disponível, na barra de tarefas. Nenhum arquivo é enviado pelo aplicativo para executar essas operações.
 
+## Cortes verticais
+
+A página **Cortes** transforma trechos de um vídeo em vídeos verticais prontos para Shorts, Reels e TikTok:
+
+1. Em **Vídeo de origem**, escolha um arquivo ou cole um link do YouTube (só os trechos são baixados). Logo abaixo, em **Salvar cortes em**, confira a pasta de destino.
+2. Em **Cortes**, informe início e fim de cada corte (`mm:ss` ou `hh:mm:ss`) e, se quiser, um título. Use **Adicionar corte** para vários de uma vez (até 20).
+3. Em **Enquadramento**, escolha como o vídeo horizontal vira vertical:
+   - **Seguir a pessoa — automático**: aproxima e acompanha quem está em cena, como o reenquadrar do CapCut. O app procura rostos alguns quadros por segundo e, quando não acha (pessoa de costas ou longe), segue o movimento. A câmera só se mexe quando a pessoa sai do centro e anda devagar, sem tremer.
+   - **Fundo desfocado**: mostra o quadro inteiro com o próprio vídeo desfocado atrás.
+   - **Cortar no centro**: preenche a tela com o meio do vídeo.
+
+   Ali também ficam a remoção de pausas e a pausa mínima.
+4. Em **Legenda**, escolha a animação (destaque, só cor, karaokê, uma palavra por vez, grupo com pulo ou sem destaque), fonte, tamanho, cor do texto, cor da palavra falada, altura (em % da tela), quantas palavras aparecem por vez (1 a 4) se ficam em maiúsculas e se ganham uma caixa escura atrás. A prévia ao lado mostra o resultado sobre um quadro do próprio vídeo; arraste a legenda nela para subir ou descer. As escolhas ficam salvas para os próximos cortes.
+5. Em **Acabamento**, escolha quanto tempo o título fica na tela e, se quiser, ligue o zoom nas emendas, a barra de progresso, o volume equilibrado e a cópia da legenda em `.srt`.
+6. Em **Transcrição**, confira o idioma e o modelo Whisper (os mesmos da aba Legendar) e clique em **Criar cortes**.
+
+Cada corte é salvo como `nome_corte01_titulo.mp4` na pasta escolhida. Os cortes prontos ficam salvos mesmo se você cancelar ou se um corte seguinte falhar. O título aparece animado nos 2 primeiros segundos, numa caixa da cor de destaque.
+
+Cada corte pronto aparece no **Histórico**, com botões para abrir o arquivo, mostrar na pasta, gerar legenda e fazer outros cortes do mesmo vídeo. O que sai da aba **Ferramentas** (converter, extrair áudio, recortar etc.) e os vídeos com legenda incorporada também vão para o Histórico.
+
 ## Bandeja e segundo plano
 
 Em **Configurações → Comportamento**, escolha se conclusões devem gerar notificações do sistema. A opção de fechar para a bandeja mantém trabalhos ativos; use **Sair** no menu do ícone para encerrar o aplicativo de verdade.
