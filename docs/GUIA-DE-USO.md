@@ -60,6 +60,17 @@ A página **Ferramentas** trabalha localmente com FFmpeg. As tarefas ficam em gr
 
 O formato ou a extensão do resultado vale pelo nome escolhido em "Onde salvar": trocar `.mp3` por `.flac` muda o codec junto. O percentual aparece na tela e, quando disponível, na barra de tarefas. Nenhum arquivo é enviado pelo aplicativo para executar essas operações.
 
+## Cortes verticais
+
+A página **Cortes** transforma trechos de um vídeo em vídeos verticais prontos para Shorts, Reels e TikTok:
+
+1. Em **Vídeo de origem**, escolha um arquivo ou cole um link do YouTube (só os trechos são baixados).
+2. Em **Cortes**, informe início e fim de cada corte (`mm:ss` ou `hh:mm:ss`) e, se quiser, um título. Use **Adicionar corte** para vários de uma vez (até 20).
+3. Em **Estilo**, escolha o enquadramento (fundo desfocado ou corte no centro), se as pausas saem e a partir de quanto tempo, quantas palavras aparecem por vez e se a legenda fica em maiúsculas.
+4. Em **Transcrição**, confira o idioma e o modelo Whisper (os mesmos da aba Legendar) e clique em **Criar cortes**.
+
+Cada corte é salvo como `nome_corte01_titulo.mp4` na pasta escolhida. Os cortes prontos ficam salvos mesmo se você cancelar ou se um corte seguinte falhar. O título aparece animado nos 2 primeiros segundos e a palavra falada fica em destaque na legenda.
+
 ## Bandeja e segundo plano
 
 Em **Configurações → Comportamento**, escolha se conclusões devem gerar notificações do sistema. A opção de fechar para a bandeja mantém trabalhos ativos; use **Sair** no menu do ícone para encerrar o aplicativo de verdade.

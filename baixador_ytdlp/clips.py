@@ -1,0 +1,393 @@
+"""Cortes verticais com legenda palavra a palavra, feitos só com FFmpeg e Whisper.
+
+Cada corte passa por (ver ``workers.ClipWorker``):
+
+1. o trecho do arquivo local, ou baixado do link com ``--download-sections``;
+2. o áudio do trecho, transcrito pelo processo isolado do Whisper com o tempo de cada palavra;
+3. as pausas longas, que viram cortes (``keep_intervals``) e deslocam os tempos das palavras;
+4. uma legenda ASS de 2–3 palavras com a palavra falada em destaque e um título animado;
+5. um único FFmpeg que recorta, emenda, enquadra em 1080x1920 e grava a legenda.
+
+Tudo aqui é cálculo puro (sem Qt e sem subprocesso), para ser testado sem FFmpeg.
+"""
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+from .gpu import backend_of, quality_args
+from .media_tools import TIME_RE, _escape_filter_path, available_destination, time_seconds
+
+WIDTH, HEIGHT = 1080, 1920
+MAX_CLIP_SECONDS = 600       # acima de 10 min deixa de ser um corte e a transcrição pesa
+MIN_CLIP_SECONDS = 1.0
+DEFAULT_MIN_PAUSE = 0.6      # silêncio maior que isso entre duas palavras é removido
+SPEECH_PAD = 0.12            # folga mantida antes e depois da fala, para não comer sílabas
+MIN_KEEP = 0.08              # pedaço menor que isso só gera um salto de imagem
+CAPTION_HOLD = 0.35          # a última palavra do grupo fica na tela um pouco depois de dita
+CAPTION_MAX_GAP = 0.6        # pausa que fecha um grupo mesmo antes de completar as palavras
+HIGHLIGHT_BGR = "00D7FF"     # amarelo #FFD700 na ordem azul-verde-vermelho do ASS
+FRAMINGS = ("blur", "crop")
+
+
+class ClipError(RuntimeError):
+    """Erro de validação ou de execução mostrado pela página de cortes."""
+
+
+@dataclass(frozen=True)
+class ClipRange:
+    start: float
+    end: float
+    title: str = ""
+
+    @property
+    def length(self) -> float:
+        return self.end - self.start
+
+
+@dataclass(frozen=True)
+class ClipOptions:
+    source: str                          # caminho local ou link http(s)
+    ranges: tuple[ClipRange, ...]
+    output_dir: Path
+    framing: str = "blur"                # blur = vídeo inteiro com fundo desfocado; crop = centro
+    remove_pauses: bool = True
+    min_pause: float = DEFAULT_MIN_PAUSE
+    words_per_caption: int = 3
+    uppercase: bool = True
+    title_seconds: float = 2.0
+    language: str = "pt"
+    model_size: str = "medium"
+
+
+def is_url(source: str) -> bool:
+    return bool(re.match(r"^https?://", source.strip(), re.IGNORECASE))
+
+
+def parse_time(value: str) -> float:
+    """``mm:ss``, ``hh:mm:ss`` ou segundos; vírgula decimal do teclado brasileiro vale."""
+    text = value.strip().replace(",", ".")
+    if not text or not TIME_RE.match(text):
+        raise ClipError("Use mm:ss ou hh:mm:ss para o início e o fim de cada corte.")
+    return time_seconds(text)
+
+
+def make_range(start: str, end: str, title: str = "") -> ClipRange:
+    begin, finish = parse_time(start), parse_time(end)
+    if finish <= begin:
+        raise ClipError("O fim de cada corte precisa ser posterior ao início.")
+    length = finish - begin
+    if length < MIN_CLIP_SECONDS:
+        raise ClipError("Cada corte precisa ter pelo menos 1 segundo.")
+    if length > MAX_CLIP_SECONDS:
+        raise ClipError(f"Cada corte pode ter até {MAX_CLIP_SECONDS // 60} minutos.")
+    return ClipRange(begin, finish, " ".join(title.split()))
+
+
+def clamp_range(clip: ClipRange, duration: float) -> ClipRange:
+    """Ajusta o corte à duração real do arquivo (0 = desconhecida, nada a ajustar)."""
+    if not duration:
+        return clip
+    if clip.start >= duration:
+        raise ClipError(
+            f"O corte que começa em {format_clock(clip.start)} está depois do fim do vídeo "
+            f"({format_clock(duration)}).")
+    return ClipRange(clip.start, min(clip.end, duration), clip.title)
+
+
+def format_clock(seconds: float) -> str:
+    whole = max(0, int(seconds))
+    hours, rest = divmod(whole, 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}:{minutes:02}:{secs:02}" if hours else f"{minutes:02}:{secs:02}"
+
+
+def clip_filename(stem: str, index: int, title: str) -> str:
+    """``video_corte01_titulo.mp4`` sem caracteres que o Windows recusa."""
+    slug = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", title).strip().rstrip(".")
+    slug = re.sub(r"\s+", "_", slug)[:60]
+    base = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", stem).strip().rstrip(".")[:80] or "corte"
+    return f"{base}_corte{index:02d}{'_' + slug if slug else ''}.mp4"
+
+
+def clip_destination(output_dir: Path, stem: str, index: int, title: str) -> Path:
+    return available_destination(output_dir / clip_filename(stem, index, title))
+
+
+# ----------------------------------------------------------------- palavras
+
+def words_from_transcript(path: Path) -> list[dict]:
+    """Palavras ``{"text", "start", "end"}`` do JSON gerado pelo legendador.
+
+    Segmento sem tempo por palavra (raro: o motor sempre pede ``word_timestamps``) é
+    dividido em partes iguais, para a legenda não sumir naquele trecho.
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+    words: list[dict] = []
+    for segment in data.get("segments") or ():
+        start, end = float(segment.get("start", 0.0)), float(segment.get("end", 0.0))
+        items = segment.get("words") or []
+        if items:
+            for item in items:
+                text = str(item.get("text") or "").strip()
+                if text:
+                    words.append({"text": text, "start": float(item.get("start", start)),
+                                  "end": float(item.get("end", end))})
+            continue
+        tokens = str(segment.get("text") or "").split()
+        step = (end - start) / len(tokens) if tokens else 0.0
+        for position, token in enumerate(tokens):
+            words.append({"text": token, "start": start + position * step,
+                          "end": start + (position + 1) * step})
+    words.sort(key=lambda word: word["start"])
+    return words
+
+
+def keep_intervals(words: list[dict], length: float, min_pause: float = DEFAULT_MIN_PAUSE,
+                   pad: float = SPEECH_PAD) -> list[tuple[float, float]]:
+    """Trechos ``(início, fim)`` com fala; pausas acima de ``min_pause`` ficam de fora.
+
+    O começo e o fim do corte contam como pausas também: silêncio antes da primeira
+    palavra e depois da última sai. Sem palavras (música, silêncio), o corte fica inteiro.
+    """
+    if length <= 0:
+        return []
+    if not words:
+        return [(0.0, length)]
+    intervals: list[list[float]] = []
+    cursor_start = 0.0 if words[0]["start"] <= min_pause else max(0.0, words[0]["start"] - pad)
+    cursor_end = words[0]["end"]
+    for word in words[1:]:
+        if word["start"] - cursor_end > min_pause:
+            intervals.append([cursor_start, cursor_end + pad])
+            cursor_start = word["start"] - pad
+        cursor_end = max(cursor_end, word["end"])
+    finish = length if length - cursor_end <= min_pause else cursor_end + pad
+    intervals.append([cursor_start, finish])
+
+    merged: list[list[float]] = []
+    for start, end in intervals:
+        start, end = max(0.0, start), min(length, end)
+        if end - start < MIN_KEEP:
+            continue
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return [(round(start, 3), round(end, 3)) for start, end in merged] or [(0.0, length)]
+
+
+def remap_time(value: float, intervals: list[tuple[float, float]]) -> float:
+    """Tempo no vídeo final; um instante dentro de uma pausa removida vai para a emenda."""
+    elapsed = 0.0
+    for start, end in intervals:
+        if value < start:
+            return elapsed
+        if value <= end:
+            return elapsed + value - start
+        elapsed += end - start
+    return elapsed
+
+
+def remap_words(words: list[dict], intervals: list[tuple[float, float]]) -> list[dict]:
+    result = []
+    for word in words:
+        start, end = remap_time(word["start"], intervals), remap_time(word["end"], intervals)
+        if end - start < 0.01:
+            continue   # palavra inteira dentro de um trecho removido
+        result.append({"text": word["text"], "start": start, "end": end})
+    return result
+
+
+def output_length(intervals: list[tuple[float, float]]) -> float:
+    return sum(end - start for start, end in intervals)
+
+
+def display_word(text: str, uppercase: bool) -> str:
+    """Tira vírgula e ponto do fim (a legenda curta não precisa deles); ? e ! ficam."""
+    cleaned = text.strip().rstrip(",.;:")
+    cleaned = cleaned or text.strip()
+    return cleaned.upper() if uppercase else cleaned
+
+
+def caption_groups(words: list[dict], size: int = 3,
+                   max_gap: float = CAPTION_MAX_GAP) -> list[list[dict]]:
+    """Grupos de até ``size`` palavras; fim de frase ou pausa fecham o grupo antes."""
+    size = max(1, min(4, int(size)))
+    groups: list[list[dict]] = []
+    current: list[dict] = []
+    for word in words:
+        if current and (len(current) >= size
+                        or word["start"] - current[-1]["end"] > max_gap
+                        or current[-1]["text"].rstrip().endswith((".", "!", "?", "…"))):
+            groups.append(current)
+            current = []
+        current.append(word)
+    if current:
+        groups.append(current)
+    return groups
+
+
+# ----------------------------------------------------------------- ASS
+
+def ass_time(value: float) -> str:
+    hundredths = max(0, round(value * 100))
+    hours, rest = divmod(hundredths, 360000)
+    minutes, rest = divmod(rest, 6000)
+    secs, cs = divmod(rest, 100)
+    return f"{hours}:{minutes:02}:{secs:02}.{cs:02}"
+
+
+def ass_text(value: str) -> str:
+    """Texto literal no ASS: chaves abririam uma tag e a barra invertida, um comando."""
+    value = value.replace("\\", "/").replace("{", "(").replace("}", ")")
+    return " ".join(value.split())
+
+
+ASS_HEADER = (
+    "[Script Info]\n"
+    "Title: Baixador YT-DLP - corte vertical\n"
+    "ScriptType: v4.00+\n"
+    f"PlayResX: {WIDTH}\nPlayResY: {HEIGHT}\n"
+    "WrapStyle: 0\nScaledBorderAndShadow: yes\n\n"
+    "[V4+ Styles]\n"
+    "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,"
+    "Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,"
+    "Alignment,MarginL,MarginR,MarginV,Encoding\n"
+    # Legenda: branca com contorno grosso, no terço inferior (acima dos botões do app).
+    "Style: Caption,Arial,88,&H00FFFFFF,&H000000FF,&H00000000,&H78000000,-1,0,0,0,"
+    "100,100,0,0,1,7,3,2,80,80,560,1\n"
+    # Título: texto escuro numa caixa amarela (BorderStyle 3), no topo.
+    f"Style: Title,Arial,74,&H00141414,&H000000FF,&H00{HIGHLIGHT_BGR},&H00000000,-1,0,0,0,"
+    "100,100,0,0,3,22,0,8,90,90,300,1\n\n"
+    "[Events]\n"
+    "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n"
+)
+
+
+def _caption_line(words: list[str], active: int) -> str:
+    parts = []
+    for index, word in enumerate(words):
+        if index == active:
+            parts.append(f"{{\\1c&H{HIGHLIGHT_BGR}&\\fscx112\\fscy112}}{word}{{\\r}}")
+        else:
+            parts.append(word)
+    return " ".join(parts)
+
+
+def caption_events(groups: list[list[dict]], total: float, uppercase: bool = True) -> list[str]:
+    """Uma linha por palavra: o grupo inteiro na tela, só a palavra falada em destaque.
+
+    Linhas encostadas umas nas outras (sem intervalo) evitam o "pisca" entre palavras.
+    """
+    rows: list[str] = []
+    for group_index, group in enumerate(groups):
+        texts = [ass_text(display_word(word["text"], uppercase)) for word in group]
+        following = groups[group_index + 1][0]["start"] if group_index + 1 < len(groups) else total
+        group_end = min(total, following, group[-1]["end"] + CAPTION_HOLD)
+        if following - group_end < CAPTION_HOLD:
+            group_end = min(total, following)
+        for index, word in enumerate(group):
+            start = word["start"]
+            end = group[index + 1]["start"] if index + 1 < len(group) else group_end
+            end = max(end, start + 0.05)
+            rows.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},Caption,,0,0,0,,"
+                        f"{_caption_line(texts, index)}")
+    return rows
+
+
+def title_event(title: str, seconds: float, total: float) -> str:
+    """Título que entra crescendo, dá um leve "pulo" e some em fade."""
+    text = ass_text(title)
+    end = min(max(0.5, seconds), total) if total else max(0.5, seconds)
+    animation = ("{\\fad(120,280)\\fscx40\\fscy40"
+                 "\\t(0,220,\\fscx108\\fscy108)\\t(220,360,\\fscx100\\fscy100)}")
+    return f"Dialogue: 1,{ass_time(0)},{ass_time(end)},Title,,0,0,0,,{animation}{text}"
+
+
+def build_ass(words: list[dict], total: float, *, title: str = "", title_seconds: float = 2.0,
+              words_per_caption: int = 3, uppercase: bool = True) -> str:
+    rows = caption_events(caption_groups(words, words_per_caption), total, uppercase)
+    if title.strip() and title_seconds > 0:
+        rows.insert(0, title_event(title, title_seconds, total))
+    return ASS_HEADER + "\n".join(rows) + ("\n" if rows else "")
+
+
+# ----------------------------------------------------------------- FFmpeg
+
+def _framing_graph(framing: str) -> str:
+    """De ``[vc]`` (o corte emendado) até um quadro 1080x1920 rotulado ``[vf]``."""
+    if framing == "crop":
+        return (f"[vc]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+                f"crop={WIDTH}:{HEIGHT},setsar=1[vf]")
+    # Mesmo visual de "Criar versão vertical" nas Ferramentas.
+    return (f"[vc]split=2[bg][fg];"
+            f"[bg]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT},"
+            "boxblur=luma_radius=24:luma_power=2,eq=brightness=-0.08[bgb];"
+            f"[fg]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease[fgs];"
+            "[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1[vf]")
+
+
+def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: Path | None) -> str:
+    """Recorta cada trecho com fala, emenda vídeo e áudio juntos, enquadra e grava a legenda."""
+    if not intervals:
+        raise ClipError("Não sobrou nenhum trecho para montar o corte.")
+    parts: list[str] = []
+    pads: list[str] = []
+    for index, (start, end) in enumerate(intervals):
+        parts.append(f"[0:v:0]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{index}]")
+        parts.append(f"[0:a:0]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{index}]")
+        pads.append(f"[v{index}][a{index}]")
+    parts.append(f"{''.join(pads)}concat=n={len(intervals)}:v=1:a=1[vc][ac]")
+    parts.append(_framing_graph(framing if framing in FRAMINGS else "blur"))
+    tail = f"subtitles=filename={_escape_filter_path(subtitles)}," if subtitles else ""
+    parts.append(f"[vf]{tail}format=yuv420p[v]")
+    return ";".join(parts)
+
+
+def video_codec_args(encoder: str = "") -> list[str]:
+    """x264 por padrão; encoder de GPU (NVENC, AMF, QSV…) quando a detecção confirmou um."""
+    if encoder and backend_of(encoder) and backend_of(encoder) != "vaapi":
+        args = ["-c:v", encoder, *quality_args(encoder, 20)]
+        if encoder.endswith("_nvenc"):
+            args += ["-preset", "p5"]
+        return args
+    return ["-c:v", "libx264", "-preset", "medium", "-crf", "20"]
+
+
+def render_command(ffmpeg: Path, source: Path, offset: float, length: float,
+                   intervals: list[tuple[float, float]], framing: str, subtitles: Path | None,
+                   destination: Path, *, video_encoder: str = "") -> list[str]:
+    """Um FFmpeg só, sem shell: o arquivo de origem nunca é alterado."""
+    if source.resolve() == destination.resolve():
+        raise ClipError("Escolha outra pasta de saída para preservar o arquivo original.")
+    return [
+        str(ffmpeg), "-hide_banner", "-n",
+        "-ss", f"{max(0.0, offset):.3f}", "-t", f"{length:.3f}", "-i", str(source),
+        "-filter_complex", filter_graph(intervals, framing, subtitles),
+        "-map", "[v]", "-map", "[ac]",
+        *video_codec_args(video_encoder),
+        "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
+        "-movflags", "+faststart",
+        "-progress", "pipe:1", "-nostats", str(destination),
+    ]
+
+
+def audio_command(ffmpeg: Path, source: Path, offset: float, length: float,
+                  destination: Path) -> list[str]:
+    """Áudio do trecho em 16 kHz mono, o formato que o Whisper usa."""
+    return [str(ffmpeg), "-hide_banner", "-y", "-ss", f"{max(0.0, offset):.3f}",
+            "-t", f"{length:.3f}", "-i", str(source), "-vn", "-ac", "1", "-ar", "16000",
+            "-c:a", "pcm_s16le", "-progress", "pipe:1", "-nostats", str(destination)]
+
+
+def section_offset(actual: float, expected: float) -> float:
+    """Quanto sobrou antes do início num trecho baixado sem reencodar.
+
+    O yt-dlp corta no quadro-chave anterior ao início pedido; o fim sai no ponto certo.
+    A sobra no começo é a diferença entre a duração real e a pedida.
+    """
+    extra = actual - expected
+    return extra if extra > 0.25 else 0.0

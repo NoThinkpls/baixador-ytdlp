@@ -88,6 +88,14 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 <img src="docs/images/ferramentas-light.png" alt="Página Ferramentas (tema claro)" width="720">
 </div>
 
+### Cortes verticais
+
+- Escolha um vídeo local ou cole um link do YouTube e informe um ou vários intervalos (início, fim e título). Cada intervalo vira um MP4 **1080x1920** separado; de um link, só os trechos escolhidos são baixados.
+- **Remoção de pausas**: o Whisper marca o tempo de cada palavra e os silêncios acima do limite escolhido (0,4 s a 1,2 s) saem do vídeo, com uma pequena folga para não cortar sílabas.
+- **Legenda palavra a palavra**: 2 ou 3 palavras por vez, com a palavra falada em amarelo e um pouco maior, e **título animado** nos 2 primeiros segundos. Enquadramento com fundo desfocado (vídeo inteiro) ou corte no centro (tela cheia).
+- Tudo com o FFmpeg e o Whisper que o app já usa: sem Node.js nem navegador embutido. A transcrição usa CUDA quando há NVIDIA e a CPU nos demais casos; a montagem tenta NVENC/AMF/Quick Sync e volta para a CPU se a GPU recusar.
+- Limitações: até 20 cortes por vez e 10 minutos por corte. A legenda usa a fonte Arial do sistema. Num link, o trecho é baixado sem recodificar e o app compensa a sobra até o quadro-chave pela duração; em raros casos o início pode variar uma fração de segundo.
+
 ### Interface
 
 - Tema claro e escuro, **português e inglês**, barra lateral compacta e ícones próprios.

@@ -44,6 +44,10 @@ After analyzing a playlist, use **Choose items** to select only the videos you w
 
 The **Tools** page works locally with FFmpeg: trim, extract MP3, remux without recompression, compress, fit a file below a size limit for Discord/WhatsApp/email, create vertical video with a blurred background, and embed captions. Progress is shown in the app and, where supported, on the taskbar. No media is uploaded for these operations.
 
+## Vertical clips
+
+The **Clips** page turns parts of a video into vertical videos for Shorts, Reels and TikTok. Pick a file or paste a YouTube link (only the ranges are downloaded), enter the start and end of each clip (`mm:ss` or `hh:mm:ss`) with an optional title, choose the framing (blurred background or center crop), pause removal, words per caption and casing, then click **Create clips**. Each clip is saved as `name_corte01_title.mp4`; finished clips are kept even if you cancel or a later clip fails.
+
 ## Tray and background work
 
 In **Settings**, choose whether completions show system notifications. Closing to the tray keeps active work running; use **Exit** from the tray icon menu to close the app completely.

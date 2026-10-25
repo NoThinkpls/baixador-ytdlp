@@ -3,6 +3,27 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.14.0] - 2026-10-25
+
+Nova página **Cortes**: vídeos verticais com legenda palavra a palavra.
+
+### Adicionado
+
+- Página **Cortes** na barra lateral (Ctrl+5). A partir de um arquivo local ou de um link do
+  YouTube, cada intervalo informado (início, fim e título opcional) vira um MP4 1080x1920. Num link,
+  só os trechos são baixados.
+- Remoção de pausas: o Whisper marca o tempo de cada palavra e os silêncios acima do limite
+  escolhido (0,4 s a 1,2 s) saem do vídeo, emendando imagem e som juntos.
+- Legenda de 2 ou 3 palavras por vez com a palavra falada em destaque (amarela e maior) e título
+  animado nos 2 primeiros segundos, gerados em ASS e gravados pelo próprio FFmpeg. Enquadramento
+  com fundo desfocado ou corte no centro.
+- Sem dependências novas: usa o FFmpeg e o Whisper que o app já baixa. A transcrição roda no
+  processo isolado do legendador (CUDA com volta para a CPU) e a montagem tenta a GPU antes da CPU.
+
+### Alterado
+
+- O atalho Ctrl+5 passa a abrir **Cortes**; **Histórico** foi para Ctrl+6.
+
 ## [1.13.10] - 2026-10-23
 
 Falsos erros: combinações de formato que o yt-dlp e o FFmpeg recusam.

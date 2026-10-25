@@ -19,6 +19,7 @@ from . import theme
 from .components import Toast
 from .history_page import HistoryPage
 from .home_page import HomePage
+from .clips_page import ClipsPage
 from .media_tools_page import MediaToolsPage
 from .queue_page import QueuePage
 from .settings_page import SettingsPage
@@ -61,6 +62,7 @@ class MainWindow(AppShell):
         self._download_taskbar_progress: float | None = None
         self._transcription_taskbar_progress: float | None = None
         self._media_taskbar_progress: float | None = None
+        self._clips_taskbar_progress: float | None = None
         self._quitting = False
         self.tray: QSystemTrayIcon | None = None
         self._taskbar_completion_timer = QTimer(self)
@@ -73,6 +75,7 @@ class MainWindow(AppShell):
         self.queue = QueuePage(cfg, self)
         self.transcription = TranscriptionPage(cfg, self)
         self.media_tools = MediaToolsPage(cfg, self)
+        self.clips = ClipsPage(cfg, self)
         self.history_page = HistoryPage(cfg, self.history, self)
         self.settings = SettingsPage(cfg, self)
         self.update_banner = UpdateBanner(self)
@@ -261,11 +264,12 @@ class MainWindow(AppShell):
         self.addSubInterface(self.queue, "queue", "Fila")
         self.addSubInterface(self.transcription, "captions", "Legendar")
         self.addSubInterface(self.media_tools, "tools", "Ferramentas")
+        self.addSubInterface(self.clips, "cut", "Cortes")
         self.addSubInterface(self.history_page, "history", "Histórico")
         self.addSubInterface(self.settings, "settings", "Configurações", bottom=True)
         from .components import PageHeader, ScrollColumn
 
-        for page in (self.home, self.queue, self.transcription, self.media_tools,
+        for page in (self.home, self.queue, self.transcription, self.media_tools, self.clips,
                      self.history_page, self.settings):
             headers = page.findChildren(PageHeader)
             scrolls = page.findChildren(ScrollColumn)
@@ -320,7 +324,8 @@ class MainWindow(AppShell):
         self.add_footer_widget(self.update_banner)
 
     def _init_shortcuts(self) -> None:
-        pages = (self.home, self.queue, self.transcription, self.media_tools, self.history_page)
+        pages = (self.home, self.queue, self.transcription, self.media_tools, self.clips,
+                 self.history_page)
         for index, page in enumerate(pages, start=1):
             QShortcut(QKeySequence(f"Ctrl+{index}"), self,
                       activated=lambda p=page: self.switchTo(p))
@@ -379,6 +384,11 @@ class MainWindow(AppShell):
                                     "O arquivo em processamento será descartado; o original "
                                     "não é alterado."):
                 self.media_tools.cancel_current()
+        elif current is self.clips and self.clips.has_active_work():
+            if self._confirm_cancel("Cancelar os cortes?",
+                                    "O corte em andamento será descartado; os que já ficaram "
+                                    "prontos são mantidos."):
+                self.clips.cancel_current()
         elif current is self.queue and self.queue.has_pending_work() and self._confirm_cancel(
                 "Cancelar a fila?",
                 "Deseja cancelar e remover todos os downloads pendentes ou em andamento?"):
@@ -400,6 +410,10 @@ class MainWindow(AppShell):
         self.media_tools.taskbar_progress.connect(self._on_media_progress)
         self.media_tools.operation_finished.connect(
             lambda path: self._tray_message("Processamento concluído", Path(path).name)
+        )
+        self.clips.taskbar_progress.connect(self._on_clips_progress)
+        self.clips.operation_finished.connect(
+            lambda path: self._tray_message("Cortes concluídos", Path(path).name)
         )
         self.settings.update_requested.connect(self._check_all_updates)
         self.settings.ytdlp_channel_changed.connect(self._switch_ytdlp_channel)
@@ -540,6 +554,8 @@ class MainWindow(AppShell):
             active.append("legendas")
         if self.media_tools.has_active_work():
             active.append("ferramentas")
+        if self.clips.has_active_work():
+            active.append("cortes")
         return active
 
     def _download_app_update(self) -> None:
@@ -698,6 +714,7 @@ class MainWindow(AppShell):
         self.queue.set_toolchain(toolchain)
         self.transcription.set_toolchain(toolchain)
         self.media_tools.set_toolchain(toolchain)
+        self.clips.set_toolchain(toolchain)
         runtime = self.manager.runtime_info.summary
         js = (f"Deno {toolchain.deno_version}" if toolchain.has_js_runtime
               else "sem runtime JavaScript — o YouTube vai falhar")
@@ -917,6 +934,10 @@ class MainWindow(AppShell):
         self._media_taskbar_progress = None if percent < 0 else max(0.0, min(100.0, percent))
         self._sync_taskbar_progress()
 
+    def _on_clips_progress(self, percent: float) -> None:
+        self._clips_taskbar_progress = None if percent < 0 else max(0.0, min(100.0, percent))
+        self._sync_taskbar_progress()
+
     def _sync_taskbar_progress(self) -> None:
         if not self.cfg.taskbar_progress:
             return
@@ -925,6 +946,7 @@ class MainWindow(AppShell):
                 self._download_taskbar_progress,
                 self._transcription_taskbar_progress,
                 self._media_taskbar_progress,
+                self._clips_taskbar_progress,
             ) if value is not None
         ]
         handle = int(self.winId())
@@ -944,7 +966,8 @@ class MainWindow(AppShell):
     def _clear_taskbar_completion(self) -> None:
         if (self._download_taskbar_progress is None
                 and self._transcription_taskbar_progress is None
-                and self._media_taskbar_progress is None):
+                and self._media_taskbar_progress is None
+                and self._clips_taskbar_progress is None):
             self.taskbar.clear(int(self.winId()))
 
     def _tray_message(self, title: str, message: str) -> None:
@@ -1062,6 +1085,7 @@ class MainWindow(AppShell):
         self.home.shutdown()
         self.transcription.shutdown()
         self.media_tools.shutdown()
+        self.clips.shutdown()
         self.queue.stop_all()
         self.history.flush()
         normal = self.normalGeometry() if self.isMaximized() else self.geometry()

@@ -85,6 +85,14 @@ and video tools. Free, open source, and nothing leaves your computer.
 <img src="docs/images/ferramentas-light.png" alt="Tools page (light theme)" width="720">
 </div>
 
+### Vertical clips
+
+- Pick a local video or paste a YouTube link and enter one or more ranges (start, end and title). Each range becomes a separate **1080x1920** MP4; from a link, only the chosen parts are downloaded.
+- **Pause removal**: Whisper times every word, and silences longer than the chosen threshold (0.4 s to 1.2 s) are cut, with a small margin so syllables are not clipped.
+- **Word-by-word captions**: 2 or 3 words at a time, with the spoken word in yellow and slightly larger, plus an **animated title** in the first 2 seconds. Framing with a blurred background (whole video) or a center crop (full screen).
+- Uses only the FFmpeg and Whisper the app already ships: no Node.js or embedded browser. Transcription uses CUDA on NVIDIA and the CPU otherwise; rendering tries NVENC/AMF/Quick Sync and falls back to the CPU.
+- Limits: up to 20 clips at a time and 10 minutes per clip. Captions use the system Arial font. From a link, the range is downloaded without re-encoding and the app compensates the extra lead-in up to the keyframe; rarely the start may shift by a fraction of a second.
+
 ### Interface
 
 - Light and dark themes, **Portuguese and English** (Settings → Appearance), compact sidebar and custom icons.

@@ -4,6 +4,7 @@ from __future__ import annotations
 import multiprocessing
 import queue
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.error
@@ -13,12 +14,15 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
+from .clips import (ClipError, ClipOptions, ClipRange, audio_command, build_ass, clamp_range,
+                    clip_destination, is_url, keep_intervals, output_length, remap_words,
+                    render_command, section_offset, words_from_transcript)
 from .config import Settings
 from .diagnostics import get_logger, log_event, report_exception
 from .downloader import (DownloadError, DownloadOptions, Progress, Transcoder, is_retryable_error,
                          vp9_mp4_to_mkv)
 from .gpu import GpuInfo, detect, forget_negative_cache
-from .media_tools import (MediaToolError, MediaToolOptions, build_command,
+from .media_tools import (MediaToolError, MediaToolOptions, build_command, media_duration,
                           operation_duration, preferred_video_encoder, progress_seconds,
                           resolve_options, uses_gpu)
 from .parallel_section import create_runner
@@ -207,6 +211,231 @@ class MediaToolWorker(QThread):
             self.failed.emit(friendly_error(str(exc)))
         else:
             self.finished_ok.emit(str(self.options.destination))
+        finally:
+            self._process = None
+
+
+class ClipWorker(QThread):
+    """Gera os cortes verticais um a um: trecho, transcrição por palavra, legenda e render.
+
+    O Whisper roda no mesmo processo isolado da aba Legendar (uma falha nativa de CUDA
+    não derruba o app) e o FFmpeg tenta a GPU antes de cair na CPU, como nas Ferramentas.
+    """
+
+    progress = Signal(str)
+    progress_value = Signal(int)
+    clip_done = Signal(str)
+    finished_ok = Signal(list)
+    failed = Signal(str)
+
+    # Peso de cada etapa dentro de um corte, para a barra andar de forma contínua.
+    STAGES = {"download": (0, 25), "audio": (25, 30), "transcribe": (30, 65), "render": (65, 100)}
+
+    def __init__(self, options: ClipOptions, tc: Toolchain, cfg: Settings, parent=None):
+        super().__init__(parent)
+        self.options, self.tc, self.cfg = options, tc, cfg
+        self._cancelled = threading.Event()
+        self._process: subprocess.Popen | None = None
+        self._runner = None
+        self._transcriber: TranscriptionWorker | None = None
+        self._index = 0
+
+    def cancel(self) -> None:
+        self._cancelled.set()
+        if self._runner is not None:
+            self._runner.cancel()
+        if self._transcriber is not None:
+            self._transcriber.cancel()
+        process = self._process
+        if process and process.poll() is None:
+            terminate_process_tree(process)
+
+    def force_stop(self) -> None:
+        self.cancel()
+        if self._transcriber is not None:
+            self._transcriber.force_stop()
+
+    def _check(self) -> None:
+        if self._cancelled.is_set():
+            raise ClipError("Cortes cancelados.")
+
+    def _stage(self, stage: str, fraction: float) -> None:
+        low, high = self.STAGES[stage]
+        within = low + (high - low) * max(0.0, min(1.0, fraction))
+        total = len(self.options.ranges) or 1
+        self.progress_value.emit(max(0, min(99, round((self._index + within / 100) * 100 / total))))
+
+    def _label(self, text: str) -> str:
+        total = len(self.options.ranges)
+        return f"Corte {self._index + 1} de {total}: {text}" if total > 1 else text
+
+    def _ffmpeg(self, command: list[str], duration: float, stage: str) -> tuple[int, str]:
+        self._process = popen_isolated(
+            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace",
+        )
+        if self._cancelled.is_set():
+            terminate_process_tree(self._process)
+        tail: list[str] = []
+        assert self._process.stdout is not None
+        for raw_line in self._process.stdout:
+            line = raw_line.strip()
+            if line:
+                tail.append(line)
+                del tail[:-80]
+            elapsed = progress_seconds(line) if duration else None
+            if elapsed is not None:
+                self._stage(stage, elapsed / duration)
+            if self._cancelled.is_set() and self._process.poll() is None:
+                terminate_process_tree(self._process)
+        code = self._process.wait()
+        self._process.stdout.close()
+        self._process = None
+        self._check()
+        message = next((item for item in reversed(tail) if "=" not in item), "")
+        return code, message or "O FFmpeg encerrou com erro."
+
+    def _download(self, clip: ClipRange, folder: Path) -> tuple[Path, float, float]:
+        """Baixa só o trecho do link; devolve (arquivo, sobra no início, duração do corte)."""
+        self.progress.emit(self._label("baixando o trecho do vídeo…"))
+        opts = DownloadOptions(
+            url=self.options.source, output_dir=str(folder), container="mp4",
+            section_start=f"{clip.start:.3f}", section_end=f"{clip.end:.3f}",
+            media_duration=clip.length,
+        )
+        self._runner = create_runner(opts, self.cfg, self.tc)
+        if self._cancelled.is_set():
+            self._runner.cancel()
+        try:
+            files = self._runner.run(lambda p: self._stage("download", p.percent / 100))
+        finally:
+            runner, self._runner = self._runner, None
+        self._check()
+        videos = [path for path in files if path.is_file()
+                  and path.suffix.casefold() in {".mp4", ".mkv", ".webm", ".mov"}]
+        if not videos:
+            raise ClipError("O yt-dlp não entregou o vídeo do trecho. " + runner.tail(3))
+        actual = media_duration(videos[0], self.tc)
+        offset = section_offset(actual, clip.length) if actual else 0.0
+        return videos[0], offset, min(clip.length, max(0.0, actual - offset) or clip.length)
+
+    def _transcribe(self, audio: Path, folder: Path) -> list[dict]:
+        self.progress.emit(self._label("transcrevendo com o tempo de cada palavra…"))
+        output = folder / "transcricao.json"
+        opts = TranscriptionOptions(
+            media_path=audio, output_path=output, language=self.options.language,
+            model_size=self.options.model_size, output_format="json",
+            aggressive_filter=bool(self.cfg.transcription_aggressive_filter),
+            initial_prompt=self.cfg.transcription_initial_prompt,
+            batched=bool(self.cfg.transcription_batched),
+            low_vram=bool(self.cfg.transcription_low_vram),
+        )
+        outcome: dict[str, str] = {}
+        worker = TranscriptionWorker(opts, self.tc)
+        worker.status.connect(lambda text: self.progress.emit(self._label(text)))
+        worker.progress.connect(lambda percent: self._stage("transcribe", percent / 100))
+        worker.finished_ok.connect(lambda path: outcome.update(ok=path))
+        worker.failed.connect(lambda message: outcome.update(error=message))
+        worker.cancelled.connect(lambda: outcome.update(cancelled="1"))
+        self._transcriber = worker
+        if self._cancelled.is_set():
+            worker.cancel()
+        try:
+            # Chamada direta: esta thread já é de trabalho; o modelo roda no processo filho.
+            worker.run()
+        finally:
+            self._transcriber = None
+        self._check()
+        if "error" in outcome:
+            raise ClipError(outcome["error"])
+        if "ok" not in outcome or not output.is_file():
+            raise ClipError("A transcrição terminou sem gerar o arquivo esperado.")
+        return words_from_transcript(output)
+
+    def _render(self, source: Path, offset: float, length: float, intervals, subtitles: Path,
+                destination: Path) -> None:
+        encoder = preferred_video_encoder(self.tc)
+        for selected in ([encoder, ""] if encoder else [""]):
+            label = "GPU" if selected else "CPU"
+            self.progress.emit(self._label(f"montando o vídeo 9:16 na {label}…"))
+            command = render_command(
+                self.tc.ffmpeg, source, offset, length, intervals, self.options.framing,
+                subtitles, destination, video_encoder=selected)
+            code, message = self._ffmpeg(command, output_length(intervals), "render")
+            if code == 0:
+                break
+            if destination.is_file():
+                destination.unlink()   # -n impediria a nova tentativa
+            if not selected:
+                raise ClipError(message)
+            self.progress.emit(self._label("GPU indisponível para este vídeo; tentando na CPU…"))
+        if not destination.is_file():
+            raise ClipError("O FFmpeg terminou sem gerar o corte.")
+
+    def _make_clip(self, clip: ClipRange, folder: Path) -> Path:
+        if is_url(self.options.source):
+            source, offset, length = self._download(clip, folder)
+            stem = source.stem
+        else:
+            source = Path(self.options.source)
+            clip = clamp_range(clip, media_duration(source, self.tc))
+            offset, length, stem = clip.start, clip.length, source.stem
+        self._check()
+
+        self.progress.emit(self._label("separando o áudio do trecho…"))
+        audio = folder / "audio.wav"
+        code, message = self._ffmpeg(
+            audio_command(self.tc.ffmpeg, source, offset, length, audio), length, "audio")
+        if code != 0 or not audio.is_file():
+            raise ClipError(f"Não foi possível ler o áudio do trecho: {message}")
+        words = self._transcribe(audio, folder)
+
+        intervals = (keep_intervals(words, length, self.options.min_pause)
+                     if self.options.remove_pauses else [(0.0, length)])
+        total = output_length(intervals)
+        subtitles = folder / "legenda.ass"
+        subtitles.write_text(build_ass(
+            remap_words(words, intervals), total, title=clip.title,
+            title_seconds=self.options.title_seconds,
+            words_per_caption=self.options.words_per_caption,
+            uppercase=self.options.uppercase), encoding="utf-8")
+
+        self.options.output_dir.mkdir(parents=True, exist_ok=True)
+        destination = clip_destination(self.options.output_dir, stem, self._index + 1, clip.title)
+        self._render(source, offset, length, intervals, subtitles, destination)
+        log_event("Corte gerado: %s (%.1fs de %.1fs; %s trechos)", destination, total, length,
+                  len(intervals))
+        return destination
+
+    def run(self) -> None:
+        outputs: list[str] = []
+        try:
+            if not self.options.ranges:
+                raise ClipError("Adicione pelo menos um corte com início e fim.")
+            if is_url(self.options.source):
+                validate_media_url(self.options.source)
+            elif not Path(self.options.source).is_file():
+                raise ClipError("Selecione um arquivo de vídeo existente ou cole um link.")
+            for index, clip in enumerate(self.options.ranges):
+                self._index = index
+                self._check()
+                with tempfile.TemporaryDirectory(prefix="baixador-ytdlp-corte-") as folder:
+                    path = self._make_clip(clip, Path(folder))
+                outputs.append(str(path))
+                self.clip_done.emit(str(path))
+            self.progress_value.emit(100)
+        except Exception as exc:  # noqa: BLE001
+            if self._cancelled.is_set():
+                self.failed.emit("Cortes cancelados." + (
+                    f" {len(outputs)} corte(s) já prontos foram mantidos." if outputs else ""))
+                return
+            report_exception("criação de cortes", exc)
+            message = friendly_error(str(exc))
+            if outputs:
+                message += f"\n\n{len(outputs)} corte(s) anteriores foram salvos."
+            self.failed.emit(message)
+        else:
+            self.finished_ok.emit(outputs)
         finally:
             self._process = None
 

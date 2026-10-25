@@ -337,6 +337,56 @@ EN: dict[str, str] = {
     "Use .mp4, .mkv ou .webm como extensão de saída.": "Use .mp4, .mkv or .webm as the output extension.",
     "Use .png, .jpg ou .webp como extensão de saída.": "Use .png, .jpg or .webp as the output extension.",
     "Use .srt, .ass ou .vtt como extensão de saída.": "Use .srt, .ass or .vtt as the output extension.",
+    # Cortes verticais
+    "Cortes": "Clips", "Corte": "Clip", "cortes": "clips",
+    "Gere vídeos verticais com legenda palavra a palavra, sem as pausas.":
+        "Create vertical videos with word-by-word captions, without the pauses.",
+    "Arquivo de vídeo ou link do YouTube": "Video file or YouTube link",
+    "Vídeo de origem": "Source video",
+    "Use um arquivo do computador ou cole um link: só os trechos escolhidos são baixados.":
+        "Use a file from your computer or paste a link: only the chosen parts are downloaded.",
+    "Informe início e fim de cada corte em mm:ss ou hh:mm:ss. O título aparece animado nos primeiros segundos.":
+        "Enter the start and end of each clip as mm:ss or hh:mm:ss. The title appears animated in the first seconds.",
+    "início 01:30": "start 01:30", "fim 02:15": "end 02:15",
+    "Título animado (opcional)": "Animated title (optional)", "Remover corte": "Remove clip",
+    "Adicionar corte": "Add clip", "Estilo": "Style", "Transcrição": "Transcription",
+    "Enquadramento 9:16": "9:16 framing",
+    "Fundo desfocado — vídeo inteiro": "Blurred background — whole video",
+    "Cortar no centro — tela cheia": "Crop the center — full screen",
+    "O desfoque mostra o quadro todo; o corte no centro preenche a tela, mas perde as laterais.":
+        "The blur shows the whole frame; cropping the center fills the screen but loses the sides.",
+    "Remover pausas": "Remove pauses",
+    "Corta os silêncios entre as falas usando o tempo de cada palavra.":
+        "Cuts the silences between lines using the timing of each word.",
+    "Pausa mínima": "Minimum pause",
+    "Silêncios menores que isso ficam no vídeo.": "Silences shorter than this stay in the video.",
+    "0,4 s — ritmo acelerado": "0.4 s — fast pace", "0,6 s — recomendado": "0.6 s — recommended",
+    "0,8 s — mais natural": "0.8 s — more natural", "1,2 s — só pausas longas": "1.2 s — long pauses only",
+    "Palavras por legenda": "Words per caption", "2 palavras": "2 words", "3 palavras": "3 words",
+    "A palavra falada aparece em amarelo e um pouco maior.":
+        "The spoken word appears in yellow and slightly larger.",
+    "Legenda em maiúsculas": "Uppercase captions",
+    "Mais fácil de ler na tela do celular.": "Easier to read on a phone screen.",
+    "Idioma da fala": "Spoken language",
+    "O mesmo da aba Legendar. Usa a GPU NVIDIA quando disponível e a CPU nos demais casos.":
+        "Same as the Captions tab. Uses the NVIDIA GPU when available and the CPU otherwise.",
+    "Pasta onde os cortes serão salvos": "Folder where clips will be saved",
+    "Escolher pasta": "Choose folder", "Salvar cortes em": "Save clips to",
+    "Cada corte vira um MP4 1080x1920 separado. O original nunca é alterado.":
+        "Each clip becomes a separate 1080x1920 MP4. The original is never changed.",
+    "Escolha um vídeo e informe os cortes para começar.": "Choose a video and enter the clips to start.",
+    "Criar cortes": "Create clips", "Preparando 1 corte…": "Preparing 1 clip…",
+    "Cortes prontos": "Clips ready", "Cortes concluídos": "Clips finished",
+    "corte(s) salvos em": "clip(s) saved to", "Limite de cortes": "Clip limit",
+    "Não foi possível criar os cortes": "Could not create the clips",
+    "Cortes cancelados.": "Clips cancelled.", "Cancelar os cortes?": "Cancel the clips?",
+    "Adicione pelo menos um corte com início e fim.": "Add at least one clip with a start and end.",
+    "Use mm:ss ou hh:mm:ss para o início e o fim de cada corte.":
+        "Use mm:ss or hh:mm:ss for the start and end of each clip.",
+    "O fim de cada corte precisa ser posterior ao início.": "Each clip must end after it starts.",
+    "Cada corte precisa ter pelo menos 1 segundo.": "Each clip must be at least 1 second long.",
+    "Selecione um arquivo de vídeo existente ou cole um link.":
+        "Select an existing video file or paste a link.",
 }
 
 
