@@ -41,7 +41,20 @@ def _moving_box(path: Path, seconds: int = 9) -> None:
 class CameraVirtualTests(unittest.TestCase):
     def test_zona_morta_segura_a_camera_parada(self) -> None:
         path = reframe.camera_path([0.5, 0.53, 0.48, 0.52, 0.5, 0.47] * 4, view=0.3)
-        self.assertTrue(all(abs(value - 0.5) < 0.01 for value in path))
+        self.assertLess(max(path) - min(path), 0.005)      # parada, sem balançar junto
+        self.assertTrue(all(abs(value - 0.5) < 0.03 for value in path))
+
+    def test_balanco_parado_caminhada_suave_e_assenta(self) -> None:
+        # 3 s balançando no lugar, 4 s andando para a direita, 3 s parado lá.
+        targets = ([0.3 + (0.03 if i % 2 else -0.03) for i in range(18)]
+                   + [0.3 + 0.1 * i / 6 for i in range(24)] + [0.7] * 18)
+        path = reframe.camera_path(targets, rate=6.0, view=0.3164)
+        self.assertLess(max(path[:12]) - min(path[:12]), 0.01)       # não acompanha o balanço
+        self.assertGreater(path[-1], 0.66)                           # chegou
+        self.assertLess(max(path[-6:]) - min(path[-6:]), 0.005)      # e assentou
+        speeds = [b - a for a, b in zip(path, path[1:], strict=False)]
+        accel = [abs(b - a) for a, b in zip(speeds, speeds[1:], strict=False)]
+        self.assertLess(max(accel), 0.012)                           # sem trancos
 
     def test_velocidade_maxima_e_bordas(self) -> None:
         targets = [0.2] * 6 + [0.95] * 30
@@ -107,17 +120,26 @@ class SendcmdTests(unittest.TestCase):
     def test_posicoes_seguem_a_emenda_sem_pausas(self) -> None:
         samples = [(0.0, 0.2), (2.0, 0.2), (4.0, 0.95), (6.0, 0.95)]
         intervals = [(0.0, 2.0), (4.0, 6.0)]       # 2 s de pausa removidos
-        commands = reframe.crop_commands(samples, intervals, 3412, 1080, remap_time)
+        commands = reframe.crop_commands(samples, intervals, 3412, 1080, remap_time, 30.0)
         self.assertEqual(commands[0], (0.0, 142))               # 0,2 * 3412 - 540
-        self.assertAlmostEqual(commands[-1][0], 4.0, places=2)  # 4 s de vídeo final
+        self.assertEqual(len(commands), 121)                    # 4 s a 30 quadros/s
         self.assertEqual(commands[-1][1], 2332)                 # limite: 3412 - 1080
-        self.assertTrue(all(x % 2 == 0 for _t, x in commands))
-        gaps = [b[0] - a[0] for a, b in zip(commands, commands[1:], strict=False)]
-        self.assertAlmostEqual(max(gaps), 1 / reframe.COMMAND_RATE, places=3)
+
+    def test_um_comando_por_quadro_antes_do_quadro(self) -> None:
+        # Com 15 comandos/s num vídeo de 30 quadros/s a imagem andava num quadro e parava no
+        # seguinte; e um tempo arredondado para cima (0,0667 > 2/30) atrasava o comando.
+        samples = [(t / 6, 0.2 + t / 6 * 0.05) for t in range(0, 61)]
+        commands = reframe.crop_commands(samples, [(0.0, 10.0)], 3412, 1080, remap_time, 30.0)
+        for frame, (moment, _x) in enumerate(commands[1:], start=1):
+            self.assertLess(moment, frame / 30)
+            self.assertGreater(moment, (frame - 1) / 30)
+        steps = [b[1] - a[1] for a, b in zip(commands, commands[1:], strict=False)]
+        self.assertNotIn(0, steps[5:-5])           # panorâmica contínua: anda todo quadro
+        self.assertLessEqual(max(steps) - min(steps[5:-5]), 2)
 
     def test_texto_do_sendcmd(self) -> None:
-        self.assertEqual(reframe.sendcmd_text([(0.0, 10), (0.0667, 12)]),
-                         "0.000 crop@track x 10;\n0.067 crop@track x 12;\n")
+        self.assertEqual(reframe.sendcmd_text([(0.0, 10), (0.0583, 12)]),
+                         "0.0000 crop@track x 10;\n0.0583 crop@track x 12;\n")
 
     def test_largura_depois_da_escala(self) -> None:
         self.assertEqual(reframe.Track([], 1920, 1080).scaled_width(1920), 3412)
@@ -150,6 +172,28 @@ class SeguirPessoaRealTests(unittest.TestCase):
                             "testsrc2=size=360x640:rate=25", "-t", "2", "-c:v", "libx264",
                             "-preset", "ultrafast", str(source)], check=True)
             self.assertIsNone(reframe.analyze(source, 0.0, 2.0))
+
+    def test_ffmpeg_aplica_a_posicao_em_cada_quadro(self) -> None:
+        # Régua: o valor de cada coluna é x mod 256, então o pixel da esquerda do corte
+        # diz onde a janela está em cada quadro.
+        samples = [(t / 6, 0.2 + t / 6 * 0.08) for t in range(0, 19)]
+        commands = reframe.crop_commands(samples, [(0.0, 3.0)], 3412, 1080, remap_time, 30.0)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "cmd.txt").write_text(reframe.sendcmd_text(commands), encoding="utf-8")
+            subprocess.run([FFMPEG, "-v", "error", "-f", "lavfi", "-i",
+                            "color=black:s=3412x1920:r=30,format=gray,geq=lum=mod(X\\,256)",
+                            "-t", "3", "-vf", f"format=yuv444p,sendcmd=f=cmd.txt,"
+                            f"crop@track=1080:1920:{commands[0][1]}:0,format=gray",
+                            "-c:v", "ffv1", "regua.mkv"], cwd=root, check=True)
+            raw = subprocess.run([FFMPEG, "-v", "error", "-i", str(root / "regua.mkv"), "-vf",
+                                  "crop=1:1:0:0", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                                 capture_output=True, check=True).stdout
+        seen = list(raw)
+        expected = [x % 256 for _t, x in commands][:len(seen)]
+        off = [abs(a - b) for a, b in zip(seen, expected, strict=True)]
+        self.assertGreater(len(seen), 85)
+        self.assertLessEqual(max(off), 1)     # quadro certo; ±1 é o arredondamento da cor
 
     def test_corte_final_mostra_o_objeto_no_fim(self) -> None:
         from baixador_ytdlp.config import Settings

@@ -13,6 +13,7 @@ centralizado: o rastreamento é um extra, nunca motivo para o corte falhar.
 """
 from __future__ import annotations
 
+import math
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -26,10 +27,11 @@ SAMPLE_FPS = 6.0                 # quadros analisados por segundo de vídeo
 FACE_SCORE = 0.6
 MOTION_THRESHOLD = 24            # diferença de cinza que conta como movimento
 MOTION_MIN_SHARE = 0.004         # fração mínima de pixels em movimento para confiar nele
-DEAD_ZONE = 0.05                 # deslocamento (fração da largura) que a câmera ignora
-MAX_SPEED = 0.45                 # fração da largura por segundo
-FOLLOW = 0.35                    # quanto a câmera anda em direção ao alvo a cada amostra
-COMMAND_RATE = 15.0              # comandos de posição por segundo enviados ao FFmpeg
+DEAD_ZONE = 0.06                 # deslocamento (fração da largura) que a câmera ignora
+MAX_SPEED = 0.35                 # fração da largura por segundo
+SETTLE_SECONDS = 0.8             # parado por esse tempo = a câmera assenta
+EASE_SECONDS = 0.45              # duração aproximada da aceleração e da frenagem
+DEFAULT_FPS = 30.0               # quando o vídeo não informa a taxa de quadros
 
 
 def model_path() -> Path | None:
@@ -140,32 +142,54 @@ def median(values: list[float], radius: int = 2) -> list[float]:
     return result
 
 
+def gaussian(values: list[float], sigma: float) -> list[float]:
+    """Suavização gaussiana sem atraso (olha para trás e para frente); bordas repetidas."""
+    if sigma <= 0 or len(values) < 2:
+        return list(values)
+    radius = max(1, int(sigma * 3))
+    weights = [math.exp(-(k * k) / (2 * sigma * sigma)) for k in range(-radius, radius + 1)]
+    last = len(values) - 1
+    result = []
+    for index in range(len(values)):
+        total = sum(w * values[min(last, max(0, index + k - radius))]
+                    for k, w in enumerate(weights))
+        result.append(total / sum(weights))
+    return result
+
+
 def camera_path(targets: list[float], rate: float = SAMPLE_FPS, *, view: float = 0.3164) -> list[float]:
     """Caminho suave do centro da janela, em fração da largura do vídeo.
 
-    ``view`` é a largura da janela 9:16 em relação ao quadro (0,316 num 16:9): a câmera não
-    passa das bordas e nem tenta centralizar além do que a janela permite.
+    Como um operador de câmera: parado enquanto a pessoa fica perto do centro; quando ela sai
+    da zona morta, a câmera acompanha até ela parar de novo. As retomadas e paradas viram
+    curvas suaves (gaussiana sem atraso, ~0,5 s), a velocidade tem teto e uma segunda passada
+    tira qualquer quina que o teto tenha deixado. ``view`` é a largura da janela 9:16 em
+    relação ao quadro (0,316 num 16:9): a câmera não passa das bordas.
     """
     if not targets:
         return []
     low, high = view / 2, 1 - view / 2
-    clean = [min(high, max(low, value)) for value in median(targets)]
+    clean = [min(high, max(low, value)) for value in median(targets, radius=max(2, int(rate // 2)))]
+    settle = max(2, int(rate * SETTLE_SECONDS))
+    position, moving = clean[0], False
+    setpoints = []
+    for index, target in enumerate(clean):
+        if not moving and abs(target - position) > DEAD_ZONE:
+            moving = True
+        if moving:
+            position = target
+            recent = clean[max(0, index - settle + 1):index + 1]
+            if index >= settle - 1 and max(recent) - min(recent) < DEAD_ZONE / 2:
+                moving = False          # a pessoa parou: a câmera assenta onde ela está
+                position = sum(recent) / len(recent)
+        setpoints.append(position)
+    smooth = gaussian(setpoints, EASE_SECONDS * rate)
     step_limit = MAX_SPEED / rate
-    position = clean[0]
-    raw = []
-    for target in clean:
-        error = target - position
-        if abs(error) > DEAD_ZONE:
-            move = (error - DEAD_ZONE * (1 if error > 0 else -1)) * FOLLOW
-            position += max(-step_limit, min(step_limit, move))
-        raw.append(position)
-    # Média móvel centrada (~1 s): tira o degrau de cada amostra.
-    radius = max(1, int(rate // 2))
-    smooth = []
-    for index in range(len(raw)):
-        window = raw[max(0, index - radius):index + radius + 1]
-        smooth.append(sum(window) / len(window))
-    return [min(high, max(low, value)) for value in smooth]
+    limited = [smooth[0]]
+    for value in smooth[1:]:
+        limited.append(limited[-1] + max(-step_limit, min(step_limit, value - limited[-1])))
+    final = gaussian(limited, 0.25 * rate)
+    return [min(high, max(low, value)) for value in final]
 
 
 @dataclass(frozen=True)
@@ -173,6 +197,7 @@ class Track:
     samples: list[tuple[float, float]]   # (tempo no corte, centro x de 0 a 1)
     width: int                           # dimensões do vídeo de origem
     height: int
+    fps: float = DEFAULT_FPS             # um comando de posição por quadro do corte
 
     def scaled_width(self, height: int) -> int:
         """Largura depois do ``scale=-2:altura`` do FFmpeg."""
@@ -196,6 +221,7 @@ def analyze(source: Path, offset: float, length: float, *,
         stream = container.streams.video[0]
         stream.thread_type = "AUTO"
         width, height = stream.codec_context.width, stream.codec_context.height
+        rate = float(stream.average_rate or 0) or DEFAULT_FPS
         if not width or not height or width / height <= 9 / 16 + 0.01:
             return None   # já é vertical: não há para onde mover a janela
         scale = INPUT_SIZE / max(width, height)
@@ -228,38 +254,53 @@ def analyze(source: Path, offset: float, length: float, *,
     if not filled:
         return None
     view = (height * 9 / 16) / width
-    return Track(list(zip(times, camera_path(filled, view=view), strict=True)), width, height)
+    return Track(list(zip(times, camera_path(filled, view=view), strict=True)), width, height,
+                 min(120.0, max(10.0, rate)))
 
 
 # ----------------------------------------------------------------- FFmpeg
 
 def crop_commands(samples: list[tuple[float, float]], intervals: list[tuple[float, float]],
                   scaled_width: int, crop_width: int,
-                  remap: Callable[[float, list[tuple[float, float]]], float]) -> list[tuple[float, int]]:
-    """Posição ``x`` do ``crop`` ao longo do corte já sem as pausas, ~15 vezes por segundo."""
+                  remap: Callable[[float, list[tuple[float, float]]], float],
+                  rate: float = DEFAULT_FPS) -> list[tuple[float, int]]:
+    """Posição ``x`` do ``crop`` em cada quadro do corte já sem as pausas.
+
+    Um comando por quadro e passo de 1 pixel: com menos comandos que quadros a imagem anda
+    num quadro e para no seguinte, o "travado" que se vê em panorâmicas lentas.
+    """
     kept = [(remap(time, intervals), center) for time, center in samples
             if any(start <= time <= end for start, end in intervals)]
     if not kept:
         return []
     total = sum(end - start for start, end in intervals)
     limit = max(0, scaled_width - crop_width)
-    commands: list[tuple[float, int]] = []
-    index, moment = 0, 0.0
-    while moment <= total + 1e-6:
+    centers: list[float] = []
+    index, frame = 0, 0
+    while frame / rate <= total + 1e-6:
+        moment = frame / rate
         while index + 1 < len(kept) and kept[index + 1][0] <= moment:
             index += 1
         time_a, center_a = kept[index]
         if index + 1 < len(kept) and moment > time_a:
             time_b, center_b = kept[index + 1]
-            share = (moment - time_a) / max(1e-6, time_b - time_a)
-            center = center_a + (center_b - center_a) * min(1.0, share)
+            share = min(1.0, (moment - time_a) / max(1e-6, time_b - time_a))
+            share = share * share * (3 - 2 * share)     # sem quina entre as amostras
+            centers.append(center_a + (center_b - center_a) * share)
         else:
-            center = center_a
-        x = int(round(center * scaled_width - crop_width / 2)) // 2 * 2
-        commands.append((round(moment, 3), max(0, min(limit, x))))
-        moment += 1 / COMMAND_RATE
+            centers.append(center_a)
+        frame += 1
+    # As emendas das pausas aproximam amostras distantes: uma passada leve evita degraus.
+    centers = gaussian(centers, 0.08 * rate)
+    commands = []
+    for frame, center in enumerate(centers):
+        x = int(round(center * scaled_width - crop_width / 2))
+        # Um quarto de quadro antes: arredondado para cima (2/30 = 0,0667 > 0,06667), o
+        # comando só valeria no quadro seguinte e a imagem daria um tranco.
+        moment = max(0.0, (frame - 0.25) / rate)
+        commands.append((round(moment, 4), max(0, min(limit, x))))
     return commands
 
 
 def sendcmd_text(commands: list[tuple[float, int]], target: str = "crop@track") -> str:
-    return "".join(f"{moment:.3f} {target} x {x};\n" for moment, x in commands)
+    return "".join(f"{moment:.4f} {target} x {x};\n" for moment, x in commands)

@@ -21,8 +21,9 @@ Nova página **Cortes**: vídeos verticais com legenda palavra a palavra.
 - Enquadramento **Seguir a pessoa (automático)**: num vídeo horizontal, a janela 9:16 aproxima e
   acompanha quem está em cena, como o reenquadrar do CapCut. Usa o detector de rostos YuNet
   (OpenCV Zoo, MIT, 230 KB, no onnxruntime que o app já leva) e, sem rosto, o movimento entre
-  quadros; uma câmera virtual com zona morta e velocidade máxima evita tremidas (mesma ideia do
-  AutoFlip do Google). Se a análise falhar, o corte sai centralizado. Continuam disponíveis o fundo
+  quadros; uma câmera virtual fica parada enquanto a pessoa está perto do centro, acompanha com
+  aceleração e frenagem suaves quando ela anda e assenta quando ela para (mesma ideia do AutoFlip
+  do Google). A posição muda a cada quadro, de pixel em pixel, sem trancos. Se a análise falhar, o corte sai centralizado. Continuam disponíveis o fundo
   desfocado e o corte no centro.
 - Histórico: cada corte pronto, cada resultado da aba Ferramentas e cada vídeo com legenda
   incorporada entram na aba **Histórico**, com ações para abrir, legendar e fazer outros cortes do

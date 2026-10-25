@@ -188,7 +188,7 @@ class ComandoTests(unittest.TestCase):
     def test_grafo_que_segue_a_pessoa(self) -> None:
         tracking = Tracking(Path("/tmp/cmd.txt"), 420)
         graph = filter_graph([(0.0, 1.0)], "track", None, tracking)
-        self.assertIn("[vc]scale=-2:1920,sendcmd=f=", graph)
+        self.assertIn("[vc]scale=-2:1920,format=yuv444p,sendcmd=f=", graph)   # x de 1 em 1 px
         self.assertIn("crop@track=1080:1920:420:0", graph)
         self.assertNotIn("boxblur", graph)
         # Sem caminho calculado (falha, vídeo vertical): corte centralizado.

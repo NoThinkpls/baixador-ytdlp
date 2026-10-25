@@ -379,7 +379,9 @@ def _framing_graph(framing: str, tracking: Tracking | None = None) -> str:
     """De ``[vc]`` (o corte emendado) até um quadro 1080x1920 rotulado ``[vf]``."""
     if framing == "track" and tracking is not None:
         # Altura em 1920 e janela de 1080 que anda na horizontal conforme a análise.
-        return (f"[vc]scale=-2:{HEIGHT},sendcmd=f={_escape_filter_path(tracking.commands)},"
+        # yuv444p antes do crop: em 4:2:0 o x só anda de 2 em 2 pixels.
+        return (f"[vc]scale=-2:{HEIGHT},format=yuv444p,"
+                f"sendcmd=f={_escape_filter_path(tracking.commands)},"
                 f"crop@track={WIDTH}:{HEIGHT}:{tracking.first_x}:0,setsar=1[vf]")
     if framing in {"crop", "track"}:
         return (f"[vc]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"

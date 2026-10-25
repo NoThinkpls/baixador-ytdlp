@@ -367,7 +367,8 @@ class ClipWorker(QThread):
             if track is None:
                 return None
             scaled = track.scaled_width(HEIGHT)
-            commands = reframe.crop_commands(track.samples, intervals, scaled, WIDTH, remap_time)
+            commands = reframe.crop_commands(track.samples, intervals, scaled, WIDTH, remap_time,
+                                             track.fps)
             if not commands or scaled <= WIDTH:
                 return None
             path = folder / "enquadramento.txt"
