@@ -11,10 +11,30 @@ formato Keep a Changelog.
   janela: `baixar`, `info`, `legendar`, `cortar`, `ferramenta`, `preparar`, `status` e
   `historico`. Usa o mesmo motor e as configurações salvas da interface, devolve o resultado em
   JSON no stdout e o andamento no stderr, e convive com a janela aberta. Referência em
-  [`docs/LINHA-DE-COMANDO.md`](docs/LINHA-DE-COMANDO.md).
+  [`docs/LINHA-DE-COMANDO.md`](docs/LINHA-DE-COMANDO.md). Em `cortar`, `--plano` aceita o plano
+  da IA da 1.14.2 e `--pasta-sons` e `--altura-titulo` seguem a página Cortes.
 - Skill `baixador` para o Claude Code (`.claude/skills/baixador/SKILL.md`): pedidos no chat como
   "baixa esse vídeo em 720p" ou "faz um corte de 1:20 a 2:05" viram o comando certo, executado
   no computador da pessoa.
+
+## [1.14.2] - 2026-10-25
+
+### Adicionado
+
+- Cortes: campo **Plano da IA**. Uma linha de JSON compacto (`{"bx":1,"c":[…]}`) que uma IA de
+  texto entrega depois de ler a transcrição preenche os cortes, os títulos e onde entra cada som e
+  zoom. O app procura a palavra indicada no tempo exato do Whisper (o SRT só tem o tempo da frase),
+  leva o whoosh para a emenda mais próxima e converte tudo para o vídeo já sem pausas. Formato e
+  texto pronto para qualquer IA em `docs/PLANO-DA-IA.md`.
+- Cortes: cinco sons (whoosh, pop, impacto, ding e subida), refeitos em estéreo com filtro que
+  varia no tempo e reverb curto, e a opção **Seus sons**: uma pasta com arquivos chamados pelo
+  tipo substitui os sons padrão.
+- Cortes: **Altura do título**, no campo ou arrastando o título na prévia.
+
+### Alterado
+
+- A regra automática (sem plano) ficou mais contida: whoosh a cada 6 s no mínimo e uma ênfase a
+  cada 8 s.
 
 ## [1.14.1] - 2026-10-25
 

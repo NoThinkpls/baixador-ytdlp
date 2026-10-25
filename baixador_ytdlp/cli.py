@@ -417,13 +417,37 @@ def _parse_clip(value: str):
         raise CliError(f"{exc} (corte “{value}”)") from exc
 
 
+def _read_plan(value: str):
+    """Plano da IA (``{"bx":1,…}``) colado direto ou num arquivo de texto."""
+    from .clips import ClipError
+    from .plano_ia import parse_plan
+
+    path = Path(value).expanduser()
+    try:
+        text = path.read_text(encoding="utf-8") if path.is_file() else value
+    except OSError as exc:
+        raise CliError(f"Não foi possível ler o plano: {exc}") from exc
+    try:
+        return tuple(parse_plan(text))
+    except ClipError as exc:
+        raise CliError(str(exc)) from exc
+
+
 def cmd_cortar(args) -> dict:
     from .clips import FRAMINGS, ANIMATIONS, CaptionStyle, ClipOptions, is_url
     from .workers import ClipWorker
 
     cfg = _settings(args)
     source = args.fonte if is_url(args.fonte) else str(Path(args.fonte).expanduser())
-    ranges = tuple(_parse_clip(value) for value in args.corte)
+    ranges = tuple(_parse_clip(value) for value in args.corte or ())
+    if args.plano:
+        if ranges:
+            raise CliError("Use --corte ou --plano, não os dois.")
+        ranges = _read_plan(args.plano)
+    if not ranges:
+        raise CliError("Informe ao menos um --corte INICIO-FIM ou um --plano.")
+    planned_sound = any(marker.sound for clip in ranges for marker in clip.markers)
+    planned_zoom = any(marker.zoom for clip in ranges for marker in clip.markers)
     framing = args.enquadramento or cfg.clips_framing
     if framing not in FRAMINGS:
         raise CliError(f"Enquadramento desconhecido: {framing}. Use {', '.join(FRAMINGS)}.")
@@ -444,7 +468,10 @@ def cmd_cortar(args) -> dict:
         font=cfg.clips_font, size=cfg.clips_font_size, text_color=cfg.clips_text_color,
         highlight_color=args.cor_destaque or cfg.clips_highlight_color,
         position=cfg.clips_position, words=args.palavras or cfg.clips_words,
-        uppercase=cfg.clips_uppercase, animation=animation, background=cfg.clips_background)
+        uppercase=cfg.clips_uppercase, animation=animation, background=cfg.clips_background,
+        title_position=(args.altura_titulo if args.altura_titulo is not None
+                        else cfg.clips_title_position))
+    sounds = args.pasta_sons if args.pasta_sons is not None else cfg.clips_sounds_folder
     options = ClipOptions(
         source=source, ranges=ranges, output_dir=output_dir, framing=framing,
         remove_pauses=flag(args.remover_pausas, cfg.clips_remove_pauses),
@@ -456,8 +483,10 @@ def cmd_cortar(args) -> dict:
         progress_bar=flag(args.barra, cfg.clips_progress_bar),
         normalize_audio=flag(args.normalizar, cfg.clips_normalize_audio),
         save_srt=flag(args.srt, cfg.clips_save_srt),
-        sound_effects=flag(args.efeitos, cfg.clips_sound_effects),
-        emphasis_zoom=flag(args.zoom_enfase, cfg.clips_emphasis_zoom),
+        # Como na página: um plano com sons ou zooms liga a opção correspondente.
+        sound_effects=flag(args.efeitos, planned_sound or cfg.clips_sound_effects),
+        emphasis_zoom=flag(args.zoom_enfase, planned_zoom or cfg.clips_emphasis_zoom),
+        sounds_folder=Path(sounds).expanduser() if sounds else None,
     )
     reporter = _Reporter()
     _manager, tc = _toolchain(cfg, reporter)
@@ -609,8 +638,15 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("cortar", parents=[cookies],
                        help="cria cortes verticais 9:16 com legenda animada")
     p.add_argument("fonte", help="arquivo local ou link")
-    p.add_argument("--corte", action="append", required=True, metavar="INICIO-FIM[=TÍTULO]",
+    p.add_argument("--corte", action="append", metavar="INICIO-FIM[=TÍTULO]",
                    help="repita para vários cortes, ex.: --corte 1:20-2:05=Gancho")
+    p.add_argument("--plano", metavar="JSON|ARQ",
+                   help='plano da IA ({"bx":1,"c":[…]}, ver docs/PLANO-DA-IA.md), no lugar '
+                        "de --corte")
+    p.add_argument("--pasta-sons", metavar="DIR",
+                   help="seus sons (whoosh, pop, impacto, ding, subida); vazio = os do app")
+    p.add_argument("--altura-titulo", type=int, metavar="%",
+                   help="centro do título em %% da altura (0 = automático)")
     p.add_argument("--pasta", help="destino dos cortes")
     p.add_argument("--enquadramento", help="blur, crop ou track (segue a pessoa)")
     p.add_argument("--animacao", help="highlight, color, karaoke, word, pop ou none")

@@ -99,8 +99,13 @@ highlight|color|karaoke|word|pop|none`, `--cor-destaque #RRGGBB`, `--palavras 1-
 `--barra`, `--normalizar`, `--srt`, `--efeitos`, `--zoom-enfase` (cada uma com `--no-…`).
 Sem a opção, vale o que está salvo na página Cortes.
 
+No lugar de `--corte`, `--plano` recebe o [plano da IA](PLANO-DA-IA.md) (`{"bx":1,"c":[…]}`,
+colado ou num arquivo): cortes, títulos e onde entra cada som e zoom. Como na página, um plano
+com sons ou zoom liga **Efeitos sonoros** e **Zoom na ênfase**. `--pasta-sons DIR` usa os seus
+sons e `--altura-titulo %` posiciona o título (0 = automático).
+
 Para o Claude escolher os melhores momentos: `legendar video.mp4 --formato json`, ler a
-transcrição com os tempos e então chamar `cortar` com os intervalos escolhidos.
+transcrição com os tempos e então chamar `cortar` com os intervalos escolhidos ou com um plano.
 
 ### `ferramenta OPERACAO ARQUIVO`
 

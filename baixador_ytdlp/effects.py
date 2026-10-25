@@ -1,39 +1,52 @@
-"""Efeitos automáticos dos cortes: "whoosh" nas emendas e "pop" + zoom rápido na ênfase.
+"""Onde entram os efeitos dos cortes: sons e zoom rápido na ênfase.
 
-São os recursos mais comuns em vídeos curtos editados à mão. O cuidado aqui é não
-exagerar: o efeito só entra onde a fala pede (uma mudança clara de assunto, uma
-palavra dita mais alto) e sempre com distância mínima do anterior.
+Há duas fontes de decisão:
 
-Os sons são sintetizados aqui mesmo (ruído filtrado e um seno curto): nenhum arquivo
-de terceiros, nenhuma licença a acompanhar e nada a baixar.
+* o **plano da IA** (``plano_ia``): quem leu a transcrição inteira diz em que palavra
+  entra cada som. O app só encaixa: procura a palavra no tempo exato do Whisper, puxa
+  o whoosh para a emenda mais próxima e converte para o tempo do vídeo já sem pausas;
+* sem plano, uma regra simples pelo áudio: whoosh na emenda de uma pausa longa e pop na
+  palavra dita bem mais alto, sempre com distância mínima entre eles.
+
+Os sons em si ficam em ``sfx``.
 """
 from __future__ import annotations
 
+import re
+import unicodedata
 import wave
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
-SAMPLE_RATE = 48000
-WHOOSH_SECONDS = 0.45
-WHOOSH_PEAK = 0.6           # fração do som em que o whoosh atinge o máximo
-POP_SECONDS = 0.09
-EFFECT_VOLUME = 0.5         # os sons ficam abaixo da voz
 CUT_GAP = 1.0               # pausa removida a partir disso marca troca de assunto
-CUT_SPACING = 4.0           # dois whooshes nunca a menos de 4 s
+CUT_SPACING = 6.0           # regra automática: dois whooshes nunca a menos de 6 s
 EMPHASIS_DB = 6.0           # palavra pelo menos 6 dB acima da mediana do corte
-EMPHASIS_EVERY = 7.0        # no máximo uma ênfase a cada 7 s de vídeo
-EFFECT_SPACING = 1.5        # whoosh e pop nunca encavalados
-EDGE = 0.8                  # nada colado no começo nem no fim do corte
+EMPHASIS_EVERY = 8.0        # regra automática: no máximo uma ênfase a cada 8 s
+EFFECT_SPACING = 1.5        # regra automática: sons nunca encavalados
+EDGE = 0.8                  # regra automática: nada colado no começo nem no fim
 PUNCH = 1.15                # aproximação rápida na palavra enfatizada
 PUNCH_SECONDS = 0.6
+WORD_WINDOW = 6.0           # o plano da IA vem do SRT: a palavra é procurada ±6 s em volta
+SNAP_TO_CUT = 1.5           # whoosh do plano a até 1,5 s de uma emenda vai para ela
 
 
 @dataclass(frozen=True)
 class Effect:
-    time: float     # início do som no vídeo final, em segundos
-    kind: str       # "whoosh" | "pop"
+    time: float     # no vídeo final, em segundos: o instante que importa (ou, depois de
+                    # ``schedule``, o início do som)
+    kind: str       # um de ``sfx.SOUNDS``
+
+
+@dataclass(frozen=True)
+class Marker:
+    """Um ponto do plano da IA, no tempo do vídeo original (o mesmo do SRT)."""
+    time: float
+    sound: str = ""     # "" = só zoom
+    word: str = ""      # palavra dita nesse momento, para achar o tempo exato
+    zoom: bool = False
 
 
 def cut_points(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
@@ -105,72 +118,112 @@ def emphasis_words(words: list[dict], total: float) -> list[dict]:
 
 def plan_effects(intervals: list[tuple[float, float]], emphasis: list[dict],
                  total: float) -> list[Effect]:
-    """Whoosh nas emendas que trocam de assunto e pop nas ênfases (tempos do vídeo final)."""
+    """Regra automática: whoosh nas emendas que trocam de assunto e pop nas ênfases."""
     effects: list[Effect] = []
     last_whoosh = -CUT_SPACING
-    lead = WHOOSH_SECONDS * WHOOSH_PEAK   # o pico do whoosh cai em cima da emenda
     for point, gap in cut_points(intervals):
         if gap < CUT_GAP or point < EDGE or point > total - EDGE:
             continue
         if point - last_whoosh < CUT_SPACING:
             continue
-        effects.append(Effect(round(max(0.0, point - lead), 3), "whoosh"))
+        effects.append(Effect(round(point, 3), "whoosh"))
         last_whoosh = point
     for word in emphasis:
-        start = max(0.0, word["start"] - 0.01)
-        if any(abs(start - effect.time) < EFFECT_SPACING for effect in effects):
+        if any(abs(word["start"] - effect.time) < EFFECT_SPACING for effect in effects):
             continue
-        effects.append(Effect(round(start, 3), "pop"))
+        effects.append(Effect(round(word["start"], 3), "pop"))
     return sorted(effects, key=lambda effect: effect.time)
 
 
 def punch_windows(emphasis: list[dict], total: float) -> list[tuple[float, float]]:
-    return [(round(word["start"], 3), round(min(total, word["start"] + PUNCH_SECONDS), 3))
-            for word in emphasis]
+    return windows_at([word["start"] for word in emphasis], total)
 
 
-def whoosh_sound(rate: int = SAMPLE_RATE, seed: int = 7) -> np.ndarray:
-    """Ruído com filtro que abre e fecha: o "vuuush" de transição."""
-    count = int(WHOOSH_SECONDS * rate)
-    noise = np.random.default_rng(seed).uniform(-1.0, 1.0, count).astype(np.float32)
-    position = np.linspace(0.0, 1.0, count, dtype=np.float32)
-    # Frequência de corte sobe até o pico e desce depois (passa-baixas de um polo).
-    sweep = np.where(position < WHOOSH_PEAK, position / WHOOSH_PEAK,
-                     (1.0 - position) / (1.0 - WHOOSH_PEAK))
-    cutoff = 300.0 + 5200.0 * sweep ** 2
-    alpha = 1.0 - np.exp(-2.0 * np.pi * cutoff / rate)
-    out = np.empty(count, dtype=np.float32)
-    state = 0.0
-    for index in range(count):
-        state += float(alpha[index]) * (float(noise[index]) - state)
-        out[index] = state
-    envelope = sweep ** 1.5
-    out *= envelope
-    return out / max(1e-6, float(np.abs(out).max())) * 0.8
+def windows_at(times: list[float], total: float) -> list[tuple[float, float]]:
+    windows: list[tuple[float, float]] = []
+    for start in sorted(times):
+        end = min(total, start + PUNCH_SECONDS)
+        if end - start < 0.1 or (windows and start < windows[-1][1]):
+            continue
+        windows.append((round(start, 3), round(end, 3)))
+    return windows
 
 
-def pop_sound(rate: int = SAMPLE_RATE) -> np.ndarray:
-    """Seno curto que cai de tom: o "pop" de destaque."""
-    count = int(POP_SECONDS * rate)
-    seconds = np.arange(count, dtype=np.float32) / rate
-    frequency = 300.0 + 700.0 * np.exp(-seconds * 40.0)
-    phase = 2.0 * np.pi * np.cumsum(frequency) / rate
-    envelope = np.exp(-seconds * 45.0) * np.minimum(1.0, seconds * rate / 48.0)
-    return (np.sin(phase) * envelope * 0.8).astype(np.float32)
+def _norm(text: str) -> str:
+    """Palavra comparável: sem acento, pontuação nem maiúsculas."""
+    plain = unicodedata.normalize("NFKD", text.casefold())
+    plain = "".join(char for char in plain if not unicodedata.combining(char))
+    return re.sub(r"[^\w]", "", plain)
 
 
-def write_wav(path: Path, samples: np.ndarray, rate: int = SAMPLE_RATE) -> Path:
-    data = (np.clip(samples, -1.0, 1.0) * 32767).astype("<i2")
-    with wave.open(str(path), "wb") as stream:
-        stream.setnchannels(1)
-        stream.setsampwidth(2)
-        stream.setframerate(rate)
-        stream.writeframes(data.tobytes())
-    return path
+def find_word(words: list[dict], word: str, near: float) -> dict | None:
+    """A ocorrência de ``word`` mais perto de ``near`` (tempos relativos ao trecho).
+
+    Com mais de uma palavra ("graça de Deus"), vale a sequência inteira começando ali.
+    """
+    wanted = [_norm(part) for part in word.split() if _norm(part)]
+    if not wanted:
+        return None
+    best, best_distance = None, WORD_WINDOW
+    tokens = [_norm(str(item.get("text", ""))) for item in words]
+    for index, token in enumerate(tokens):
+        if token != wanted[0]:
+            continue
+        if tokens[index:index + len(wanted)] != wanted:
+            continue
+        distance = abs(words[index]["start"] - near)
+        if distance <= best_distance:
+            best, best_distance = words[index], distance
+    return best
 
 
-def write_sounds(folder: Path, effects: list[Effect]) -> dict[str, Path]:
-    """Grava só os sons usados neste corte; devolve ``tipo -> arquivo``."""
-    makers = {"whoosh": whoosh_sound, "pop": pop_sound}
-    kinds = sorted({effect.kind for effect in effects})
-    return {kind: write_wav(folder / f"efeito-{kind}.wav", makers[kind]()) for kind in kinds}
+def _join_times(intervals: list[tuple[float, float]]) -> list[tuple[float, float, float]]:
+    """``(fim do trecho anterior, início do próximo, instante da emenda no vídeo final)``."""
+    joins, cursor = [], 0.0
+    for previous, current in zip(intervals, intervals[1:], strict=False):
+        cursor += previous[1] - previous[0]
+        joins.append((previous[1], current[0], cursor))
+    return joins
+
+
+def place_markers(markers: list[Marker], clip_start: float, words: list[dict],
+                  intervals: list[tuple[float, float]], total: float,
+                  remap: Callable[[float, list[tuple[float, float]]], float],
+                  ) -> tuple[list[Effect], list[tuple[float, float]]]:
+    """Plano da IA → sons e janelas de zoom no tempo do vídeo final.
+
+    ``words`` são as palavras do Whisper com tempo relativo ao início do trecho, antes
+    de tirar as pausas; ``remap`` é ``clips.remap_time``.
+    """
+    length = intervals[-1][1] if intervals else 0.0
+    effects: list[Effect] = []
+    zooms: list[float] = []
+    for marker in markers:
+        relative = marker.time - clip_start
+        found = find_word(words, marker.word, relative) if marker.word else None
+        if found is not None:
+            relative = float(found["start"])
+        if relative < -0.5 or relative > length + 0.5:
+            continue   # ponto de outro corte, ou fora do trecho
+        relative = min(max(relative, 0.0), length)
+        moment = remap(relative, intervals)
+        if marker.sound == "whoosh":
+            # A troca de assunto que a IA viu quase sempre é uma pausa que o app cortou.
+            near = [(min(abs(relative - end), abs(relative - start)), at)
+                    for end, start, at in _join_times(intervals)
+                    if end - SNAP_TO_CUT <= relative <= start + SNAP_TO_CUT]
+            if near:
+                moment = min(near)[1]
+        moment = round(min(max(moment, 0.0), total), 3)
+        if marker.sound and not any(effect.kind == marker.sound
+                                    and abs(effect.time - moment) < 0.3 for effect in effects):
+            effects.append(Effect(moment, marker.sound))
+        if marker.zoom:
+            zooms.append(moment)
+    return sorted(effects, key=lambda effect: effect.time), windows_at(zooms, total)
+
+
+def schedule(effects: list[Effect], leads: dict[str, float]) -> list[Effect]:
+    """Do instante marcado para o início de cada som (o pico do whoosh cai na emenda)."""
+    return [Effect(round(max(0.0, effect.time - leads.get(effect.kind, 0.0)), 3), effect.kind)
+            for effect in effects if effect.kind in leads]

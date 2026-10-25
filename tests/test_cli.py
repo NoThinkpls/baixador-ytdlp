@@ -63,6 +63,18 @@ class CliParsingTests(unittest.TestCase):
         with self.assertRaises(cli.CliError):
             cli._parse_clip("2:00-1:00")
 
+    def test_ai_plan_from_text_or_file_keeps_markers(self) -> None:
+        line = '{"bx":1,"c":[["0:10","0:40","GANCHO",[["0:15","graça","i",1]]]]}'
+        clips = cli._read_plan("Resposta da IA...\n" + line)
+        self.assertEqual((clips[0].start, clips[0].end, clips[0].title), (10, 40, "GANCHO"))
+        self.assertEqual(clips[0].markers[0].sound, "impacto")
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "plano.txt"
+            path.write_text(line, encoding="utf-8")
+            self.assertEqual(cli._read_plan(str(path)), clips)
+        with self.assertRaises(cli.CliError):
+            cli._read_plan("sem plano nenhum")
+
     def test_quality_selector_caps_height_and_keeps_fallback(self) -> None:
         self.assertEqual(cli._quality_selector("melhor"), "bv*+ba/b")
         self.assertEqual(cli._quality_selector("1080p"),
@@ -114,6 +126,34 @@ class CliRunTests(unittest.TestCase):
             self.assertEqual(json.loads(report.read_text(encoding="utf-8")), result)
             self.assertIn("… Processando na CPU", err)
             self.assertIn("[ 50%] audio", err)
+
+    def test_cut_with_plan_turns_on_planned_effects(self) -> None:
+        captured = {}
+
+        class _ClipWorker(_FakeWorker):
+            clip_done = Signal(str)
+            finished_ok = Signal(list)
+
+            def run(self) -> None:
+                captured["options"] = self.args[0]
+                self.finished_ok.emit([])
+
+        line = '{"bx":1,"c":[["0:10","0:40","GANCHO",[["0:15","graça","w",0]]]]}'
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "video.mp4"
+            source.write_bytes(b"x")
+            with patch.object(cli, "_toolchain", return_value=(None, SimpleNamespace())), \
+                    patch("baixador_ytdlp.workers.ClipWorker", _ClipWorker):
+                code, result, _ = _run(["cortar", str(source), "--plano", line,
+                                        "--altura-titulo", "80"])
+        self.assertEqual(code, cli.EXIT_OK, result)
+        options = captured["options"]
+        self.assertTrue(options.sound_effects)
+        self.assertEqual(options.style.title_position, 80)
+        self.assertEqual(options.ranges[0].markers[0].sound, "whoosh")
+        code, result, _ = _run(["cortar", str(source)])
+        self.assertEqual(code, cli.EXIT_FAILED)
+        self.assertIn("--plano", result["erro"])
 
     def test_status_reads_settings_without_saving(self) -> None:
         from baixador_ytdlp.config import Settings

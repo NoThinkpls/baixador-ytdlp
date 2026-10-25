@@ -264,6 +264,8 @@ class Settings:
     clips_save_srt: bool = False
     clips_sound_effects: bool = False     # whoosh e pop automáticos
     clips_emphasis_zoom: bool = False
+    clips_sounds_folder: str = ""        # vazio = sons do próprio app
+    clips_title_position: int = 0         # 0 = automático
     window_geometry: str = ""        # legado (blob do Qt); ignorado desde a 1.8.1
     window_rect: list[int] = field(default_factory=list)  # x, y, largura, altura
     window_maximized: bool = False

@@ -7,6 +7,20 @@ e publica a release quando todas passam.
 Contexto: `docs/PLANO-DE-CORRECOES.md` (auditoria e status), `CLAUDE.md`
 (decisões e convenções) e `docs/PLANO-OTIMIZACAO-PLATAFORMAS.md` (próximas melhorias).
 
+## Página do projeto com a função Cortes
+
+Pedido do Nathan em 25/10/2026: a página inicial do GitHub (o site em `web/` e o topo do
+`README.md`/`README.en.md`) ainda não mostra a página **Cortes** (vídeos verticais com legenda,
+seguir a pessoa, efeitos e plano da IA). Atualizar texto, lista de recursos e capturas
+(`scripts/capture_screenshots.py`).
+
+## Skill do Claude Code para usar o app pelo terminal
+
+Pedido do Nathan em 25/10/2026: uma skill do Claude Code com comandos de barra (ex.: baixar,
+legendar, cortar, ferramentas) para o Claude executar pedidos do chat usando o Baixador local,
+sem abrir a interface. Provavelmente exige um modo de linha de comando no app (hoje há só a
+interface e o `--self-test`). Vai ser feito numa thread própria.
+
 ## Assinatura Ed25519 das releases
 
 A 1.13.1 saiu sem `.sig`: `RELEASE_SIGNING_KEY` não está configurado e `RELEASE_PUBLIC_KEYS`

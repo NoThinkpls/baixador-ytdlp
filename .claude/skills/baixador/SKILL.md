@@ -54,6 +54,7 @@ reconhecido, o app é anterior à 1.15.0 e precisa ser atualizado.
 | "legenda esse arquivo" | `cli legendar ARQ` (`--formato srt\|vtt\|txt\|json`, `--idioma pt\|auto`, `--modelo`, `--traduzir`) |
 | "faz um corte de 1:20 a 2:05" | `cli cortar FONTE --corte "1:20-2:05=Título"` (repita `--corte`) |
 | "corte seguindo a pessoa", "com efeitos" | `--enquadramento track`, `--efeitos --zoom-enfase` |
+| "usa meus sons", "título mais embaixo" | `--pasta-sons DIR`, `--altura-titulo 80` |
 | "extrai o áudio", "comprime", "corta o trecho", "gif" | `cli ferramenta audio\|compress\|trim\|gif ARQ` |
 | "deixa com menos de 25 MB" | `cli ferramenta target_size ARQ --tamanho-mb 25` |
 | "converte pra vertical" | `cli ferramenta shorts ARQ` |
@@ -70,8 +71,16 @@ Referência completa: `"$B" cli ajuda` e `"$B" cli <comando> --help`.
 Se pedirem "os melhores momentos" sem tempos: rode `cli legendar VIDEO --formato json`
 (com link, primeiro `cli baixar`), leia a transcrição, escolha de 1 a 5 trechos de 20 s a 90 s
 que façam sentido sozinhos (gancho no início, ideia completa), proponha os tempos e títulos e,
-com o ok da pessoa, rode `cli cortar` com um `--corte` por trecho. Cada corte tem no máximo
-10 minutos.
+com o ok da pessoa, gere os cortes. Cada corte tem no máximo 10 minutos.
+
+- Só tempos e títulos: um `--corte "INICIO-FIM=Título"` por trecho.
+- Com sons e zoom em palavras específicas: monte o **plano da IA** e passe em `--plano`
+  (texto ou arquivo). Formato, numa linha: `{"bx":1,"c":[["12:03","12:58","TÍTULO",[["12:10","graça","i",1]]]]}`.
+  Cada corte é `[início, fim, título, efeitos]`; cada efeito é `[tempo, palavra dita, som, zoom]`,
+  com som `w` whoosh, `p` pop, `i` impacto, `d` ding, `s` subida ou `""` (só zoom) e zoom 1/0.
+  Use poucos efeitos (um whoosh nas trocas de assunto, uma ênfase a cada 8 s no máximo). O app
+  acha o tempo exato da palavra e liga sons/zoom sozinho. Detalhes em `docs/PLANO-DA-IA.md` do
+  repositório.
 
 ## 5. Erros
 
