@@ -100,6 +100,12 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 - Arquivos só de áudio e vídeos sem som são recusados logo no início, com o motivo, em vez de falhar depois da transcrição. Vídeos de celular gravados "deitados" com marca de rotação são tratados como verticais.
 - Limitações: até 20 cortes por vez e 10 minutos por corte. A fonte escolhida precisa estar instalada no computador. O "seguir a pessoa" acompanha na horizontal (não faz zoom variável) e, se a análise falhar, o corte sai centralizado. Num link, o trecho é baixado sem recodificar e o app compensa a sobra até o quadro-chave pela duração; em raros casos o início pode variar uma fração de segundo.
 
+### Linha de comando e Claude Code
+
+- `baixador-ytdlp cli baixar|info|legendar|cortar|ferramenta|preparar|status|historico` faz o mesmo que a janela, sem abri-la, com as configurações salvas do app. O resultado sai em JSON, pronto para scripts.
+- Com a skill [`baixador`](.claude/skills/baixador/SKILL.md), o **Claude Code** no seu computador entende pedidos como "baixa esse vídeo em 720p", "legenda esse arquivo" ou "faz três cortes desse vídeo" e executa o comando certo. Detalhes em [Linha de comando](docs/LINHA-DE-COMANDO.md).
+- Limitação: o que é feito pela linha de comando ainda não entra no Histórico da janela.
+
 ### Interface
 
 - Tema claro e escuro, **português e inglês**, barra lateral compacta e ícones próprios.
@@ -132,6 +138,7 @@ O que vem a seguir (Intel QSV, VAAPI, decodificação por hardware, cortes em pa
 | | |
 | --- | --- |
 | [Guia de uso](docs/GUIA-DE-USO.md) | Do primeiro download às ferramentas e às legendas |
+| [Linha de comando](docs/LINHA-DE-COMANDO.md) | Comandos `cli` e a skill do Claude Code |
 | [Plataformas e segurança](docs/PLATAFORMAS-E-SEGURANCA.md) | Desempenho, GPU e modelo de segurança |
 | [Compilação e Releases](docs/COMPILACAO-E-RELEASE.md) | Build com Nuitka, CI e publicação |
 | [Plano de correções](docs/PLANO-DE-CORRECOES.md) · [Pendências](docs/PENDENCIAS.md) | O que foi feito e o que falta |

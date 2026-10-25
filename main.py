@@ -394,4 +394,10 @@ if __name__ == "__main__":
     # processo auxiliar, sem abrir uma segunda janela Qt.
     if not getattr(sys, "_MEIPASS", None):
         multiprocessing.freeze_support()
+    # Modo de linha de comando: não cria QApplication, não pega a trava de instância
+    # única e convive com a janela aberta. Fica depois do freeze_support porque os
+    # cortes e a legenda iniciam o Whisper num processo spawn deste mesmo executável.
+    if sys.argv[1:2] == ["cli"]:
+        from baixador_ytdlp.cli import run_cli
+        raise SystemExit(run_cli(sys.argv[2:]))
     raise SystemExit(main())

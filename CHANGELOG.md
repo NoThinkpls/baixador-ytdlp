@@ -3,6 +3,19 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.15.0] - 2026-10-25
+
+### Adicionado
+
+- **Linha de comando**: `baixador-ytdlp cli <comando>` executa as funções do app sem abrir a
+  janela: `baixar`, `info`, `legendar`, `cortar`, `ferramenta`, `preparar`, `status` e
+  `historico`. Usa o mesmo motor e as configurações salvas da interface, devolve o resultado em
+  JSON no stdout e o andamento no stderr, e convive com a janela aberta. Referência em
+  [`docs/LINHA-DE-COMANDO.md`](docs/LINHA-DE-COMANDO.md).
+- Skill `baixador` para o Claude Code (`.claude/skills/baixador/SKILL.md`): pedidos no chat como
+  "baixa esse vídeo em 720p" ou "faz um corte de 1:20 a 2:05" viram o comando certo, executado
+  no computador da pessoa.
+
 ## [1.14.1] - 2026-10-25
 
 ### Adicionado
