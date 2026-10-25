@@ -1,6 +1,6 @@
 ---
 name: baixador
-description: Executa o Baixador-YTDLP pelo terminal, sem abrir a janela - baixar vídeo, áudio, playlist ou trecho, analisar link, legendar com Whisper, fazer cortes verticais e editar com FFmpeg. Use em /baixador ou quando pedirem para baixar, legendar ou cortar um vídeo.
+description: Executa o Baixador-YTDLP pelo terminal, sem abrir a janela: baixar, analisar link, legendar com Whisper, cortes verticais e ferramentas FFmpeg. Use em /baixador ou ao pedir para baixar, legendar ou cortar vídeo.
 ---
 
 # Baixador-YTDLP pelo terminal
