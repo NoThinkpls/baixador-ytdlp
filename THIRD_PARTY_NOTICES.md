@@ -17,6 +17,10 @@ de cada pacote empacotado estão em `THIRD_PARTY_LICENSES.md`, gerado no CI por
   licença da build do FFmpeg feita pelo projeto PyAV (LGPL); consulte o texto
   em `THIRD_PARTY_LICENSES.md`.
 - onnxruntime (VAD Silero do faster-whisper) — MIT.
+- YuNet, detector de rostos do OpenCV Zoo (`assets/models/face_detection_yunet_2023mar.onnx`,
+  usado em "Seguir a pessoa" nos cortes) — MIT; Copyright (c) 2020 Shiqi Yu. Licença em
+  `assets/models/LICENSE-YuNet.txt`.
+  Fonte: https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet
 - tokenizers e huggingface-hub — Apache-2.0.
 - NumPy — BSD-3-Clause.
 - CUDA Runtime, cuBLAS e cuDNN (Windows) — termos de redistribuição da NVIDIA.

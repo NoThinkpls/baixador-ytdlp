@@ -244,6 +244,17 @@ class Settings:
     transcription_max_chars: int = 50
     transcription_min_duration: float = 0.8
     transcription_max_duration: float = 4.5
+    # Cortes verticais: últimas escolhas da página Cortes (só aparência e enquadramento)
+    clips_framing: str = "blur"           # blur | crop | track
+    clips_remove_pauses: bool = True
+    clips_min_pause: float = 0.6
+    clips_font: str = "Arial"
+    clips_font_size: int = 88
+    clips_text_color: str = "#FFFFFF"
+    clips_highlight_color: str = "#FFD700"
+    clips_position: int = 70              # centro da legenda em % da altura
+    clips_words: int = 3
+    clips_uppercase: bool = True
     window_geometry: str = ""        # legado (blob do Qt); ignorado desde a 1.8.1
     window_rect: list[int] = field(default_factory=list)  # x, y, largura, altura
     window_maximized: bool = False

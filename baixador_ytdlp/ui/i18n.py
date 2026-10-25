@@ -387,6 +387,34 @@ EN: dict[str, str] = {
     "Cada corte precisa ter pelo menos 1 segundo.": "Each clip must be at least 1 second long.",
     "Selecione um arquivo de vídeo existente ou cole um link.":
         "Select an existing video file or paste a link.",
+    "Enquadramento": "Framing", "Legenda": "Caption",
+    "Seguir a pessoa — automático": "Follow the person — automatic",
+    "Aproxima e acompanha quem está em cena, como o reenquadrar do CapCut. Procura rostos e, sem rosto, segue o movimento. Vídeos já verticais ficam como estão.":
+        "Zooms in and follows whoever is on screen, like CapCut's auto reframe. It looks for faces "
+        "and, without one, follows the motion. Videos that are already vertical stay as they are.",
+    "Mostra o quadro todo, com o próprio vídeo desfocado atrás.":
+        "Shows the whole frame, with the video itself blurred behind it.",
+    "Preenche a tela com o centro do vídeo; as laterais ficam de fora.":
+        "Fills the screen with the center of the video; the sides are left out.",
+    "Fonte": "Font", "Cores": "Colors", "Altura": "Height",
+    "Palavras": "Words", "Maiúsculas": "Uppercase", "Texto": "Text",
+    "Palavra falada": "Spoken word", "Pequena": "Small", "Média": "Medium", "Grande": "Large",
+    "Muito grande": "Very large", "Enorme": "Huge", "1 palavra": "1 word", "palavras": "words",
+    "% da altura; arraste na prévia": "% of the height; drag it in the preview",
+    "A fonte precisa estar instalada no computador. A prévia é aproximada; o título usa a cor da palavra falada.":
+        "The font must be installed on the computer. The preview is approximate; the title uses "
+        "the spoken word color.",
+    "Cor do texto": "Text color", "Cor da palavra falada": "Spoken word color",
+    "Arraste para cima ou para baixo para posicionar a legenda":
+        "Drag up or down to position the caption",
+    "Prévia da legenda": "Caption preview", "Título do corte": "Clip title",
+    "Fazer outros cortes deste vídeo": "Make more clips from this video",
+    "O vídeo de origem não está mais no lugar": "The source video is no longer there",
+    "Abrir o arquivo": "Open the file",
+    "Tudo o que você baixou, legendou, cortou e converteu nesta máquina.":
+        "Everything you downloaded, captioned, clipped and converted on this computer.",
+    "O que você baixar, transcrever, cortar ou converter aparece nesta lista, só na sua máquina.":
+        "What you download, transcribe, clip or convert shows up in this list, only on your computer.",
 }
 
 

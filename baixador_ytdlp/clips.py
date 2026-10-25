@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .gpu import backend_of, quality_args
@@ -28,8 +28,8 @@ SPEECH_PAD = 0.12            # folga mantida antes e depois da fala, para não c
 MIN_KEEP = 0.08              # pedaço menor que isso só gera um salto de imagem
 CAPTION_HOLD = 0.35          # a última palavra do grupo fica na tela um pouco depois de dita
 CAPTION_MAX_GAP = 0.6        # pausa que fecha um grupo mesmo antes de completar as palavras
-HIGHLIGHT_BGR = "00D7FF"     # amarelo #FFD700 na ordem azul-verde-vermelho do ASS
-FRAMINGS = ("blur", "crop")
+HIGHLIGHT_HEX = "#FFD700"    # amarelo padrão da palavra falada
+FRAMINGS = ("blur", "crop", "track")
 
 
 class ClipError(RuntimeError):
@@ -52,11 +52,11 @@ class ClipOptions:
     source: str                          # caminho local ou link http(s)
     ranges: tuple[ClipRange, ...]
     output_dir: Path
-    framing: str = "blur"                # blur = vídeo inteiro com fundo desfocado; crop = centro
+    # blur = vídeo inteiro com fundo desfocado; crop = centro; track = segue quem está em cena
+    framing: str = "blur"
     remove_pauses: bool = True
     min_pause: float = DEFAULT_MIN_PAUSE
-    words_per_caption: int = 3
-    uppercase: bool = True
+    style: CaptionStyle = field(default_factory=lambda: CaptionStyle())
     title_seconds: float = 2.0
     language: str = "pt"
     model_size: str = "medium"
@@ -246,45 +246,95 @@ def ass_text(value: str) -> str:
     return " ".join(value.split())
 
 
-ASS_HEADER = (
-    "[Script Info]\n"
-    "Title: Baixador YT-DLP - corte vertical\n"
-    "ScriptType: v4.00+\n"
-    f"PlayResX: {WIDTH}\nPlayResY: {HEIGHT}\n"
-    "WrapStyle: 0\nScaledBorderAndShadow: yes\n\n"
-    "[V4+ Styles]\n"
-    "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,"
-    "Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,"
-    "Alignment,MarginL,MarginR,MarginV,Encoding\n"
-    # Legenda: branca com contorno grosso, no terço inferior (acima dos botões do app).
-    "Style: Caption,Arial,88,&H00FFFFFF,&H000000FF,&H00000000,&H78000000,-1,0,0,0,"
-    "100,100,0,0,1,7,3,2,80,80,560,1\n"
-    # Título: texto escuro numa caixa amarela (BorderStyle 3), no topo.
-    f"Style: Title,Arial,74,&H00141414,&H000000FF,&H00{HIGHLIGHT_BGR},&H00000000,-1,0,0,0,"
-    "100,100,0,0,3,22,0,8,90,90,300,1\n\n"
-    "[Events]\n"
-    "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n"
-)
+def ass_colour(value: str, fallback: str = "#FFFFFF") -> str:
+    """``#RRGGBB`` da interface para ``&H00BBGGRR`` do ASS (que guarda azul-verde-vermelho)."""
+    text = value.strip().lstrip("#") if isinstance(value, str) else ""
+    if not re.fullmatch(r"[0-9A-Fa-f]{6}", text):
+        text = fallback.lstrip("#")
+    red, green, blue = text[0:2], text[2:4], text[4:6]
+    return f"&H00{blue}{green}{red}".upper()
 
 
-def _caption_line(words: list[str], active: int) -> str:
+def is_light(value: str) -> bool:
+    text = value.lstrip("#")
+    if not re.fullmatch(r"[0-9A-Fa-f]{6}", text):
+        return True
+    red, green, blue = (int(text[index:index + 2], 16) for index in (0, 2, 4))
+    return 0.299 * red + 0.587 * green + 0.114 * blue > 150
+
+
+@dataclass(frozen=True)
+class CaptionStyle:
+    """Aparência da legenda; os valores vêm da página e ficam salvos nas Configurações."""
+    font: str = "Arial"
+    size: int = 88                   # em pixels de um quadro 1080x1920
+    text_color: str = "#FFFFFF"
+    highlight_color: str = HIGHLIGHT_HEX
+    position: int = 70               # centro da legenda, em % da altura (0 = topo)
+    words: int = 3
+    uppercase: bool = True
+
+    def normalized(self) -> CaptionStyle:
+        # Vírgula separaria os campos da linha "Style:" do ASS.
+        font = re.sub(r"[,\r\n{}]", "", self.font or "").strip() or "Arial"
+        return CaptionStyle(
+            font=font[:64], size=max(40, min(160, int(self.size))),
+            text_color=self.text_color, highlight_color=self.highlight_color,
+            position=max(8, min(92, int(self.position))), words=max(1, min(4, int(self.words))),
+            uppercase=bool(self.uppercase))
+
+    @property
+    def y(self) -> int:
+        return round(HEIGHT * self.normalized().position / 100)
+
+
+def ass_header(style: CaptionStyle) -> str:
+    style = style.normalized()
+    title_text = "&H00141414" if is_light(style.highlight_color) else "&H00FFFFFF"
+    outline = max(4, style.size // 12)
+    return (
+        "[Script Info]\n"
+        "Title: Baixador YT-DLP - corte vertical\n"
+        "ScriptType: v4.00+\n"
+        f"PlayResX: {WIDTH}\nPlayResY: {HEIGHT}\n"
+        "WrapStyle: 0\nScaledBorderAndShadow: yes\n\n"
+        "[V4+ Styles]\n"
+        "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,"
+        "Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,"
+        "Alignment,MarginL,MarginR,MarginV,Encoding\n"
+        # Legenda: contorno grosso; a altura vem do \\pos de cada linha (posição escolhida).
+        f"Style: Caption,{style.font},{style.size},{ass_colour(style.text_color)},&H000000FF,"
+        f"&H00000000,&H78000000,-1,0,0,0,100,100,0,0,1,{outline},3,5,80,80,0,1\n"
+        # Título: caixa na cor de destaque (BorderStyle 3), no topo, texto que contrasta.
+        f"Style: Title,{style.font},{round(style.size * 0.84)},{title_text},&H000000FF,"
+        f"{ass_colour(style.highlight_color, HIGHLIGHT_HEX)},&H00000000,-1,0,0,0,"
+        "100,100,0,0,3,22,0,8,90,90,300,1\n\n"
+        "[Events]\n"
+        "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n"
+    )
+
+
+def _caption_line(words: list[str], active: int, style: CaptionStyle) -> str:
+    highlight = ass_colour(style.highlight_color, HIGHLIGHT_HEX)[4:]   # BBGGRR
     parts = []
     for index, word in enumerate(words):
         if index == active:
-            parts.append(f"{{\\1c&H{HIGHLIGHT_BGR}&\\fscx112\\fscy112}}{word}{{\\r}}")
+            parts.append(f"{{\\1c&H{highlight}&\\fscx112\\fscy112}}{word}{{\\r}}")
         else:
             parts.append(word)
-    return " ".join(parts)
+    return f"{{\\an5\\pos({WIDTH // 2},{style.y})}}" + " ".join(parts)
 
 
-def caption_events(groups: list[list[dict]], total: float, uppercase: bool = True) -> list[str]:
+def caption_events(groups: list[list[dict]], total: float,
+                   style: CaptionStyle = CaptionStyle()) -> list[str]:
     """Uma linha por palavra: o grupo inteiro na tela, só a palavra falada em destaque.
 
     Linhas encostadas umas nas outras (sem intervalo) evitam o "pisca" entre palavras.
     """
+    style = style.normalized()
     rows: list[str] = []
     for group_index, group in enumerate(groups):
-        texts = [ass_text(display_word(word["text"], uppercase)) for word in group]
+        texts = [ass_text(display_word(word["text"], style.uppercase)) for word in group]
         following = groups[group_index + 1][0]["start"] if group_index + 1 < len(groups) else total
         group_end = min(total, following, group[-1]["end"] + CAPTION_HOLD)
         if following - group_end < CAPTION_HOLD:
@@ -294,7 +344,7 @@ def caption_events(groups: list[list[dict]], total: float, uppercase: bool = Tru
             end = group[index + 1]["start"] if index + 1 < len(group) else group_end
             end = max(end, start + 0.05)
             rows.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},Caption,,0,0,0,,"
-                        f"{_caption_line(texts, index)}")
+                        f"{_caption_line(texts, index, style)}")
     return rows
 
 
@@ -308,18 +358,30 @@ def title_event(title: str, seconds: float, total: float) -> str:
 
 
 def build_ass(words: list[dict], total: float, *, title: str = "", title_seconds: float = 2.0,
-              words_per_caption: int = 3, uppercase: bool = True) -> str:
-    rows = caption_events(caption_groups(words, words_per_caption), total, uppercase)
+              style: CaptionStyle = CaptionStyle()) -> str:
+    style = style.normalized()
+    rows = caption_events(caption_groups(words, style.words), total, style)
     if title.strip() and title_seconds > 0:
         rows.insert(0, title_event(title, title_seconds, total))
-    return ASS_HEADER + "\n".join(rows) + ("\n" if rows else "")
+    return ass_header(style) + "\n".join(rows) + ("\n" if rows else "")
 
 
 # ----------------------------------------------------------------- FFmpeg
 
-def _framing_graph(framing: str) -> str:
+@dataclass(frozen=True)
+class Tracking:
+    """Janela que acompanha a pessoa: posições enviadas ao ``crop`` por ``sendcmd``."""
+    commands: Path          # arquivo do sendcmd (``tempo crop@track x valor;``)
+    first_x: int            # posição no primeiro quadro, antes do primeiro comando
+
+
+def _framing_graph(framing: str, tracking: Tracking | None = None) -> str:
     """De ``[vc]`` (o corte emendado) até um quadro 1080x1920 rotulado ``[vf]``."""
-    if framing == "crop":
+    if framing == "track" and tracking is not None:
+        # Altura em 1920 e janela de 1080 que anda na horizontal conforme a análise.
+        return (f"[vc]scale=-2:{HEIGHT},sendcmd=f={_escape_filter_path(tracking.commands)},"
+                f"crop@track={WIDTH}:{HEIGHT}:{tracking.first_x}:0,setsar=1[vf]")
+    if framing in {"crop", "track"}:
         return (f"[vc]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
                 f"crop={WIDTH}:{HEIGHT},setsar=1[vf]")
     # Mesmo visual de "Criar versão vertical" nas Ferramentas.
@@ -330,7 +392,8 @@ def _framing_graph(framing: str) -> str:
             "[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1[vf]")
 
 
-def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: Path | None) -> str:
+def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: Path | None,
+                 tracking: Tracking | None = None) -> str:
     """Recorta cada trecho com fala, emenda vídeo e áudio juntos, enquadra e grava a legenda."""
     if not intervals:
         raise ClipError("Não sobrou nenhum trecho para montar o corte.")
@@ -341,7 +404,7 @@ def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: 
         parts.append(f"[0:a:0]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{index}]")
         pads.append(f"[v{index}][a{index}]")
     parts.append(f"{''.join(pads)}concat=n={len(intervals)}:v=1:a=1[vc][ac]")
-    parts.append(_framing_graph(framing if framing in FRAMINGS else "blur"))
+    parts.append(_framing_graph(framing if framing in FRAMINGS else "blur", tracking))
     tail = f"subtitles=filename={_escape_filter_path(subtitles)}," if subtitles else ""
     parts.append(f"[vf]{tail}format=yuv420p[v]")
     return ";".join(parts)
@@ -359,14 +422,15 @@ def video_codec_args(encoder: str = "") -> list[str]:
 
 def render_command(ffmpeg: Path, source: Path, offset: float, length: float,
                    intervals: list[tuple[float, float]], framing: str, subtitles: Path | None,
-                   destination: Path, *, video_encoder: str = "") -> list[str]:
+                   destination: Path, *, video_encoder: str = "",
+                   tracking: Tracking | None = None) -> list[str]:
     """Um FFmpeg só, sem shell: o arquivo de origem nunca é alterado."""
     if source.resolve() == destination.resolve():
         raise ClipError("Escolha outra pasta de saída para preservar o arquivo original.")
     return [
         str(ffmpeg), "-hide_banner", "-n",
         "-ss", f"{max(0.0, offset):.3f}", "-t", f"{length:.3f}", "-i", str(source),
-        "-filter_complex", filter_graph(intervals, framing, subtitles),
+        "-filter_complex", filter_graph(intervals, framing, subtitles, tracking),
         "-map", "[v]", "-map", "[ac]",
         *video_codec_args(video_encoder),
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000",

@@ -12,7 +12,8 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from baixador_ytdlp.clips import (ClipError, ClipOptions, ClipRange, ass_text, build_ass,
+from baixador_ytdlp.clips import (CaptionStyle, ClipError, ClipOptions, ClipRange, Tracking,
+                                  ass_colour, ass_header, ass_text, build_ass,
                                   caption_groups, clamp_range, clip_filename, display_word,
                                   filter_graph, keep_intervals, make_range, output_length,
                                   remap_time, remap_words, render_command, section_offset,
@@ -73,7 +74,7 @@ class LegendaTests(unittest.TestCase):
 
     def test_destaque_na_palavra_falada_e_linhas_encostadas(self) -> None:
         words = _words(("um", 0.0), ("dois", 0.5), ("três", 1.0))
-        ass = build_ass(words, 2.0, words_per_caption=3)
+        ass = build_ass(words, 2.0)
         rows = [line for line in ass.splitlines() if line.startswith("Dialogue: 0,")]
         self.assertEqual(len(rows), 3)
         self.assertIn("{\\1c&H00D7FF&\\fscx112\\fscy112}DOIS{\\r}", rows[1])
@@ -102,6 +103,39 @@ class LegendaTests(unittest.TestCase):
         self.assertEqual(display_word("sério?", False), "sério?")
         self.assertEqual(display_word("...", False), "...")
         self.assertEqual(ass_text("a\\N{b}"), "a/N(b)")
+
+
+class EstiloDaLegendaTests(unittest.TestCase):
+    """Posição, fonte, tamanho e cores escolhidos na página chegam ao ASS."""
+
+    def test_posicao_fonte_tamanho_e_cores(self) -> None:
+        style = CaptionStyle(font="Impact", size=100, text_color="#ff0000",
+                             highlight_color="#00E5FF", position=50, words=2, uppercase=False)
+        ass = build_ass(_words(("um", 0.0), ("dois", 0.5), ("três", 1.0)), 2.0, style=style)
+        self.assertIn("Style: Caption,Impact,100,&H000000FF,", ass)
+        rows = [line for line in ass.splitlines() if line.startswith("Dialogue: 0,")]
+        self.assertTrue(all("{\\an5\\pos(540,960)}" in row for row in rows))
+        self.assertIn("{\\1c&HFFE500&\\fscx112\\fscy112}dois{\\r}", rows[1])
+        self.assertIn("três", rows[2])            # 2 palavras por legenda: "três" sozinha
+        self.assertNotIn("um", rows[2])
+
+    def test_legenda_mais_para_cima(self) -> None:
+        ass = build_ass(_words(("oi", 0.0)), 1.0, style=CaptionStyle(position=20))
+        self.assertIn("\\pos(540,384)", ass)
+
+    def test_valores_fora_da_faixa_e_fonte_que_quebraria_o_ass(self) -> None:
+        style = CaptionStyle(font="Ar,ial{x}\n", size=999, position=0, words=9).normalized()
+        self.assertEqual(style.font, "Arialx")
+        self.assertEqual((style.size, style.position, style.words), (160, 8, 4))
+        self.assertNotIn(",", style.font)
+        self.assertEqual(ass_colour("nada", "#FFD700"), "&H0000D7FF")
+
+    def test_titulo_contrasta_com_a_cor_de_destaque(self) -> None:
+        light = ass_header(CaptionStyle(highlight_color="#FFD700"))
+        dark = ass_header(CaptionStyle(highlight_color="#202060"))
+        self.assertIn("Style: Title,Arial,74,&H00141414,", light)
+        self.assertIn("Style: Title,Arial,74,&H00FFFFFF,", dark)
+        self.assertIn(",&H00602020,", dark)       # caixa do título na cor de destaque
 
 
 class ValidacaoTests(unittest.TestCase):
@@ -150,6 +184,15 @@ class ComandoTests(unittest.TestCase):
         self.assertNotIn("boxblur", graph)
         self.assertIn("subtitles=filename=", graph)
         self.assertIn("boxblur", filter_graph([(0.0, 1.0)], "blur", None))
+
+    def test_grafo_que_segue_a_pessoa(self) -> None:
+        tracking = Tracking(Path("/tmp/cmd.txt"), 420)
+        graph = filter_graph([(0.0, 1.0)], "track", None, tracking)
+        self.assertIn("[vc]scale=-2:1920,sendcmd=f=", graph)
+        self.assertIn("crop@track=1080:1920:420:0", graph)
+        self.assertNotIn("boxblur", graph)
+        # Sem caminho calculado (falha, vídeo vertical): corte centralizado.
+        self.assertIn("crop=1080:1920", filter_graph([(0.0, 1.0)], "track", None))
 
     def test_render_usa_trecho_e_encoder(self) -> None:
         command = render_command(Path("ffmpeg"), Path("/v/a.mp4"), 90.0, 30.0, [(0.0, 30.0)],

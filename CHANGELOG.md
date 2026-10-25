@@ -14,10 +14,20 @@ Nova página **Cortes**: vídeos verticais com legenda palavra a palavra.
   só os trechos são baixados.
 - Remoção de pausas: o Whisper marca o tempo de cada palavra e os silêncios acima do limite
   escolhido (0,4 s a 1,2 s) saem do vídeo, emendando imagem e som juntos.
-- Legenda de 2 ou 3 palavras por vez com a palavra falada em destaque (amarela e maior) e título
-  animado nos 2 primeiros segundos, gerados em ASS e gravados pelo próprio FFmpeg. Enquadramento
-  com fundo desfocado ou corte no centro.
-- Sem dependências novas: usa o FFmpeg e o Whisper que o app já baixa. A transcrição roda no
+- Legenda de 1 a 4 palavras por vez com a palavra falada em destaque (maior e na cor escolhida) e
+  título animado nos 2 primeiros segundos, gerados em ASS e gravados pelo próprio FFmpeg.
+- Estilo da legenda na própria página: fonte, tamanho, cor do texto, cor de destaque, altura na
+  tela e maiúsculas, com prévia em que dá para arrastar a legenda. As escolhas ficam salvas.
+- Enquadramento **Seguir a pessoa (automático)**: num vídeo horizontal, a janela 9:16 aproxima e
+  acompanha quem está em cena, como o reenquadrar do CapCut. Usa o detector de rostos YuNet
+  (OpenCV Zoo, MIT, 230 KB, no onnxruntime que o app já leva) e, sem rosto, o movimento entre
+  quadros; uma câmera virtual com zona morta e velocidade máxima evita tremidas (mesma ideia do
+  AutoFlip do Google). Se a análise falhar, o corte sai centralizado. Continuam disponíveis o fundo
+  desfocado e o corte no centro.
+- Histórico: cada corte pronto, cada resultado da aba Ferramentas e cada vídeo com legenda
+  incorporada entram na aba **Histórico**, com ações para abrir, legendar e fazer outros cortes do
+  mesmo vídeo.
+- Sem dependências novas além do modelo YuNet: usa o FFmpeg e o Whisper que o app já baixa. A transcrição roda no
   processo isolado do legendador (CUDA com volta para a CPU) e a montagem tenta a GPU antes da CPU.
 
 ### Alterado

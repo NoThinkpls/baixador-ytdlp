@@ -387,6 +387,7 @@ jobs:
             --exclude-module torchaudio \
             --exclude-module triton \
             --add-data "assets/icon.png:assets" \
+            --add-data "assets/models:assets/models" \
             --add-data "THIRD_PARTY_NOTICES.md:."
 
       - name: Registrar o protocolo baixador:// no Info.plist
@@ -575,6 +576,7 @@ jobs:
             --exclude-module torchaudio \
             --exclude-module triton \
             --add-data "assets/icon.png:assets" \
+            --add-data "assets/models:assets/models" \
             --add-data "THIRD_PARTY_NOTICES.md:."
 
       - name: Conferir o aplicativo Linux

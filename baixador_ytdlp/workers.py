@@ -14,9 +14,11 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
-from .clips import (ClipError, ClipOptions, ClipRange, audio_command, build_ass, clamp_range,
-                    clip_destination, is_url, keep_intervals, output_length, remap_words,
-                    render_command, section_offset, words_from_transcript)
+from . import reframe
+from .clips import (HEIGHT, WIDTH, ClipError, ClipOptions, ClipRange, Tracking, audio_command,
+                    build_ass, clamp_range, clip_destination, is_url, keep_intervals,
+                    output_length, remap_time, remap_words, render_command, section_offset,
+                    words_from_transcript)
 from .config import Settings
 from .diagnostics import get_logger, log_event, report_exception
 from .downloader import (DownloadError, DownloadOptions, Progress, Transcoder, is_retryable_error,
@@ -229,7 +231,8 @@ class ClipWorker(QThread):
     failed = Signal(str)
 
     # Peso de cada etapa dentro de um corte, para a barra andar de forma contínua.
-    STAGES = {"download": (0, 25), "audio": (25, 30), "transcribe": (30, 65), "render": (65, 100)}
+    STAGES = {"download": (0, 20), "audio": (20, 24), "transcribe": (24, 56), "track": (56, 66),
+              "render": (66, 100)}
 
     def __init__(self, options: ClipOptions, tc: Toolchain, cfg: Settings, parent=None):
         super().__init__(parent)
@@ -352,15 +355,40 @@ class ClipWorker(QThread):
             raise ClipError("A transcrição terminou sem gerar o arquivo esperado.")
         return words_from_transcript(output)
 
+    def _track(self, source: Path, offset: float, length: float, intervals,
+               folder: Path) -> Tracking | None:
+        """Analisa onde está a pessoa; qualquer falha vira corte centralizado, nunca erro."""
+        self.progress.emit(self._label("procurando quem está em cena para acompanhar…"))
+        try:
+            track = reframe.analyze(source, offset, length,
+                                    progress=lambda share: self._stage("track", share),
+                                    cancelled=self._cancelled.is_set)
+            self._check()
+            if track is None:
+                return None
+            scaled = track.scaled_width(HEIGHT)
+            commands = reframe.crop_commands(track.samples, intervals, scaled, WIDTH, remap_time)
+            if not commands or scaled <= WIDTH:
+                return None
+            path = folder / "enquadramento.txt"
+            path.write_text(reframe.sendcmd_text(commands), encoding="utf-8")
+            return Tracking(path, commands[0][1])
+        except ClipError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - o rastreamento é opcional
+            report_exception("enquadramento automático do corte", exc)
+            self.progress.emit(self._label("não deu para acompanhar a pessoa; usando o centro…"))
+            return None
+
     def _render(self, source: Path, offset: float, length: float, intervals, subtitles: Path,
-                destination: Path) -> None:
+                destination: Path, tracking: Tracking | None = None) -> None:
         encoder = preferred_video_encoder(self.tc)
         for selected in ([encoder, ""] if encoder else [""]):
             label = "GPU" if selected else "CPU"
             self.progress.emit(self._label(f"montando o vídeo 9:16 na {label}…"))
             command = render_command(
                 self.tc.ffmpeg, source, offset, length, intervals, self.options.framing,
-                subtitles, destination, video_encoder=selected)
+                subtitles, destination, video_encoder=selected, tracking=tracking)
             code, message = self._ffmpeg(command, output_length(intervals), "render")
             if code == 0:
                 break
@@ -397,12 +425,13 @@ class ClipWorker(QThread):
         subtitles.write_text(build_ass(
             remap_words(words, intervals), total, title=clip.title,
             title_seconds=self.options.title_seconds,
-            words_per_caption=self.options.words_per_caption,
-            uppercase=self.options.uppercase), encoding="utf-8")
+            style=self.options.style), encoding="utf-8")
+        tracking = (self._track(source, offset, length, intervals, folder)
+                    if self.options.framing == "track" else None)
 
         self.options.output_dir.mkdir(parents=True, exist_ok=True)
         destination = clip_destination(self.options.output_dir, stem, self._index + 1, clip.title)
-        self._render(source, offset, length, intervals, subtitles, destination)
+        self._render(source, offset, length, intervals, subtitles, destination, tracking)
         log_event("Corte gerado: %s (%.1fs de %.1fs; %s trechos)", destination, total, length,
                   len(intervals))
         return destination

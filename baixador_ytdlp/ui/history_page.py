@@ -1,4 +1,4 @@
-"""Página 'Histórico': downloads e transcrições, cada tipo com as suas ações."""
+"""Página 'Histórico': downloads, transcrições, cortes e ferramentas, cada tipo com as suas ações."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,8 +13,24 @@ from .components import (Button, EmptyState, Headline, IconButton, ListRow, Mute
                          PageHeader, ScrollColumn)
 from .queue_page import reveal, state_badge
 
+# Ícone e cor do disco de cada tipo de item.
+BADGES = {"download": ("download", "success"), "transcription": ("captions", "accent"),
+          "clip": ("cut", "warning"), "tool": ("tools", "neutral")}
 MEDIA_SUFFIXES = {".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".flv", ".wmv",
                   ".mp3", ".m4a", ".opus", ".flac", ".wav", ".aac", ".ogg", ".m4b"}
+
+
+def summary_text(entries: list[HistoryEntry]) -> str:
+    """Contagem por tipo, só dos tipos que aparecem: "3 downloads · 1 corte"."""
+    nomes = (("download", "download", "downloads"), ("transcription", "transcrição", "transcrições"),
+             ("clip", "corte", "cortes"), ("tool", "ferramenta", "ferramentas"))
+    partes = []
+    for kind, singular, plural in nomes:
+        total = sum(1 for entry in entries if (entry.kind if entry.kind in BADGES
+                                                  else "download") == kind)
+        if total:
+            partes.append(f"{total} {singular if total == 1 else plural}")
+    return " · ".join(partes)
 
 
 class HistoryCard(ListRow):
@@ -23,17 +39,15 @@ class HistoryCard(ListRow):
 
     reopen = Signal(str)          # url, para baixar de novo
     transcribe = Signal(str)      # caminho da mídia, para legendar
+    new_clips = Signal(str)       # arquivo ou link de origem, para fazer outros cortes
     forget = Signal(object)       # HistoryEntry
 
     def __init__(self, entry: HistoryEntry, parent=None):
         super().__init__(parent, padding=(14, 11, 12, 11), spacing=12)
         self.entry = entry
 
-        transcription = entry.is_transcription
-        self.body.addWidget(
-            state_badge(self, "captions" if transcription else "download",
-                        "accent" if transcription else "success"),
-            0, Qt.AlignmentFlag.AlignVCenter)
+        icon, tone = BADGES.get(entry.kind, BADGES["download"])
+        self.body.addWidget(state_badge(self, icon, tone), 0, Qt.AlignmentFlag.AlignVCenter)
 
         texts = QVBoxLayout()
         texts.setSpacing(2)
@@ -50,6 +64,10 @@ class HistoryCard(ListRow):
         arquivo = entry.existing_file()
         if entry.is_transcription:
             tipo = f"legenda {Path(entry.path).suffix.lstrip('.').upper() or '—'}"
+        elif entry.is_clip:
+            tipo = " ".join(filter(None, ["corte vertical", entry.operation]))
+        elif entry.is_tool:
+            tipo = entry.operation or "ferramenta"
         else:
             tipo = "áudio" if entry.audio_only else (entry.container or "vídeo")
         partes = [entry.date_label, tipo, str(entry.folder)]
@@ -80,6 +98,27 @@ class HistoryCard(ListRow):
             refazer.setEnabled(bool(origem))
             refazer.clicked.connect(lambda: self.transcribe.emit(str(origem)))
             botoes.append(refazer)
+        elif entry.is_clip or entry.is_tool:
+            ver = IconButton("play", "Abrir o arquivo", self)
+            ver.setEnabled(bool(arquivo))
+            ver.clicked.connect(lambda: self._open_file(arquivo))
+            botoes.append(ver)
+
+            pode = bool(arquivo) and arquivo.suffix.lower() in MEDIA_SUFFIXES
+            legendar = IconButton("captions", "Gerar legenda deste arquivo" if pode
+                                  else "O arquivo não está mais no lugar", self)
+            legendar.setEnabled(pode)
+            legendar.clicked.connect(lambda: self.transcribe.emit(str(arquivo)))
+            botoes.append(legendar)
+
+            if entry.is_clip:
+                # Link continua valendo; arquivo, só se ainda estiver no lugar.
+                origem = entry.source if "://" in entry.source else entry.existing_source()
+                outro = IconButton("cut", "Fazer outros cortes deste vídeo" if origem
+                                   else "O vídeo de origem não está mais no lugar", self)
+                outro.setEnabled(bool(origem))
+                outro.clicked.connect(lambda: self.new_clips.emit(str(origem)))
+                botoes.append(outro)
         else:
             pode = bool(arquivo) and arquivo.suffix.lower() in MEDIA_SUFFIXES
             legendar = IconButton("captions", "Gerar legenda deste arquivo" if pode
@@ -113,6 +152,7 @@ class HistoryCard(ListRow):
 class HistoryPage(QWidget):
     reopen_requested = Signal(str)
     transcribe_requested = Signal(str)
+    clips_requested = Signal(str)
 
     def __init__(self, cfg: Settings, history: History, parent=None):
         super().__init__(parent)
@@ -127,7 +167,7 @@ class HistoryPage(QWidget):
         root.setContentsMargins(28, 20, 28, 20)
         root.setSpacing(16)
 
-        header = PageHeader("Histórico", "Tudo o que você baixou e legendou nesta máquina.", self)
+        header = PageHeader("Histórico", "Tudo o que você baixou, legendou, cortou e converteu nesta máquina.", self)
         self.summary = Muted("", header)
         self.summary.setWordWrap(False)
         header.add_action(self.summary)
@@ -138,7 +178,7 @@ class HistoryPage(QWidget):
 
         self.empty = EmptyState(
             "history", "Nada guardado ainda",
-            "O que você baixar ou transcrever aparece nesta lista, só na sua máquina.", self)
+            "O que você baixar, transcrever, cortar ou converter aparece nesta lista, só na sua máquina.", self)
         root.addWidget(self.empty, 1)
 
         self.scroll_area = ScrollColumn(self, spacing=8)
@@ -171,17 +211,11 @@ class HistoryPage(QWidget):
             card = HistoryCard(entry, self.container)
             card.reopen.connect(self.reopen_requested)
             card.transcribe.connect(self.transcribe_requested)
+            card.new_clips.connect(self.clips_requested)
             card.forget.connect(self._forget)
             self.cards.insertWidget(self.cards.count() - 1, card)
 
-        downloads = sum(1 for e in entries if not e.is_transcription)
-        legendas = len(entries) - downloads
-        partes = []
-        if downloads:
-            partes.append(f"{downloads} download{'s' if downloads > 1 else ''}")
-        if legendas:
-            partes.append(f"{legendas} transcriç{'ões' if legendas > 1 else 'ão'}")
-        self.summary.setText(" · ".join(partes))
+        self.summary.setText(summary_text(entries))
 
         self.scroll_area.setVisible(bool(entries))
         self.empty.setVisible(not entries)

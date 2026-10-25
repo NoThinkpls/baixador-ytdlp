@@ -89,9 +89,11 @@ and video tools. Free, open source, and nothing leaves your computer.
 
 - Pick a local video or paste a YouTube link and enter one or more ranges (start, end and title). Each range becomes a separate **1080x1920** MP4; from a link, only the chosen parts are downloaded.
 - **Pause removal**: Whisper times every word, and silences longer than the chosen threshold (0.4 s to 1.2 s) are cut, with a small margin so syllables are not clipped.
-- **Word-by-word captions**: 2 or 3 words at a time, with the spoken word in yellow and slightly larger, plus an **animated title** in the first 2 seconds. Framing with a blurred background (whole video) or a center crop (full screen).
+- **Word-by-word captions**: 1 to 4 words at a time, with the spoken word highlighted and slightly larger, plus an **animated title** in the first 2 seconds. Font, size, text color, highlight color and caption height are set on the page itself, with a preview where you can drag the caption up or down; the choices are saved.
+- **Follow the person (automatic)**: on a landscape video, the 9:16 window zooms in and follows whoever is on screen, like CapCut's auto reframe. The YuNet face detector (OpenCV Zoo, MIT) runs on the onnxruntime the app already ships; without a face, the app follows the motion. A "virtual camera" with a dead zone and a speed limit avoids jitter, along the lines of Google's AutoFlip. Blurred background (whole video) and center crop (full screen) are still available.
 - Uses only the FFmpeg and Whisper the app already ships: no Node.js or embedded browser. Transcription uses CUDA on NVIDIA and the CPU otherwise; rendering tries NVENC/AMF/Quick Sync and falls back to the CPU.
-- Limits: up to 20 clips at a time and 10 minutes per clip. Captions use the system Arial font. From a link, the range is downloaded without re-encoding and the app compensates the extra lead-in up to the keyframe; rarely the start may shift by a fraction of a second.
+- Every finished clip goes to **History**, with shortcuts to open it, caption it or make more clips from the same video. Results from the Tools tab and videos with embedded captions go there too.
+- Limits: up to 20 clips at a time and 10 minutes per clip. The chosen font must be installed on the computer. "Follow the person" pans horizontally (no variable zoom) and, if the analysis fails, the clip is centered. From a link, the range is downloaded without re-encoding and the app compensates the extra lead-in up to the keyframe; rarely the start may shift by a fraction of a second.
 
 ### Interface
 

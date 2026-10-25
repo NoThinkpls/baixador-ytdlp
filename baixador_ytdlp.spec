@@ -29,7 +29,8 @@ a = Analysis(
     pathex=[],
     binaries=(fw_binaries + ct_binaries + av_binaries + cudart_binaries
               + cublas_binaries + cudnn_binaries),
-    datas=([('assets/icon.ico', 'assets'), ('THIRD_PARTY_NOTICES.md', '.')]
+    datas=([('assets/icon.ico', 'assets'), ('assets/models', 'assets/models'),
+            ('THIRD_PARTY_NOTICES.md', '.')]
            + LICENSE_DATAS
            + fw_datas + ct_datas + av_datas
            + cudart_datas + cublas_datas + cudnn_datas + metadata_datas),

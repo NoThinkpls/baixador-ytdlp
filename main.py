@@ -218,6 +218,17 @@ def _run_self_test(report_path: Path) -> int:
                 with lock_type(str(Path(temporary) / f"{lock_type.__name__}.lock"), timeout=5):
                     pass
 
+        checkpoint("reframe_model")
+        # Detector de rostos do "seguir a pessoa" nos cortes: precisa ir no pacote e abrir
+        # no onnxruntime que o Whisper já leva.
+        import numpy
+
+        from baixador_ytdlp import reframe
+        model = reframe.model_path()
+        if model is None:
+            raise RuntimeError(f"{reframe.MODEL_NAME} não foi incluído no pacote.")
+        reframe.FaceDetector(model).centers(numpy.zeros((360, 640, 3), dtype=numpy.uint8))
+
         checkpoint("decode_audio")
         with tempfile.TemporaryDirectory(prefix="baixador-self-test-") as temporary:
             wav_path = Path(temporary) / "silence.wav"

@@ -10,7 +10,7 @@ from PySide6.QtGui import QAction, QDesktopServices, QGuiApplication, QIcon, QKe
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSizePolicy, QSystemTrayIcon
 
 from ..config import APP_NAME, APP_VERSION, Settings
-from ..history import DOWNLOAD, TRANSCRIPTION, History, HistoryEntry
+from ..history import CLIP, DOWNLOAD, TOOL, TRANSCRIPTION, History, HistoryEntry
 from ..taskbar import TaskbarProgress
 from ..tools import ToolManager
 from ..updater import AppUpdater, ReleaseInfo
@@ -402,15 +402,20 @@ class MainWindow(AppShell):
         self.queue.overall_progress.connect(self._on_overall_progress)
         self.history_page.reopen_requested.connect(self._on_reopen)
         self.history_page.transcribe_requested.connect(self._on_transcribe)
+        self.history_page.clips_requested.connect(self._on_new_clips)
         self.transcription.transcription_finished.connect(self._on_transcribed)
         self.transcription.embedded_finished.connect(
             lambda path: self._tray_message("Vídeo legendado concluído", Path(path).name)
         )
+        self.transcription.embedded_finished.connect(
+            lambda path: self._on_tool_finished(path, "", "Legenda incorporada ao vídeo"))
         self.transcription.taskbar_progress.connect(self._on_transcription_progress)
         self.media_tools.taskbar_progress.connect(self._on_media_progress)
         self.media_tools.operation_finished.connect(
             lambda path: self._tray_message("Processamento concluído", Path(path).name)
         )
+        self.media_tools.tool_finished.connect(self._on_tool_finished)
+        self.clips.clip_finished.connect(self._on_clip_finished)
         self.clips.taskbar_progress.connect(self._on_clips_progress)
         self.clips.operation_finished.connect(
             lambda path: self._tray_message("Cortes concluídos", Path(path).name)
@@ -866,6 +871,42 @@ class MainWindow(AppShell):
             kind=TRANSCRIPTION,
         ))
         self.history_page.invalidate()
+
+    def _on_clip_finished(self, output: str, source: str, title: str, span: str) -> None:
+        """Cada corte entra no histórico assim que fica pronto (não só no fim do lote)."""
+        if not self.cfg.history_enabled or not output:
+            return
+        corte = Path(output)
+        self.history.add(HistoryEntry(
+            title=title.strip() or corte.stem,
+            url=source if "://" in source else "",
+            path=str(corte),
+            folder_path=str(corte.parent),
+            source=source,
+            container=corte.suffix.lstrip("."),
+            operation=span,
+            kind=CLIP,
+        ))
+        self.history_page.invalidate()
+
+    def _on_tool_finished(self, output: str, source: str, tool: str) -> None:
+        if not self.cfg.history_enabled or not output:
+            return
+        resultado = Path(output)
+        self.history.add(HistoryEntry(
+            title=resultado.stem,
+            path=str(resultado),
+            folder_path=str(resultado.parent),
+            source=source,
+            container=resultado.suffix.lstrip("."),
+            operation=tool,
+            kind=TOOL,
+        ))
+        self.history_page.invalidate()
+
+    def _on_new_clips(self, source: str) -> None:
+        self.clips.set_media(source)
+        self.switchTo(self.clips)
 
     def _on_transcribe(self, path: str) -> None:
         self.transcription.set_media(path)

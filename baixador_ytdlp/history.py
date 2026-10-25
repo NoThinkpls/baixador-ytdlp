@@ -1,4 +1,4 @@
-"""Histórico dos downloads concluídos.
+"""Histórico do que o app produziu: downloads, legendas, cortes e ferramentas.
 
 Arquivo pequeno em JSON, gravado de forma atômica e com teto de itens. É lido uma
 vez na abertura e mantido em memória — a página de histórico nunca toca no disco
@@ -16,6 +16,8 @@ from .config import HISTORY_PATH
 
 DOWNLOAD = "download"
 TRANSCRIPTION = "transcription"
+CLIP = "clip"                     # corte vertical da página Cortes
+TOOL = "tool"                     # resultado de uma ferramenta da página Ferramentas
 
 
 @dataclass
@@ -27,9 +29,10 @@ class HistoryEntry:
     audio_only: bool = False
     container: str = ""
     when: float = field(default_factory=time.time)
-    kind: str = DOWNLOAD          # download | transcription
+    kind: str = DOWNLOAD          # download | transcription | clip | tool
     folder_path: str = ""         # pasta de saída, guardada à parte do arquivo
-    source: str = ""              # transcrição: a mídia que a originou
+    source: str = ""              # transcrição, corte e ferramenta: a mídia (ou link) de origem
+    operation: str = ""           # corte: o intervalo; ferramenta: o nome dela
 
     @property
     def date_label(self) -> str:
@@ -38,6 +41,14 @@ class HistoryEntry:
     @property
     def is_transcription(self) -> bool:
         return self.kind == TRANSCRIPTION
+
+    @property
+    def is_clip(self) -> bool:
+        return self.kind == CLIP
+
+    @property
+    def is_tool(self) -> bool:
+        return self.kind == TOOL
 
     @property
     def folder(self) -> Path:
@@ -59,8 +70,8 @@ class HistoryEntry:
             return None
 
     def existing_source(self) -> Path | None:
-        """A mídia de origem de uma transcrição, se ainda existir."""
-        if not self.source:
+        """A mídia de origem (transcrição, corte, ferramenta), se ainda existir."""
+        if not self.source or "://" in self.source:
             return None
         target = Path(self.source)
         try:
@@ -77,7 +88,7 @@ class HistoryEntry:
 
 
 class History:
-    """Lista dos downloads concluídos, do mais recente para o mais antigo."""
+    """Lista do que foi concluído, do mais recente para o mais antigo."""
 
     def __init__(self, path: Path = HISTORY_PATH, limit: int = 200):
         self.path = path

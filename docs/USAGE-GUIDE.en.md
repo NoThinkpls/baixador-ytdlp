@@ -46,7 +46,11 @@ The **Tools** page works locally with FFmpeg: trim, extract MP3, remux without r
 
 ## Vertical clips
 
-The **Clips** page turns parts of a video into vertical videos for Shorts, Reels and TikTok. Pick a file or paste a YouTube link (only the ranges are downloaded), enter the start and end of each clip (`mm:ss` or `hh:mm:ss`) with an optional title, choose the framing (blurred background or center crop), pause removal, words per caption and casing, then click **Create clips**. Each clip is saved as `name_corte01_title.mp4`; finished clips are kept even if you cancel or a later clip fails.
+The **Clips** page turns parts of a video into vertical videos for Shorts, Reels and TikTok. Pick a file or paste a YouTube link (only the ranges are downloaded), enter the start and end of each clip (`mm:ss` or `hh:mm:ss`) with an optional title, choose the framing and pause removal, then set up the caption and click **Create clips**. Each clip is saved as `name_corte01_title.mp4`; finished clips are kept even if you cancel or a later clip fails.
+
+- **Follow the person — automatic** zooms in and follows whoever is on screen, like CapCut's auto reframe: the app looks for faces a few frames per second and, when there is none, follows the motion. The camera only moves when the person leaves the center, and it moves slowly, without jitter. **Blurred background** shows the whole frame; **Center crop** fills the screen with the middle of the video.
+- In **Caption**, choose the font, size, text color, spoken-word color, height (as % of the screen), words per caption (1 to 4) and casing. The preview shows the result; drag the caption in it to move it up or down. Your choices are saved for the next clips.
+- Every finished clip shows up in **History**, with buttons to open the file, show it in the folder, caption it and make more clips from the same video. Results from the **Tools** tab and videos with embedded captions go to History too.
 
 ## Tray and background work
 
