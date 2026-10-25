@@ -255,6 +255,13 @@ class Settings:
     clips_position: int = 70              # centro da legenda em % da altura
     clips_words: int = 3
     clips_uppercase: bool = True
+    clips_animation: str = "highlight"    # highlight | color | karaoke | word | pop | none
+    clips_background: bool = False        # caixa escura atrás da legenda
+    clips_title_seconds: float = 2.0      # 0 = o corte inteiro
+    clips_zoom_cuts: bool = False
+    clips_progress_bar: bool = False
+    clips_normalize_audio: bool = False
+    clips_save_srt: bool = False
     window_geometry: str = ""        # legado (blob do Qt); ignorado desde a 1.8.1
     window_rect: list[int] = field(default_factory=list)  # x, y, largura, altura
     window_maximized: bool = False

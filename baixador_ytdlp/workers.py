@@ -16,8 +16,9 @@ from PySide6.QtCore import QThread, Signal
 
 from . import reframe
 from .clips import (HEIGHT, WIDTH, ClipError, ClipOptions, ClipRange, Tracking, audio_command,
-                    build_ass, clamp_range, clip_destination, is_url, keep_intervals,
-                    output_length, remap_time, remap_words, render_command, section_offset,
+                    build_ass, build_srt, clamp_range, clip_destination, is_url, keep_intervals,
+                    output_length, remap_time, remap_words, render_command,
+                    require_video_and_audio, section_offset, stream_kinds,
                     words_from_transcript)
 from .config import Settings
 from .diagnostics import get_logger, log_event, report_exception
@@ -28,7 +29,8 @@ from .media_tools import (MediaToolError, MediaToolOptions, build_command, media
                           operation_duration, preferred_video_encoder, progress_seconds,
                           resolve_options, uses_gpu)
 from .parallel_section import create_runner
-from .processes import attach_pid_to_kill_job, popen_isolated, release_job, terminate_process_tree
+from .processes import (CREATE_NO_WINDOW, attach_pid_to_kill_job, popen_isolated, release_job,
+                        terminate_process_tree)
 from .probe import friendly_error, playlist_entries, probe
 from .security import validate_media_url
 from .tools import ToolManager, Toolchain, USER_AGENT, _verified_ssl_context
@@ -387,9 +389,13 @@ class ClipWorker(QThread):
         for selected in ([encoder, ""] if encoder else [""]):
             label = "GPU" if selected else "CPU"
             self.progress.emit(self._label(f"montando o vídeo 9:16 na {label}…"))
+            options = self.options
             command = render_command(
-                self.tc.ffmpeg, source, offset, length, intervals, self.options.framing,
-                subtitles, destination, video_encoder=selected, tracking=tracking)
+                self.tc.ffmpeg, source, offset, length, intervals, options.framing,
+                subtitles, destination, video_encoder=selected, tracking=tracking,
+                zoom_cuts=options.zoom_cuts and options.remove_pauses,
+                progress_colour=options.style.highlight_color if options.progress_bar else "",
+                normalize_audio=options.normalize_audio)
             code, message = self._ffmpeg(command, output_length(intervals), "render")
             if code == 0:
                 break
@@ -401,6 +407,17 @@ class ClipWorker(QThread):
         if not destination.is_file():
             raise ClipError("O FFmpeg terminou sem gerar o corte.")
 
+    def _streams(self, source: Path) -> set[str]:
+        try:
+            result = subprocess.run(
+                [str(self.tc.ffprobe), "-v", "error", "-show_entries",
+                 "stream=codec_type:stream_disposition=attached_pic", "-of", "json", str(source)],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+                check=False, creationflags=CREATE_NO_WINDOW)
+        except (OSError, subprocess.SubprocessError):
+            return {"video", "audio"}   # sem ffprobe, o FFmpeg dirá o que faltar
+        return stream_kinds(result.stdout) if result.returncode == 0 else set()
+
     def _make_clip(self, clip: ClipRange, folder: Path) -> Path:
         if is_url(self.options.source):
             source, offset, length = self._download(clip, folder)
@@ -409,6 +426,8 @@ class ClipWorker(QThread):
             source = Path(self.options.source)
             clip = clamp_range(clip, media_duration(source, self.tc))
             offset, length, stem = clip.start, clip.length, source.stem
+        # Antes de transcrever: só áudio ou vídeo mudo falhavam minutos depois, no FFmpeg.
+        require_video_and_audio(self._streams(source))
         self._check()
 
         self.progress.emit(self._label("separando o áudio do trecho…"))
@@ -432,7 +451,16 @@ class ClipWorker(QThread):
 
         self.options.output_dir.mkdir(parents=True, exist_ok=True)
         destination = clip_destination(self.options.output_dir, stem, self._index + 1, clip.title)
-        self._render(source, offset, length, intervals, subtitles, destination, tracking)
+        try:
+            self._render(source, offset, length, intervals, subtitles, destination, tracking)
+        except BaseException:
+            # Cancelado ou com erro: não deixa um MP4 pela metade na pasta da pessoa.
+            destination.unlink(missing_ok=True)
+            raise
+        if self.options.save_srt:
+            destination.with_suffix(".srt").write_text(
+                build_srt(remap_words(words, intervals), total, self.options.style),
+                encoding="utf-8")
         log_event("Corte gerado: %s (%.1fs de %.1fs; %s trechos)", destination, total, length,
                   len(intervals))
         return destination

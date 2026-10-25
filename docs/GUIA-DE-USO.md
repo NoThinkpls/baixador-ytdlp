@@ -64,7 +64,7 @@ O formato ou a extensão do resultado vale pelo nome escolhido em "Onde salvar":
 
 A página **Cortes** transforma trechos de um vídeo em vídeos verticais prontos para Shorts, Reels e TikTok:
 
-1. Em **Vídeo de origem**, escolha um arquivo ou cole um link do YouTube (só os trechos são baixados).
+1. Em **Vídeo de origem**, escolha um arquivo ou cole um link do YouTube (só os trechos são baixados). Logo abaixo, em **Salvar cortes em**, confira a pasta de destino.
 2. Em **Cortes**, informe início e fim de cada corte (`mm:ss` ou `hh:mm:ss`) e, se quiser, um título. Use **Adicionar corte** para vários de uma vez (até 20).
 3. Em **Enquadramento**, escolha como o vídeo horizontal vira vertical:
    - **Seguir a pessoa — automático**: aproxima e acompanha quem está em cena, como o reenquadrar do CapCut. O app procura rostos alguns quadros por segundo e, quando não acha (pessoa de costas ou longe), segue o movimento. A câmera só se mexe quando a pessoa sai do centro e anda devagar, sem tremer.
@@ -72,8 +72,9 @@ A página **Cortes** transforma trechos de um vídeo em vídeos verticais pronto
    - **Cortar no centro**: preenche a tela com o meio do vídeo.
 
    Ali também ficam a remoção de pausas e a pausa mínima.
-4. Em **Legenda**, escolha fonte, tamanho, cor do texto, cor da palavra falada, altura (em % da tela), quantas palavras aparecem por vez (1 a 4) e se ficam em maiúsculas. A prévia ao lado mostra o resultado; arraste a legenda nela para subir ou descer. As escolhas ficam salvas para os próximos cortes.
-5. Em **Transcrição**, confira o idioma e o modelo Whisper (os mesmos da aba Legendar) e clique em **Criar cortes**.
+4. Em **Legenda**, escolha a animação (destaque, só cor, karaokê, uma palavra por vez, grupo com pulo ou sem destaque), fonte, tamanho, cor do texto, cor da palavra falada, altura (em % da tela), quantas palavras aparecem por vez (1 a 4) se ficam em maiúsculas e se ganham uma caixa escura atrás. A prévia ao lado mostra o resultado sobre um quadro do próprio vídeo; arraste a legenda nela para subir ou descer. As escolhas ficam salvas para os próximos cortes.
+5. Em **Acabamento**, escolha quanto tempo o título fica na tela e, se quiser, ligue o zoom nas emendas, a barra de progresso, o volume equilibrado e a cópia da legenda em `.srt`.
+6. Em **Transcrição**, confira o idioma e o modelo Whisper (os mesmos da aba Legendar) e clique em **Criar cortes**.
 
 Cada corte é salvo como `nome_corte01_titulo.mp4` na pasta escolhida. Os cortes prontos ficam salvos mesmo se você cancelar ou se um corte seguinte falhar. O título aparece animado nos 2 primeiros segundos, numa caixa da cor de destaque.
 

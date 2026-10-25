@@ -25,6 +25,15 @@ Nova página **Cortes**: vídeos verticais com legenda palavra a palavra.
   aceleração e frenagem suaves quando ela anda e assenta quando ela para (mesma ideia do AutoFlip
   do Google). A posição muda a cada quadro, de pixel em pixel, sem trancos. Se a análise falhar, o corte sai centralizado. Continuam disponíveis o fundo
   desfocado e o corte no centro.
+- Legenda com seis animações (destaque, só cor, karaokê, uma palavra por vez, grupo com pulo e
+  sem destaque) e caixa escura opcional atrás do texto. A prévia usa um quadro do próprio vídeo.
+- Acabamento opcional: duração do título (2, 3, 5 s ou o corte inteiro), zoom alternado nas
+  emendas das pausas removidas, barra de progresso, volume em -14 LUFS e legenda também em `.srt`.
+- A pasta de destino fica logo abaixo do vídeo de origem, e cada corte mostra a duração (ou o que
+  está errado) enquanto é digitado.
+- Arquivos só de áudio e vídeos sem som são recusados antes da transcrição, com o motivo; vídeos
+  de celular com marca de rotação são tratados como verticais no "seguir a pessoa"; um corte
+  cancelado não deixa MP4 pela metade; o título desce quando a legenda está no alto.
 - Histórico: cada corte pronto, cada resultado da aba Ferramentas e cada vídeo com legenda
   incorporada entram na aba **Histórico**, com ações para abrir, legendar e fazer outros cortes do
   mesmo vídeo.

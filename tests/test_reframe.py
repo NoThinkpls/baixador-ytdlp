@@ -195,6 +195,17 @@ class SeguirPessoaRealTests(unittest.TestCase):
         self.assertGreater(len(seen), 85)
         self.assertLessEqual(max(off), 1)     # quadro certo; ±1 é o arredondamento da cor
 
+    def test_video_de_celular_girado_e_tratado_como_vertical(self) -> None:
+        # Gravado deitado (1280x720) com marca de rotação: na tela, e no corte, é vertical.
+        with tempfile.TemporaryDirectory() as tmp:
+            plain, rotated = Path(tmp) / "deitado.mp4", Path(tmp) / "celular.mp4"
+            subprocess.run([FFMPEG, "-v", "error", "-f", "lavfi", "-i",
+                            "testsrc2=size=1280x720:rate=25", "-t", "2", "-c:v", "libx264",
+                            "-preset", "ultrafast", str(plain)], check=True)
+            subprocess.run([FFMPEG, "-v", "error", "-display_rotation", "90", "-i", str(plain),
+                            "-c", "copy", str(rotated)], check=True)
+            self.assertIsNone(reframe.analyze(rotated, 0.0, 2.0))
+
     def test_corte_final_mostra_o_objeto_no_fim(self) -> None:
         from baixador_ytdlp.config import Settings
         from baixador_ytdlp.workers import ClipWorker, TranscriptionWorker

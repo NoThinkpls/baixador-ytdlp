@@ -204,6 +204,16 @@ class Track:
         return int(self.width * height / self.height) // 2 * 2
 
 
+def quarter_turns(container, stream) -> int:
+    """Quartos de volta (anti-horário) que o player aplica ao exibir; 0 sem rotação."""
+    try:
+        for frame in container.decode(stream):
+            return round(float(getattr(frame, "rotation", 0) or 0) / 90) % 4
+    except Exception:  # noqa: BLE001 - sem rotação legível, segue como está
+        return 0
+    return 0
+
+
 def analyze(source: Path, offset: float, length: float, *,
             progress: Callable[[float], None] | None = None,
             cancelled: Callable[[], bool] | None = None) -> Track | None:
@@ -220,12 +230,16 @@ def analyze(source: Path, offset: float, length: float, *,
     with av.open(str(source)) as container:
         stream = container.streams.video[0]
         stream.thread_type = "AUTO"
-        width, height = stream.codec_context.width, stream.codec_context.height
+        coded_w, coded_h = stream.codec_context.width, stream.codec_context.height
         rate = float(stream.average_rate or 0) or DEFAULT_FPS
+        # Vídeo de celular costuma vir deitado com uma marca de rotação; o FFmpeg gira na
+        # montagem, então a análise precisa ver o quadro já em pé, como ele.
+        turns = quarter_turns(container, stream)
+        width, height = (coded_h, coded_w) if turns % 2 else (coded_w, coded_h)
         if not width or not height or width / height <= 9 / 16 + 0.01:
             return None   # já é vertical: não há para onde mover a janela
         scale = INPUT_SIZE / max(width, height)
-        small = (max(2, int(width * scale) // 2 * 2), max(2, int(height * scale) // 2 * 2))
+        small = (max(2, int(coded_w * scale) // 2 * 2), max(2, int(coded_h * scale) // 2 * 2))
         container.seek(int(max(0.0, offset - 1.0) * av.time_base), any_frame=False, backward=True)
         next_sample = 0.0
         for frame in container.decode(stream):
@@ -240,6 +254,8 @@ def analyze(source: Path, offset: float, length: float, *,
                 break
             next_sample = max(next_sample + 1 / SAMPLE_FPS, moment + 0.5 / SAMPLE_FPS)
             bgr = frame.to_ndarray(format="bgr24", width=small[0], height=small[1])
+            if turns:
+                bgr = np.ascontiguousarray(np.rot90(bgr, turns))
             gray = bgr[::4, ::4].mean(axis=2).astype(np.uint8)
             face = pick_face(detector.centers(bgr), previous_face) if detector else None
             if face is not None:

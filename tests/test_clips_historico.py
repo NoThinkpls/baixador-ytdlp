@@ -96,6 +96,56 @@ class PaginaCortesTests(unittest.TestCase):
             options = page._options()
         self.assertEqual(options.style.position, 30)
 
+    def test_destino_logo_abaixo_da_origem(self) -> None:
+        page, _cfg = self._page()
+        page.resize(900, 2000)
+        page.show()
+        QApplication.processEvents()
+        source_y = page.source_edit.mapTo(page, page.source_edit.rect().topLeft()).y()
+        output_y = page.output_edit.mapTo(page, page.output_edit.rect().topLeft()).y()
+        ranges_y = page.rows[0].mapTo(page, page.rows[0].rect().topLeft()).y()
+        page.hide()
+        self.assertLess(source_y, output_y)
+        self.assertLess(output_y, ranges_y)
+
+    def test_duracao_ou_erro_de_cada_corte_enquanto_digita(self) -> None:
+        page, _cfg = self._page()
+        row = page.rows[0]
+        row.start.setText("01:30")
+        row.end.setText("02:15")
+        self.assertEqual(row.length.text(), "00:45")
+        row.end.setText("01:00")
+        self.assertEqual(row.length.text(), "inválido")
+        self.assertIn("posterior", row.length.toolTip())
+
+    def test_opcoes_de_acabamento_e_animacao_salvas(self) -> None:
+        page, cfg = self._page(clips_animation="none", clips_background=True,
+                               clips_zoom_cuts=True, clips_title_seconds=0.0)
+        self.assertEqual(page.caption_style().animation, "none")
+        self.assertTrue(page.caption_style().background)
+        self.assertEqual(page.title_combo.currentData(), 0.0)
+        page.progress_switch.setChecked(True)
+        page.animation_combo.setCurrentIndex(page.animation_combo.findData("karaoke"))
+        self.assertTrue(cfg.clips_progress_bar)
+        self.assertEqual(cfg.clips_animation, "karaoke")
+        with tempfile.TemporaryDirectory() as tmp:
+            page.source_edit.setText("https://www.youtube.com/watch?v=abc")
+            page.output_edit.setText(tmp)
+            page.rows[0].start.setText("00:10")
+            page.rows[0].end.setText("00:40")
+            options = page._options()
+        self.assertTrue(options.zoom_cuts and options.progress_bar)
+        self.assertEqual((options.title_seconds, options.style.animation), (0.0, "karaoke"))
+
+    def test_zoom_some_sem_remover_pausas(self) -> None:
+        page, _cfg = self._page()
+        page.show()
+        page.pauses_switch.setChecked(False)
+        self.assertFalse(page.zoom_row.isVisible())
+        page.pauses_switch.setChecked(True)
+        self.assertTrue(page.zoom_row.isVisible())
+        page.hide()
+
     def test_cada_corte_pronto_avisa_o_historico(self) -> None:
         page, _cfg = self._page()
         page._running = ClipOptions(source="/v/aula.mp4", output_dir=Path("/v"),
