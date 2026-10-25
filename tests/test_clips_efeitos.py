@@ -120,7 +120,8 @@ class GrafoTests(unittest.TestCase):
                                  sounds={"whoosh": Path("/t/w.wav"), "pop": Path("/t/p.wav")},
                                  effects=[Effect(1.0, "pop")])
         inputs = [command[i + 1] for i, arg in enumerate(command) if arg == "-i"]
-        self.assertEqual(inputs, ["/a/origem.mp4", "/t/p.wav", "/t/w.wav"])
+        self.assertEqual(inputs, [str(Path(path)) for path in
+                                  ("/a/origem.mp4", "/t/p.wav", "/t/w.wav")])
 
 
 @unittest.skipUnless(FFMPEG and FFPROBE, "FFmpeg não instalado")
