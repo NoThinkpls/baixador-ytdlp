@@ -3,6 +3,33 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.14.1] - 2026-10-25
+
+### Adicionado
+
+- Cortes: **Efeitos sonoros automáticos** (em Acabamento). Um "whoosh" entra nas emendas em que a
+  fala muda de assunto (pausa removida de 1 s ou mais) e um "pop" nas palavras ditas com mais força
+  (6 dB acima da mediana do corte, ou terminadas em "!"). Nunca dois whooshes a menos de 4 s, no
+  máximo uma ênfase a cada 7 s e nada colado no começo ou no fim. Os sons são sintetizados pelo
+  próprio app: nenhum arquivo de terceiros nem licença extra.
+- Cortes: **Zoom na ênfase**, uma aproximação rápida (115%) na palavra enfatizada, que pode ser
+  ligada junto ou separada dos sons.
+- Atualização: a release passa a publicar no `SHA256SUMS.txt` o hash do executável principal de
+  cada plataforma. Na mesma versão, se o executável instalado não conferir (corrompido, alterado ou
+  de outra compilação), a faixa inferior oferece **Reinstalar** a versão oficial do GitHub, sem a
+  opção de pular.
+
+### Corrigido
+
+- macOS: o `Info.plist` do app dizia versão 0.0.0 (visível em "Obter Informações"); agora traz a
+  versão real.
+
+### Observação
+
+- Cópias do app no Mac até a 1.13.7 tinham a checagem de atualização desligada no código e sempre
+  respondem "já está na versão mais recente". Nelas é preciso instalar a versão nova manualmente
+  uma vez (DMG da página de releases); a partir da 1.13.8 a atualização pelo app funciona.
+
 ## [1.14.0] - 2026-10-25
 
 Nova página **Cortes**: vídeos verticais com legenda palavra a palavra.

@@ -73,7 +73,7 @@ A página **Cortes** transforma trechos de um vídeo em vídeos verticais pronto
 
    Ali também ficam a remoção de pausas e a pausa mínima.
 4. Em **Legenda**, escolha a animação (destaque, só cor, karaokê, uma palavra por vez, grupo com pulo ou sem destaque), fonte, tamanho, cor do texto, cor da palavra falada, altura (em % da tela), quantas palavras aparecem por vez (1 a 4) se ficam em maiúsculas e se ganham uma caixa escura atrás. A prévia ao lado mostra o resultado sobre um quadro do próprio vídeo; arraste a legenda nela para subir ou descer. As escolhas ficam salvas para os próximos cortes.
-5. Em **Acabamento**, escolha quanto tempo o título fica na tela e, se quiser, ligue o zoom nas emendas, a barra de progresso, o volume equilibrado e a cópia da legenda em `.srt`.
+5. Em **Acabamento**, escolha quanto tempo o título fica na tela e, se quiser, ligue o zoom nas emendas, os efeitos sonoros automáticos (whoosh nas trocas de assunto e pop nas palavras ditas com mais força), o zoom na ênfase, a barra de progresso, o volume equilibrado e a cópia da legenda em `.srt`.
 6. Em **Transcrição**, confira o idioma e o modelo Whisper (os mesmos da aba Legendar) e clique em **Criar cortes**.
 
 Cada corte é salvo como `nome_corte01_titulo.mp4` na pasta escolhida. Os cortes prontos ficam salvos mesmo se você cancelar ou se um corte seguinte falhar. O título aparece animado nos 2 primeiros segundos, numa caixa da cor de destaque.
@@ -86,7 +86,7 @@ Em **Configurações → Comportamento**, escolha se conclusões devem gerar not
 
 ## Atualizações
 
-Em **Configurações → Nova versão do aplicativo**, você vê a última checagem e pode verificar manualmente (a checagem ao abrir pode ser desligada). O botão **Verificar componentes** consulta yt-dlp, FFmpeg e Deno: o FFmpeg só é baixado de novo quando sai um ramo estável mais novo, não a cada checagem. No Windows, quando há uma versão nova, a faixa inferior oferece atualizar ou dispensar o aviso. O instalador é conferido com SHA-256 antes de ser aberto.
+Em **Configurações → Nova versão do aplicativo**, você vê a última checagem e pode verificar manualmente (a checagem ao abrir pode ser desligada). O botão **Verificar componentes** consulta yt-dlp, FFmpeg e Deno: o FFmpeg só é baixado de novo quando sai um ramo estável mais novo, não a cada checagem. No Windows, quando há uma versão nova, a faixa inferior oferece atualizar ou dispensar o aviso. O instalador é conferido com SHA-256 antes de ser aberto. A checagem também confere o hash do próprio executável com o publicado na release: se a versão for a mesma mas o arquivo não conferir (corrompido ou alterado), a faixa oferece **Reinstalar** a versão oficial.
 
 ## Quando um site para de funcionar
 

@@ -581,6 +581,19 @@ class ClipsPage(QWidget):
             "Zoom nas emendas",
             "Alterna uma leve aproximação a cada pausa removida: o salto vira um corte de "
             "câmera, como nos vídeos de quem edita à mão.", self.zoom_switch, group))
+        self.sfx_switch = Switch(group)
+        self.sfx_switch.setChecked(bool(getattr(cfg, "clips_sound_effects", False)))
+        group.add_row(SettingRow(
+            "Efeitos sonoros automáticos",
+            "Um \"whoosh\" quando a fala muda de assunto (pausa longa removida) e um "
+            "\"pop\" nas palavras ditas com mais força. Com distância mínima entre eles, "
+            "para não poluir.", self.sfx_switch, group))
+        self.punch_switch = Switch(group)
+        self.punch_switch.setChecked(bool(getattr(cfg, "clips_emphasis_zoom", False)))
+        group.add_row(SettingRow(
+            "Zoom na ênfase",
+            "Aproxima rápido a imagem na palavra dita com mais força, no máximo uma vez a "
+            "cada 7 segundos.", self.punch_switch, group))
         self.progress_switch = Switch(group)
         self.progress_switch.setChecked(bool(getattr(cfg, "clips_progress_bar", False)))
         group.add_row(SettingRow(
@@ -600,8 +613,8 @@ class ClipsPage(QWidget):
             "Um arquivo ao lado de cada corte, para enviar como legenda separada.",
             self.srt_switch, group))
         self.title_combo.currentIndexChanged.connect(self._save_style)
-        for switch in (self.zoom_switch, self.progress_switch, self.loudness_switch,
-                       self.srt_switch):
+        for switch in (self.zoom_switch, self.sfx_switch, self.punch_switch,
+                       self.progress_switch, self.loudness_switch, self.srt_switch):
             switch.toggled.connect(self._save_style)
         group.set_row_visible(self.zoom_row, self.pauses_switch.isChecked())
         return group
@@ -798,6 +811,8 @@ class ClipsPage(QWidget):
         cfg.clips_title_seconds = float(self.title_combo.currentData() or 0.0)
         cfg.clips_zoom_cuts = self.zoom_switch.isChecked()
         cfg.clips_progress_bar = self.progress_switch.isChecked()
+        cfg.clips_sound_effects = self.sfx_switch.isChecked()
+        cfg.clips_emphasis_zoom = self.punch_switch.isChecked()
         cfg.clips_normalize_audio = self.loudness_switch.isChecked()
         cfg.clips_save_srt = self.srt_switch.isChecked()
         cfg.save()
@@ -899,6 +914,8 @@ class ClipsPage(QWidget):
             title_seconds=float(self.title_combo.currentData() or 0.0),
             zoom_cuts=self.zoom_switch.isChecked(),
             progress_bar=self.progress_switch.isChecked(),
+            sound_effects=self.sfx_switch.isChecked(),
+            emphasis_zoom=self.punch_switch.isChecked(),
             normalize_audio=self.loudness_switch.isChecked(),
             save_srt=self.srt_switch.isChecked(),
             language=str(self.language_combo.currentData() or "pt"),

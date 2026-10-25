@@ -198,7 +198,7 @@ class WorkerRealTests(unittest.TestCase):
                             "ultrafast", "-c:a", "aac", str(source)], check=True)
 
             def render_and_cancel(self, source, offset, length, intervals, subtitles,
-                                  destination, tracking=None):
+                                  destination, tracking=None, *_efeitos):
                 destination.write_bytes(b"metade")
                 self._cancelled.set()
                 self._check()

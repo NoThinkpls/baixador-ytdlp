@@ -284,6 +284,10 @@ jobs:
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
             "$hash  $($_.Name)" | Tee-Object -Append dist\installer\SHA256SUMS.txt
           }
+          # Hash do executável instalado: o app compara com ele para oferecer a
+          # reinstalação quando a cópia local não confere com a versão publicada.
+          $app = (Get-FileHash 'dist\baixador-ytdlp\baixador-ytdlp.exe' -Algorithm SHA256).Hash
+          "$app  app-windows-baixador-ytdlp.exe" | Tee-Object -Append dist\installer\SHA256SUMS.txt
 
       - name: Publicar o instalador
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -398,6 +402,12 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLName string com.nothinkpls.baixador-ytdlp" "$plist"
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$plist"
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string baixador" "$plist"
+          # Sem isto o "Obter Informações" do Finder mostrava a versão 0.0.0.
+          version="$(python -c "import ast,pathlib; t=ast.parse(pathlib.Path('baixador_ytdlp/config.py').read_text(encoding='utf-8')); print(next(n.value.value for n in t.body if isinstance(n,ast.Assign) and any(isinstance(x,ast.Name) and x.id=='APP_VERSION' for x in n.targets)))")"
+          test -n "$version"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $version" "$plist" \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $version" "$plist"
 
       - name: Assinar o bundle (ad-hoc) e validar a assinatura
         run: |
@@ -488,6 +498,10 @@ jobs:
             cp "$dmg" dist/installer/baixador-ytdlp-macos-arm64.dmg
           fi
           shasum -a 256 dist/installer/*.dmg dist/installer/*.zip > dist/installer/SHA256SUMS-macos.txt
+          # Executável já assinado: é o mesmo que fica no .app depois de instalado.
+          printf '%s  app-macos-arm64-baixador-ytdlp\n' \
+            "$(shasum -a 256 "$app/Contents/MacOS/baixador-ytdlp" | cut -d' ' -f1)" \
+            >> dist/installer/SHA256SUMS-macos.txt
 
       - name: Publicar o aplicativo macOS
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -640,6 +654,8 @@ jobs:
             cp "$portable" "$out/baixador-ytdlp-portable-linux-x86_64.tar.gz"
           fi
           sha256sum "$out"/*.deb "$out"/*.tar.gz > "$out/SHA256SUMS-linux.txt"
+          printf '%s  app-linux-x86_64-baixador-ytdlp\n' \
+            "$(sha256sum dist/baixador-ytdlp/baixador-ytdlp | cut -d' ' -f1)" >> "$out/SHA256SUMS-linux.txt"
 
       - name: Publicar os pacotes Linux
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
