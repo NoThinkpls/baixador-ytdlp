@@ -13,7 +13,7 @@ from .plataforma import is_macos, is_windows, pasta_dados_usuario, pasta_do_exec
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.14.1"
+APP_VERSION = "1.14.2"
 IS_WINDOWS = is_windows()
 
 
@@ -264,6 +264,8 @@ class Settings:
     clips_save_srt: bool = False
     clips_sound_effects: bool = False     # whoosh e pop automáticos
     clips_emphasis_zoom: bool = False
+    clips_sounds_folder: str = ""        # vazio = sons do próprio app
+    clips_title_position: int = 0         # 0 = automático
     window_geometry: str = ""        # legado (blob do Qt); ignorado desde a 1.8.1
     window_rect: list[int] = field(default_factory=list)  # x, y, largura, altura
     window_maximized: bool = False

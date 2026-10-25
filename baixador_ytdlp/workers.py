@@ -14,7 +14,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
-from . import effects, reframe
+from . import effects, reframe, sfx
 from .clips import (HEIGHT, WIDTH, ClipError, ClipOptions, ClipRange, Tracking, audio_command,
                     build_ass, build_srt, clamp_range, clip_destination, is_url, keep_intervals,
                     output_length, remap_time, remap_words, render_command,
@@ -384,32 +384,45 @@ class ClipWorker(QThread):
             self.progress.emit(self._label("não deu para acompanhar a pessoa; usando o centro…"))
             return None
 
-    def _effects(self, audio: Path, words: list[dict], intervals, total: float,
-                 folder: Path) -> tuple[dict, dict[str, Path]]:
-        """Plano dos efeitos automáticos; uma falha aqui só deixa o corte sem eles."""
+    def _effects(self, clip: ClipRange, audio: Path, words: list[dict], intervals,
+                 total: float, folder: Path) -> tuple[dict, dict[str, Path]]:
+        """Sons e zoom do corte; uma falha aqui só deixa o corte sem eles.
+
+        Com plano da IA no corte, valem os pontos dele; sem plano, a regra pelo áudio.
+        """
         options = self.options
         if not (options.sound_effects or options.emphasis_zoom):
             return {}, {}
         try:
-            samples, rate = effects.read_wav(audio)
-            levels = effects.word_loudness(samples, rate, words)
-            leveled = [{**word, "level": level} for word, level in zip(words, levels, strict=True)]
-            emphasis = effects.emphasis_words(remap_words(leveled, intervals), total)
+            if clip.markers:
+                planned, punch = effects.place_markers(
+                    list(clip.markers), clip.start, words, intervals, total, remap_time)
+                origin = "plano da IA"
+            else:
+                samples, rate = effects.read_wav(audio)
+                levels = effects.word_loudness(samples, rate, words)
+                leveled = [{**word, "level": level}
+                           for word, level in zip(words, levels, strict=True)]
+                emphasis = effects.emphasis_words(remap_words(leveled, intervals), total)
+                planned = effects.plan_effects(intervals, emphasis, total)
+                punch = effects.punch_windows(emphasis, total)
+                origin = "regra automática"
             extras: dict = {}
             sounds: dict[str, Path] = {}
-            if options.emphasis_zoom and emphasis:
-                extras["punch"] = effects.punch_windows(emphasis, total)
-            if options.sound_effects:
-                planned = effects.plan_effects(
-                    intervals if options.remove_pauses else [(0.0, total)], emphasis, total)
-                if planned:
-                    extras["effects"] = planned
-                    sounds = effects.write_sounds(folder, planned)
-            log_event("Efeitos automáticos: %d ênfase(s), %d som(ns)", len(emphasis),
-                      len(extras.get("effects", ())))
+            if options.emphasis_zoom and punch:
+                extras["punch"] = punch
+            if options.sound_effects and planned:
+                prepared = sfx.prepare(
+                    folder, {effect.kind for effect in planned}, options.sounds_folder,
+                    duration_of=lambda path: media_duration(path, self.tc))
+                extras["effects"] = effects.schedule(
+                    planned, {kind: lead for kind, (_path, lead) in prepared.items()})
+                sounds = {kind: path for kind, (path, _lead) in prepared.items()}
+            log_event("Efeitos (%s): %d som(ns), %d zoom(s)", origin,
+                      len(extras.get("effects", ())), len(extras.get("punch", ())))
             return extras, sounds
         except Exception as exc:  # noqa: BLE001 - efeito é acabamento, não pode derrubar o corte
-            report_exception("efeitos automáticos do corte", exc)
+            report_exception("efeitos do corte", exc)
             return {}, {}
 
     def _render(self, source: Path, offset: float, length: float, intervals, subtitles: Path,
@@ -480,7 +493,7 @@ class ClipWorker(QThread):
             style=self.options.style), encoding="utf-8")
         tracking = (self._track(source, offset, length, intervals, folder)
                     if self.options.framing == "track" else None)
-        effect_extras, sounds = self._effects(audio, words, intervals, total, folder)
+        effect_extras, sounds = self._effects(clip, audio, words, intervals, total, folder)
 
         self.options.output_dir.mkdir(parents=True, exist_ok=True)
         destination = clip_destination(self.options.output_dir, stem, self._index + 1, clip.title)

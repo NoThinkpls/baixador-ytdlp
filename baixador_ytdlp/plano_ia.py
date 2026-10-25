@@ -1,0 +1,113 @@
+"""Plano de cortes vindo de uma IA (o Criador de Títulos), em uma linha de JSON.
+
+A IA lê a transcrição inteira e entende o contexto; o app só executa. O formato é
+compacto de propósito, para colar num campo só:
+
+    {"bx":1,"c":[["12:03","12:58","TÍTULO DO CORTE",[["12:10","graça","i",1]]]]}
+
+* ``c``: lista de cortes ``[início, fim, título, efeitos]``;
+* cada efeito: ``[tempo, palavra, som, zoom]``. O tempo vem do SRT (vídeo inteiro),
+  a palavra é a que está sendo dita (o app procura o tempo exato dela), o som é uma
+  letra (``w`` whoosh, ``p`` pop, ``i`` impacto, ``d`` ding, ``s`` subida, ``""`` só
+  zoom) e o zoom é 1 ou 0.
+
+A linha pode vir no meio da resposta inteira da IA: o app acha o ``{"bx"`` sozinho.
+"""
+from __future__ import annotations
+
+import json
+import re
+
+from .clips import (MAX_CLIP_SECONDS, MIN_CLIP_SECONDS, ClipError, ClipRange, format_clock,
+                    parse_time)
+from .effects import Marker
+from .sfx import SOUNDS
+
+MAX_CUTS = 20
+MAX_EFFECTS = 40            # por corte
+SOUND_CODES = {"w": "whoosh", "p": "pop", "i": "impacto", "d": "ding", "s": "subida"}
+_START = re.compile(r'\{\s*"bx"\s*:')
+
+
+class PlanError(ClipError):
+    """O texto colado não traz um plano que o app consiga usar."""
+
+
+def _time(value) -> float:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    try:
+        return parse_time(str(value))
+    except ClipError as exc:
+        raise PlanError(f"Tempo inválido no plano: {value!r}.") from exc
+
+
+def _sound(value) -> str:
+    text = str(value or "").strip().casefold()
+    if text in SOUND_CODES:
+        return SOUND_CODES[text]
+    return text if text in SOUNDS else ""
+
+
+def find_plan(text: str) -> dict:
+    """O primeiro objeto ``{"bx": …}`` do texto, mesmo dentro de um bloco ```json."""
+    match = _START.search(text or "")
+    if not match:
+        raise PlanError(
+            'Não encontrei o plano no texto colado. Ele é uma linha que começa com {"bx":1, '
+            "no fim da resposta da IA.")
+    try:
+        plan, _end = json.JSONDecoder().raw_decode(text, match.start())
+    except json.JSONDecodeError as exc:
+        raise PlanError(
+            "O plano está incompleto ou com erro de digitação (JSON inválido). Copie a "
+            "linha inteira de novo.") from exc
+    if not isinstance(plan, dict):
+        raise PlanError("O plano colado não está no formato esperado.")
+    return plan
+
+
+def parse_plan(text: str) -> list[ClipRange]:
+    """Cortes com título e pontos de efeito; pontos fora do próprio corte são ignorados."""
+    plan = find_plan(text)
+    cuts = plan.get("c")
+    if not isinstance(cuts, list) or not cuts:
+        raise PlanError('O plano não traz nenhum corte (lista "c" vazia).')
+    ranges: list[ClipRange] = []
+    for number, cut in enumerate(cuts[:MAX_CUTS], start=1):
+        if not isinstance(cut, list) or len(cut) < 2:
+            raise PlanError(f"O corte {number} do plano está incompleto.")
+        start, end = _time(cut[0]), _time(cut[1])
+        if end - start < MIN_CLIP_SECONDS or end - start > MAX_CLIP_SECONDS:
+            raise PlanError(
+                f"O corte {number} ({format_clock(start)} a {format_clock(end)}) precisa ter "
+                f"entre 1 segundo e {MAX_CLIP_SECONDS // 60} minutos.")
+        title = " ".join(str(cut[2] if len(cut) > 2 and cut[2] else "").split())
+        markers: list[Marker] = []
+        effects = cut[3] if len(cut) > 3 and isinstance(cut[3], list) else []
+        for item in effects[:MAX_EFFECTS]:
+            if not isinstance(item, list) or not item:
+                continue
+            try:
+                moment = _time(item[0])
+            except PlanError:
+                continue   # um ponto ruim não derruba o plano inteiro
+            word = " ".join(str(item[1] if len(item) > 1 and item[1] else "").split())
+            sound = _sound(item[2] if len(item) > 2 else "")
+            zoom = bool(item[3]) if len(item) > 3 else False
+            if (sound or zoom) and start - 1 <= moment <= end + 1:
+                markers.append(Marker(moment, sound, word[:60], zoom))
+        ranges.append(ClipRange(start, end, title, tuple(markers)))
+    return ranges
+
+
+def markers_text(markers: tuple[Marker, ...]) -> str:
+    """Resumo para a dica da linha do corte: "12:10 impacto em “graça” + zoom"."""
+    lines = []
+    for marker in markers:
+        what = marker.sound or "zoom"
+        if marker.sound and marker.zoom:
+            what += " + zoom"
+        where = f" em “{marker.word}”" if marker.word else ""
+        lines.append(f"{format_clock(marker.time)} {what}{where}")
+    return "\n".join(lines)

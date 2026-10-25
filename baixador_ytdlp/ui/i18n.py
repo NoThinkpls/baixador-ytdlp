@@ -416,13 +416,30 @@ EN: dict[str, str] = {
     "O que você baixar, transcrever, cortar ou converter aparece nesta lista, só na sua máquina.":
         "What you download, transcribe, clip or convert shows up in this list, only on your computer.",
     "Acabamento": "Finishing",
-    "Efeitos sonoros automáticos": "Automatic sound effects",
-    "Um \"whoosh\" quando a fala muda de assunto (pausa longa removida) e um \"pop\" nas palavras ditas com mais força. Com distância mínima entre eles, para não poluir.":
-        "A \"whoosh\" when the speech changes topic (long pause removed) and a \"pop\" on the words said "
-        "loudest. Always spaced apart so it never gets cluttered.",
+    "Efeitos sonoros": "Sound effects",
+    "Com plano da IA, cada som entra na palavra que ela indicou (whoosh, pop, impacto, ding ou subida). Sem plano, uma regra simples: whoosh nas pausas longas cortadas e pop nas palavras ditas bem mais alto.":
+        "With an AI plan, each sound lands on the word it chose (whoosh, pop, impact, ding or riser). "
+        "Without a plan, a simple rule: a whoosh on long pauses that were cut and a pop on words said much louder.",
     "Zoom na ênfase": "Zoom on emphasis",
-    "Aproxima rápido a imagem na palavra dita com mais força, no máximo uma vez a cada 7 segundos.":
-        "Quickly punches in on the word said loudest, at most once every 7 seconds.",
+    "Aproxima rápido a imagem nos pontos do plano da IA ou, sem plano, na palavra dita com mais força.":
+        "Quickly punches in at the AI plan's points or, without a plan, on the word said loudest.",
+    "Seus sons (opcional)": "Your sounds (optional)",
+    "Uma pasta com arquivos chamados whoosh, pop, impacto, ding e subida (WAV, MP3, OGG…) troca os sons padrão pelos seus. O que faltar continua com o som do app.":
+        "A folder with files named whoosh, pop, impacto, ding and subida (WAV, MP3, OGG…) replaces "
+        "the default sounds with yours. Anything missing keeps the app's sound.",
+    "Sons do próprio app": "The app's own sounds",
+    "Plano da IA": "AI plan",
+    "Cole a linha {\"bx\":1,…} que a IA entrega no fim da resposta (veja docs/PLANO-DA-IA.md): ela preenche os cortes, os títulos e onde entra cada som e zoom. Com o campo vazio, o botão lê a área de transferência (pode ser a resposta inteira).":
+        "Paste the {\"bx\":1,…} line the AI returns at the end of its answer (see docs/AI-PLAN.en.md): it fills in the clips, "
+        "the titles and where each sound and zoom goes. With the field empty, the button reads the "
+        "clipboard (it can be the whole answer).",
+    "Aplicar plano": "Apply plan",
+    "Efeitos do plano da IA": "Effects from the AI plan",
+    "Altura do título": "Title height",
+    "% da altura; arraste o título na prévia": "% of the height; drag the title in the preview",
+    "Arraste a legenda ou o título para cima ou para baixo": "Drag the caption or the title up or down",
+    "corte(s)": "clip(s)",
+    "ponto(s) de efeito carregados.": "effect point(s) loaded.",
     "Animação": "Animation",
     "Caixa atrás": "Box behind",
     "Destaque — cor e maior": "Highlight — color and larger",

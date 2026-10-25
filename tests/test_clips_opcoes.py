@@ -72,10 +72,15 @@ class AnimacoesTests(unittest.TestCase):
         self.assertEqual(CaptionStyle(animation="??").normalized().animation, "highlight")
 
     def test_titulo_desce_quando_a_legenda_esta_no_alto(self) -> None:
-        low = build_ass([], 3.0, style=CaptionStyle(position=70))
-        high = build_ass([], 3.0, style=CaptionStyle(position=20))
-        self.assertIn(",3,22,0,8,90,90,300,1", low)
-        self.assertIn(",3,22,0,2,90,90,300,1", high)
+        low = build_ass([], 3.0, title="T", style=CaptionStyle(position=70))
+        high = build_ass([], 3.0, title="T", style=CaptionStyle(position=20))
+        self.assertIn("{\\pos(540,326)", low)      # automático: 17% da altura
+        self.assertIn("{\\pos(540,1594)", high)    # legenda no alto: título a 83%
+
+    def test_altura_do_titulo_escolhida(self) -> None:
+        ass = build_ass([], 3.0, title="T", style=CaptionStyle(position=20, title_position=50))
+        self.assertIn("{\\pos(540,960)", ass)
+        self.assertEqual(CaptionStyle(title_position=200).normalized().title_position, 94)
 
     def test_titulo_o_corte_inteiro(self) -> None:
         ass = build_ass(WORDS, 9.5, title="Oi", title_seconds=0)
