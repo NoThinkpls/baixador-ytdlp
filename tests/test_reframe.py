@@ -65,16 +65,28 @@ class CameraVirtualTests(unittest.TestCase):
         self.assertLessEqual(max(path), 0.85)
         self.assertGreater(path[-1], 0.75)             # e chega lá
 
+    def test_troca_de_pessoa_corta_seco(self) -> None:
+        targets = [0.25] * 30 + [0.75] * 30
+        path = reframe.camera_path(targets, rate=10.0, view=0.3, cuts=[30])
+        self.assertAlmostEqual(path[29], 0.25, places=3)
+        self.assertAlmostEqual(path[30], 0.75, places=3)      # sem panorâmica no meio
+        panned = reframe.camera_path(targets, rate=10.0, view=0.3)
+        self.assertTrue(any(0.3 < value < 0.7 for value in panned))   # sem corte: atravessa
+
+    def test_corte_seco_chega_ao_ffmpeg(self) -> None:
+        samples = [(i / 10, 0.25 if i < 30 else 0.75) for i in range(60)]
+        commands = reframe.crop_commands(samples, [(0.0, 6.0)], 3412, 1080, remap_time, 30.0,
+                                         cuts=[3.0])
+        xs = [x for _t, x in commands]
+        left, right = round(0.25 * 3412 - 540), round(0.75 * 3412 - 540)
+        jump = next(i for i, x in enumerate(xs) if x != left)
+        self.assertEqual(xs[jump], right)                     # de um quadro para o outro
+        self.assertAlmostEqual(jump / 30, 3.0, delta=0.04)
+
     def test_lacunas_repetem_o_ultimo_alvo(self) -> None:
         self.assertEqual(reframe.fill_gaps([None, 0.3, None, 0.6, None]),
                          [0.3, 0.3, 0.3, 0.6, 0.6])
         self.assertIsNone(reframe.fill_gaps([None, None]))
-
-    def test_rosto_maior_e_continuidade(self) -> None:
-        faces = [(0.2, 0.010), (0.7, 0.009), (0.5, 0.001)]
-        self.assertEqual(reframe.pick_face(faces, None), 0.2)
-        self.assertEqual(reframe.pick_face(faces, 0.65), 0.7)   # parecidos: fica perto
-        self.assertIsNone(reframe.pick_face([], 0.5))
 
     @unittest.skipUnless(HAS_STACK, "numpy ausente")
     def test_centro_do_movimento(self) -> None:
@@ -114,6 +126,115 @@ class YuNetTests(unittest.TestCase):
         assert path is not None
         detector = reframe.FaceDetector(path)
         self.assertEqual(detector.centers(np.zeros((360, 640, 3), dtype=np.uint8)), [])
+
+
+def _speaking(seconds: float = 12.0, rate: float = 10.0):
+    """Voz que liga e desliga (frases) e a boca de quem fala acompanhando, com ruído."""
+    import random
+
+    rng = random.Random(7)
+    count = int(seconds * rate)
+    voice = [(-20.0 if (i // 7) % 2 == 0 else -45.0) + rng.uniform(-3, 3) for i in range(count)]
+    talker = [(6.0 if v > -30 else 1.0) + rng.uniform(0, 2) for v in voice]
+    other = [rng.uniform(0.5, 4.5) for _ in range(count)]   # mexe, mas fora do ritmo da voz
+    return voice, talker, other
+
+
+class QuemFalaTests(unittest.TestCase):
+    """Várias pessoas em cena: a câmera vai para quem fala, não para o maior rosto."""
+
+    def test_segue_quem_fala_mesmo_com_rosto_menor(self) -> None:
+        voice, talker, other = _speaking()
+        observations = [{0: (0.25, 0.04, other[i]), 1: (0.75, 0.01, talker[i])}
+                        for i in range(len(voice))]
+        chosen, _cuts = reframe.choose_speakers(observations, voice)
+        on_talker = sum(1 for x in chosen if x == 0.75) / len(chosen)
+        self.assertGreater(on_talker, 0.9)
+
+    def test_sem_voz_fica_no_maior_rosto_sem_trocar(self) -> None:
+        _voice, talker, other = _speaking()
+        observations = [{0: (0.25, 0.04, other[i]), 1: (0.75, 0.01, talker[i])}
+                        for i in range(len(talker))]
+        self.assertEqual(set(reframe.choose_speakers(observations, None)[0]), {0.25})
+
+    def test_dialogo_troca_de_pessoa(self) -> None:
+        voice, talker, other = _speaking(24.0)
+        half = len(voice) // 2
+        # Primeira metade fala a pessoa da esquerda; depois, a da direita.
+        observations = [{0: (0.25, 0.02, talker[i] if i < half else other[i]),
+                         1: (0.75, 0.02, other[i] if i < half else talker[i])}
+                        for i in range(len(voice))]
+        chosen, cuts = reframe.choose_speakers(observations, voice)
+        self.assertEqual(len(cuts), 1)             # uma troca, e ela é um corte seco
+        self.assertEqual(chosen[cuts[0] - 1], 0.25)
+        self.assertEqual(chosen[cuts[0]], 0.75)
+        self.assertGreater(sum(1 for x in chosen[:half] if x == 0.25) / half, 0.8)
+        self.assertGreater(sum(1 for x in chosen[half:] if x == 0.75) / half, 0.8)
+        switches = sum(1 for a, b in zip(chosen, chosen[1:], strict=False) if a != b)
+        self.assertLessEqual(switches, 3)          # troca uma vez, sem pingue-pongue
+
+    def test_um_rosto_so_e_ele(self) -> None:
+        observations = [{3: (0.4, 0.02, None)}, {}, {3: (0.42, 0.02, 1.0)}]
+        self.assertEqual(reframe.choose_speakers(observations, [-20.0] * 3), ([0.4, None, 0.42], []))
+
+    def test_rosto_que_falha_por_um_instante_segura_a_posicao(self) -> None:
+        voice, talker, other = _speaking()
+        observations = [{0: (0.25, 0.04, other[i]), 1: (0.75, 0.01, talker[i])}
+                        for i in range(len(voice))]
+        for i in range(60, 64):
+            del observations[i][1]               # o detector perdeu quem fala
+        chosen, _cuts = reframe.choose_speakers(observations, voice)
+        self.assertEqual(chosen[60:64], [None] * 4)   # None = repete a última posição
+
+    def test_correlacao(self) -> None:
+        self.assertAlmostEqual(reframe.pearson([1, 2, 3, 4], [2, 4, 6, 8]), 1.0)
+        self.assertAlmostEqual(reframe.pearson([1, 2, 3, 4], [8, 6, 4, 2]), -1.0)
+        self.assertEqual(reframe.pearson([1, 1, 1], [1, 2, 3]), 0.0)
+
+    def test_trilhas_seguem_o_mesmo_rosto_na_ordem_recebida(self) -> None:
+        tracker = reframe.FaceTracker()
+        small = reframe.Face(0.70, 0.3, 0.08, 0.15)
+        large = reframe.Face(0.20, 0.3, 0.15, 0.30)
+        first = tracker.assign([small, large], 0.0)
+        # O maior escolhe primeiro, mas a resposta vem na ordem dos rostos recebidos.
+        moved = [reframe.Face(0.72, 0.3, 0.08, 0.15), reframe.Face(0.22, 0.3, 0.15, 0.30)]
+        second = tracker.assign(moved, 0.1)
+        self.assertEqual([t.ident for t in first], [t.ident for t in second])
+        self.assertNotEqual(first[0].ident, first[1].ident)
+        later = tracker.assign([reframe.Face(0.72, 0.3, 0.08, 0.15)], 0.1 + reframe.TRACK_MEMORY + 0.5)
+        self.assertNotIn(later[0].ident, {t.ident for t in first})   # sumiu demais: novo
+
+
+@unittest.skipUnless(HAS_STACK, "numpy ausente")
+class BocaTests(unittest.TestCase):
+    def test_caixas_repetidas_viram_uma(self) -> None:
+        faces = [(10, 10, 50, 60, 0.9), (12, 11, 50, 60, 0.8), (300, 10, 50, 60, 0.7)]
+        kept = reframe.suppress(faces)
+        self.assertEqual([face[4] for face in kept], [0.9, 0.7])
+
+    def test_movimento_da_boca(self) -> None:
+        gray = np.full((200, 200), 120, dtype=np.uint8)
+        points = ((0.4, 0.4), (0.6, 0.4), (0.5, 0.5), (0.42, 0.6), (0.58, 0.6))
+        face = reframe.Face(0.3, 0.3, 0.4, 0.5, points)
+        closed = reframe.mouth_patch(gray, face)
+        opened = gray.copy()
+        opened[122:132, 88:112] = 20                 # boca aberta: região escura
+        self.assertEqual(reframe.mouth_activity(closed, reframe.mouth_patch(gray, face)), 0.0)
+        self.assertGreater(reframe.mouth_activity(closed, reframe.mouth_patch(opened, face)), 5.0)
+        self.assertIsNone(reframe.mouth_patch(gray, reframe.Face(0.3, 0.3, 0.4, 0.5)))
+
+    def test_decodifica_pontos_do_rosto(self) -> None:
+        outputs = {}
+        for stride in (8, 16, 32):
+            cells = (640 // stride) ** 2
+            for name, size in (("cls", 1), ("obj", 1), ("bbox", 4), ("kps", 10)):
+                outputs[f"{name}_{stride}"] = np.zeros((1, cells, size), dtype=np.float32)
+        index = 5 * 20 + 10
+        outputs["cls_32"][0, index, 0] = outputs["obj_32"][0, index, 0] = 0.9
+        outputs["kps_32"][0, index] = [0.25, 0.5, 0.75, 0.5, 0.5, 0.75, 0.3, 1.0, 0.7, 1.0]
+        face = reframe.decode_yunet(outputs, landmarks=True)[0]
+        self.assertAlmostEqual(face[5][3][0], (10 + 0.3) * 32, places=3)   # canto da boca
+        self.assertAlmostEqual(face[5][3][1], (5 + 1.0) * 32, places=3)
 
 
 class SendcmdTests(unittest.TestCase):

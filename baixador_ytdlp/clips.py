@@ -28,7 +28,16 @@ WIDTH, HEIGHT = 1080, 1920
 MAX_CLIP_SECONDS = 600       # acima de 10 min deixa de ser um corte e a transcrição pesa
 MIN_CLIP_SECONDS = 1.0
 DEFAULT_MIN_PAUSE = 0.6      # silêncio maior que isso entre duas palavras é removido
-SPEECH_PAD = 0.12            # folga mantida antes e depois da fala, para não comer sílabas
+SPEECH_PAD = 0.12            # folga mantida antes da fala, para não comer a primeira sílaba
+# O Whisper marca o fim da palavra cedo: a última sílaba, o "s" e a voz morrendo ficam
+# depois do tempo dele. Por isso o fim de cada trecho ganha mais folga que o começo e,
+# com o áudio em mãos, só corta quando o volume realmente cai.
+TAIL_PAD = 0.28
+MAX_TAIL = 0.7               # nunca segura mais que isso depois do fim marcado da palavra
+MAX_LEAD = 0.2               # nem começa mais que isso antes do início marcado
+RELEASE = 0.08               # depois que o volume cai, um respiro antes da emenda
+SPLICE_FADE = 0.025          # rampa de volume em cada emenda, sem estalo
+ENERGY_FRAME = 0.02          # janela (s) da medida de volume usada nas emendas
 MIN_KEEP = 0.08              # pedaço menor que isso só gera um salto de imagem
 CAPTION_HOLD = 0.35          # a última palavra do grupo fica na tela um pouco depois de dita
 CAPTION_MAX_GAP = 0.6        # pausa que fecha um grupo mesmo antes de completar as palavras
@@ -197,26 +206,83 @@ def words_from_transcript(path: Path) -> list[dict]:
     return words
 
 
+class Loudness:
+    """Volume do trecho em janelas de 20 ms, para achar onde a fala acaba de verdade."""
+
+    def __init__(self, samples, rate: int):
+        import numpy as np
+
+        step = max(1, int(rate * ENERGY_FRAME))
+        count = len(samples) // step
+        frames = np.asarray(samples[:count * step], dtype=np.float32).reshape(count, step)
+        self.db = 20 * np.log10(np.maximum(np.sqrt((frames * frames).mean(axis=1)), 1e-6))
+        if count:
+            floor, loud = np.percentile(self.db, 10), np.percentile(self.db, 90)
+            # Um quarto do caminho entre o ruído de fundo e a voz: o fim da palavra
+            # ("s", "r", voz morrendo) ainda está acima disso; o silêncio da sala, não.
+            self.threshold = float(floor + max(6.0, (loud - floor) * 0.25))
+        else:
+            self.threshold = 0.0
+
+    def _voiced(self, index: int) -> bool:
+        return 0 <= index < len(self.db) and float(self.db[index]) >= self.threshold
+
+    def speech_end(self, after: float, limit: float) -> float:
+        """Primeiro instante depois de ``after`` em que o volume cai e fica caído (40 ms)."""
+        index = int(after / ENERGY_FRAME)
+        last = int(limit / ENERGY_FRAME)
+        while index < last and (self._voiced(index) or self._voiced(index + 1)):
+            index += 1
+        return min(limit, index * ENERGY_FRAME)
+
+    def speech_start(self, before: float, limit: float) -> float:
+        """O mesmo para trás: onde a voz começa antes do início marcado da palavra."""
+        index = int(before / ENERGY_FRAME) - 1
+        first = int(limit / ENERGY_FRAME)
+        while index > first and (self._voiced(index) or self._voiced(index - 1)):
+            index -= 1
+        return max(limit, (index + 1) * ENERGY_FRAME)
+
+
 def keep_intervals(words: list[dict], length: float, min_pause: float = DEFAULT_MIN_PAUSE,
-                   pad: float = SPEECH_PAD) -> list[tuple[float, float]]:
+                   pad: float = SPEECH_PAD, tail: float = TAIL_PAD,
+                   loudness: Loudness | None = None) -> list[tuple[float, float]]:
     """Trechos ``(início, fim)`` com fala; pausas acima de ``min_pause`` ficam de fora.
 
     O começo e o fim do corte contam como pausas também: silêncio antes da primeira
     palavra e depois da última sai. Sem palavras (música, silêncio), o corte fica inteiro.
+    Com ``loudness`` (o áudio do trecho), a emenda só acontece depois que a voz cai, até
+    ``MAX_TAIL`` além do fim marcado: assim a palavra termina antes do corte.
     """
     if length <= 0:
         return []
     if not words:
         return [(0.0, length)]
+
+    def finish_of(end: float, following: float) -> float:
+        cut = end + tail
+        if loudness is not None:
+            cut = max(cut, loudness.speech_end(end, end + MAX_TAIL) + RELEASE)
+        return min(cut, following)
+
+    def start_of(begin: float, preceding: float) -> float:
+        cut = begin - pad
+        if loudness is not None:
+            cut = min(cut, loudness.speech_start(begin, begin - MAX_LEAD) - RELEASE / 2)
+        return max(cut, preceding)
+
     intervals: list[list[float]] = []
-    cursor_start = 0.0 if words[0]["start"] <= min_pause else max(0.0, words[0]["start"] - pad)
+    cursor_start = (0.0 if words[0]["start"] <= min_pause
+                    else start_of(words[0]["start"], 0.0))
     cursor_end = words[0]["end"]
     for word in words[1:]:
         if word["start"] - cursor_end > min_pause:
-            intervals.append([cursor_start, cursor_end + pad])
-            cursor_start = word["start"] - pad
+            # Folgas de uma fala e da outra não se cruzam: metade da pausa para cada lado.
+            middle = (cursor_end + word["start"]) / 2
+            intervals.append([cursor_start, finish_of(cursor_end, middle)])
+            cursor_start = start_of(word["start"], middle)
         cursor_end = max(cursor_end, word["end"])
-    finish = length if length - cursor_end <= min_pause else cursor_end + pad
+    finish = length if length - cursor_end <= min_pause else finish_of(cursor_end, length)
     intervals.append([cursor_start, finish])
 
     merged: list[list[float]] = []
@@ -224,7 +290,8 @@ def keep_intervals(words: list[dict], length: float, min_pause: float = DEFAULT_
         start, end = max(0.0, start), min(length, end)
         if end - start < MIN_KEEP:
             continue
-        if merged and start <= merged[-1][1]:
+        # Sobra de pausa curta demais para valer a emenda: junta os dois trechos.
+        if merged and start - merged[-1][1] < MIN_KEEP:
             merged[-1][1] = max(merged[-1][1], end)
         else:
             merged.append([start, end])
@@ -559,7 +626,13 @@ def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: 
     pads: list[str] = []
     for index, (start, end) in enumerate(intervals):
         parts.append(f"[0:v:0]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{index}]")
-        parts.append(f"[0:a:0]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{index}]")
+        fade = ""
+        if len(intervals) > 1 and end - start > 4 * SPLICE_FADE:
+            # Rampa curta nas pontas: emenda seca dá estalo e soa como palavra cortada.
+            fade = (f",afade=t=in:d={SPLICE_FADE}"
+                    f",afade=t=out:st={end - start - SPLICE_FADE:.3f}:d={SPLICE_FADE}")
+        parts.append(f"[0:a:0]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS"
+                     f"{fade}[a{index}]")
         pads.append(f"[v{index}][a{index}]")
     inputs = effect_inputs or {}
     effects = [effect for effect in effects if effect.kind in inputs]
