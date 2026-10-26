@@ -27,6 +27,14 @@ MAX_CUTS = 20
 MAX_EFFECTS = 40            # por corte
 SOUND_CODES = {"w": "whoosh", "p": "pop", "i": "impacto", "d": "ding", "s": "subida"}
 _START = re.compile(r'\{\s*"bx"\s*:')
+# Celular, Word e o próprio chat da IA trocam as aspas retas por curvas ao copiar; o JSON
+# só aceita as retas.
+_QUOTES = str.maketrans({"\u201c": '"', "\u201d": '"', "\u201e": '"', "\u201f": '"',
+                         "\u2033": '"', "\uff02": '"', "\u00ab": '"', "\u00bb": '"'})
+
+
+def normalize_quotes(text: str) -> str:
+    return (text or "").translate(_QUOTES).replace("&#34;", '"').replace("&quot;", '"')
 
 
 class PlanError(ClipError):
@@ -51,7 +59,8 @@ def _sound(value) -> str:
 
 def find_plan(text: str) -> dict:
     """O primeiro objeto ``{"bx": …}`` do texto, mesmo dentro de um bloco ```json."""
-    match = _START.search(text or "")
+    text = normalize_quotes(text)
+    match = _START.search(text)
     if not match:
         raise PlanError(
             'Não encontrei o plano no texto colado. Ele é uma linha que começa com {"bx":1, '
