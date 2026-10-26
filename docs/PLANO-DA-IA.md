@@ -1,7 +1,7 @@
 # Plano da IA para os Cortes
 
 Na página **Cortes**, o campo **Plano da IA** recebe uma linha de texto que diz ao app
-quais cortes fazer, com que título e onde colocar sons e zoom. A ideia é dividir o
+quais cortes fazer, com que título (animado ou fixo no topo) e onde colocar sons e zoom. A ideia é dividir o
 trabalho: uma IA de texto (ChatGPT, Claude, Gemini ou outra) lê a transcrição inteira e
 entende o contexto; o Baixador só executa, com precisão de palavra.
 
@@ -20,7 +20,8 @@ resposta, entregue a linha no formato abaixo.
 
 A lista de cortes é trocada pela do plano. Cada corte com efeitos mostra um `✦` com o
 número de pontos; passe o mouse para ver quais são. **Efeitos sonoros** e **Zoom na
-ênfase** são ligados sozinhos quando o plano traz sons ou zoom. Você ainda pode mudar
+ênfase** são ligados sozinhos quando o plano traz sons ou zoom. Se o plano disser o tipo de
+título (`t`) e a linha de cima (`l`), a página também passa a usá-los. Você ainda pode mudar
 início, fim e título à mão antes de criar.
 
 ## O formato
@@ -28,15 +29,26 @@ início, fim e título à mão antes de criar.
 Uma linha só de JSON, compacta de propósito:
 
 ```
-{"bx":1,"c":[["12:03","12:58","TÍTULO DO CORTE",[["12:10","graça","i",1],["12:31","","w",0]]]]}
+{"bx":1,"t":"f","l":"PR. JOÃO · CULTO DE DOMINGO","c":[["12:03","12:58","\"DEUS NÃO TE ESQUECEU\"",[["12:10","graça","i",1],["12:31","","w",0]]]]}
 ```
 
 - `bx`: sempre `1` (é como o app reconhece o plano no meio de outro texto).
+- `t` (opcional): o tipo de título de todos os cortes. `"f"` = **título fixo no topo**
+  (faixa escura com o título num cartão do começo ao fim, vídeo embaixo); `"a"` =
+  **título animado** (entra com um pulo e some depois de alguns segundos). Sem `t`, vale o
+  que está escolhido na página.
+- `l` (opcional): a linha pequena acima do título fixo, a mesma em todos os cortes (nome
+  do pregador, do podcast, da série ou do episódio), até 80 caracteres. Sem `l`, fica a
+  da página.
 - `c`: a lista de cortes. Cada corte é `[início, fim, título, efeitos]`.
   - **início** e **fim**: tempos do vídeo original, iguais aos do `.srt`, em `mm:ss`,
     `hh:mm:ss`, com décimos (`12:03.5` ou `12:03,5`) ou em segundos (`723.5`).
     Cada corte tem de 1 segundo a 10 minutos; no máximo 20 cortes.
-  - **título**: o texto animado no começo do corte (pode ser `""`).
+  - **título**: o título do corte (pode ser `""`). Com título animado, curto (2 a 4
+    palavras, até 20 caracteres) para caber numa linha. Com título fixo, cabe mais: até 3
+    linhas no cartão (3 a 8 palavras, até uns 45 caracteres); a fonte diminui sozinha
+    quando é comprido, e uma frase marcante entre aspas (`\"…\"` dentro do JSON) fica
+    bem nesse formato.
   - **efeitos**: lista de pontos (pode ser `[]`). Cada ponto é
     `[tempo, palavra, som, zoom]`:
     - **tempo**: quando acontece, no tempo do `.srt`;
@@ -82,9 +94,15 @@ Cole no fim das instruções da sua IA (ou do seu pedido), sem mudar o resto:
 ```
 No final da resposta, depois de tudo, entregue uma única linha de JSON compacto, sem
 quebras de linha e sem comentários, neste formato:
-{"bx":1,"c":[["INÍCIO","FIM","TÍTULO",[["TEMPO","PALAVRA","SOM",ZOOM]]]]}
+{"bx":1,"t":"f","l":"LINHA DE CIMA","c":[["INÍCIO","FIM","TÍTULO",[["TEMPO","PALAVRA","SOM",ZOOM]]]]}
+- "t" é o tipo de título: "f" (fixo no topo, num cartão, o corte inteiro) ou "a"
+  (animado, aparece no começo e some). Use "f", a não ser que eu peça título animado.
+- "l" é uma linha curta acima do título fixo, igual em todos os cortes (nome de quem fala
+  e do programa, série ou episódio, até 40 caracteres). Se não souber, não ponha "l".
 - Um item em "c" para cada corte sugerido (máximo 20), com INÍCIO e FIM tirados do SRT
-  (mm:ss ou hh:mm:ss) e o título curto do corte.
+  (mm:ss ou hh:mm:ss) e o título do corte: com "f", de 3 a 8 palavras e até 45
+  caracteres (uma frase forte de quem fala pode ir entre aspas, escritas como \");
+  com "a", de 2 a 4 palavras e até 20 caracteres.
 - Em cada corte, de 1 a 3 efeitos, só onde reforçam a fala: TEMPO do SRT; PALAVRA
   exatamente como foi dita naquele momento; SOM = w (troca de assunto), p (destaque de
   palavra), i (frase forte ou clímax), d (ideia-chave), s (tensão que termina no ponto)
@@ -99,4 +117,4 @@ quebras de linha e sem comentários, neste formato:
 Os cinco sons padrão são gerados pelo próprio app. Para usar outros (de uma biblioteca
 que você tem direito de usar), crie uma pasta com arquivos chamados `whoosh`, `pop`,
 `impacto`, `ding` e `subida` (WAV, MP3, OGG, M4A, FLAC, AAC ou Opus) e escolha a pasta
-em **Cortes → Acabamento → Seus sons**. O que faltar na pasta continua com o som padrão.
+em **Cortes → Ritmo e efeitos → Seus sons (opcional)**, que aparece com **Efeitos sonoros** ligado. O que faltar na pasta continua com o som padrão.

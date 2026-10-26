@@ -1,4 +1,4 @@
-"""Cortes verticais (1080x1920) com legenda palavra a palavra e título animado."""
+"""Cortes verticais (1080x1920) com legenda palavra a palavra e título animado ou fixo."""
 from __future__ import annotations
 
 import contextlib
@@ -8,19 +8,20 @@ import tempfile
 from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, QSize, QThread, QTimer, QUrl, Qt, Signal
-from PySide6.QtGui import (QColor, QDesktopServices, QFont, QFontDatabase, QFontMetricsF, QImage,
-                           QLinearGradient, QPainter, QPainterPath, QPen)
+from PySide6.QtCore import QRectF, QSize, QThread, QTimer, QUrl, Qt, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QFontDatabase, QImage, QPainter, QPen
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QColorDialog, QFileDialog,
                                QGridLayout, QHBoxLayout, QVBoxLayout, QWidget)
 
-from ..clips import (HEIGHT, HIGHLIGHT_HEX, TITLE_MAX, TITLE_MIN, CaptionStyle, ClipError,
-                     ClipOptions, format_clock, is_light, is_url, make_range, parse_time)
+from ..clips import (BANNER_CAPTION_MIN, HIGHLIGHT_HEX, TITLE_MAX, TITLE_MIN, CaptionStyle,
+                     ClipError, ClipOptions, format_clock, is_url, make_range, parse_time)
 from ..effects import Marker
-from ..plano_ia import markers_text, parse_plan
+from ..plano_ia import markers_text, parse_look, parse_plan
 from ..processes import CREATE_NO_WINDOW
 from ..workers import ClipWorker
 from . import theme
+from .clip_preview import (POSITION_MAX, POSITION_MIN, CaptionPreview, ChoicePicker,
+                           StickyRail)
 from .components import (Button, Divider, Headline, IconButton, InsetGroup, Muted, PageHeader,
                          PrimaryButton, ProgressBar, ScrollColumn, SectionLabel, Select,
                          SettingRow, Stepper, Switch, TextField, Toast)
@@ -30,15 +31,31 @@ from .transcription_page import LANGUAGES, MODELS
 MAX_CLIPS = 20
 PAUSES = [("0,4 s — ritmo acelerado", 0.4), ("0,6 s — recomendado", 0.6),
           ("0,8 s — mais natural", 0.8), ("1,2 s — só pausas longas", 1.2)]
-FRAMINGS = [("Seguir a pessoa — automático", "track"),
-            ("Fundo desfocado — vídeo inteiro", "blur"),
-            ("Cortar no centro — tela cheia", "crop")]
+# (nome, complemento, valor, o que muda na miniatura)
+FRAMINGS = [("Seguir a pessoa", "automático", "track", {"framing": "track"}),
+            ("Fundo desfocado", "vídeo inteiro", "blur", {"framing": "blur"}),
+            ("Cortar no centro", "tela cheia", "crop", {"framing": "crop"})]
 FRAMING_HINTS = {
-    "track": "Aproxima e acompanha quem está em cena, como o reenquadrar do CapCut. Procura "
+    "track": "Aproxima e acompanha quem está falando, como o reenquadrar do CapCut. Procura "
              "rostos e, sem rosto, segue o movimento. Vídeos já verticais ficam como estão.",
     "blur": "Mostra o quadro todo, com o próprio vídeo desfocado atrás.",
     "crop": "Preenche a tela com o centro do vídeo; as laterais ficam de fora.",
 }
+TITLE_MODES = [("Título animado", "entra e some", "animated", {"banner": False}),
+               ("Título fixo no topo", "faixa com cartão", "banner", {"banner": True})]
+TITLE_HINTS = {
+    "animated": "O título de cada corte entra com um pulo e some depois do tempo escolhido.",
+    "banner": "Uma faixa escura no alto com o título num cartão na cor de destaque, do começo "
+              "ao fim; o vídeo fica embaixo, como nos canais de cortes de podcast.",
+}
+RANGES_HINTS = {
+    "animated": "Informe início e fim de cada corte em mm:ss ou hh:mm:ss. O título aparece "
+                "animado nos primeiros segundos.",
+    "banner": "Informe início e fim de cada corte em mm:ss ou hh:mm:ss. O título fica no "
+              "cartão do topo durante todo o corte.",
+}
+TITLE_PLACEHOLDERS = {"animated": "Título animado (opcional)",
+                      "banner": "Título no cartão (opcional)"}
 ANIMATION_CHOICES = [("Destaque — cor e maior", "highlight"), ("Só a cor muda", "color"),
                      ("Karaokê — pinta ao falar", "karaoke"),
                      ("Uma palavra por vez", "word"), ("Grupo entra com pulo", "pop"),
@@ -49,12 +66,10 @@ VIDEO_FILTER = ("Vídeos (*.mp4 *.mkv *.webm *.mov *.avi *.m4v *.ts *.mpg *.mpeg
                 "Todos os arquivos (*.*)")
 SIZES = [("Pequena", 64), ("Média", 76), ("Grande", 88), ("Muito grande", 104),
          ("Enorme", 124)]
-POSITION_MIN, POSITION_MAX = 8, 92
 # Fontes que ficam bem em legenda de vídeo curto; entram primeiro se estiverem instaladas.
 PREFERRED_FONTS = ("Arial", "Arial Black", "Impact", "Montserrat", "Montserrat Black",
                    "Poppins", "Bebas Neue", "Anton", "Roboto", "Segoe UI", "Verdana",
                    "Tahoma", "Trebuchet MS", "Helvetica", "Georgia")
-PREVIEW_WORDS = ("essa", "é", "a", "sua", "legenda")
 
 
 def valid_hex(value, fallback: str) -> str:
@@ -124,172 +139,6 @@ class ColorButton(QAbstractButton):
     def leaveEvent(self, event):  # noqa: N802 - assinatura do Qt
         self.update()
         super().leaveEvent(event)
-
-
-class CaptionPreview(QWidget):
-    """Tela de celular em miniatura: mostra a legenda como vai sair e aceita arrastar.
-
-    Com um arquivo local escolhido, o fundo é um quadro do próprio vídeo, enquadrado como
-    no corte (cortado no centro ou inteiro sobre o desfoque).
-    """
-
-    position_changed = Signal(int)
-    title_position_changed = Signal(int)
-    PREVIEW_WIDTH = 162
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.caption = CaptionStyle()
-        self.framing = "blur"
-        self.frame = QImage()
-        self._dragging_title = False
-        self.setFixedSize(self.PREVIEW_WIDTH, round(self.PREVIEW_WIDTH * 16 / 9))
-        self.setCursor(Qt.CursorShape.SizeVerCursor)
-        self.setToolTip(tr("Arraste a legenda ou o título para cima ou para baixo"))
-        self.setAccessibleName(tr("Prévia da legenda"))
-
-    def set_style(self, style: CaptionStyle) -> None:
-        self.caption = style.normalized()
-        self.update()
-
-    def set_framing(self, framing: str) -> None:
-        self.framing = framing
-        self.update()
-
-    def set_frame(self, image: QImage) -> None:
-        self.frame = image
-        self.update()
-
-    def _move_to(self, y: float) -> None:
-        value = round(y / max(1, self.height()) * 100)
-        if self._dragging_title:
-            self.title_position_changed.emit(max(TITLE_MIN, min(TITLE_MAX, value)))
-        else:
-            self.position_changed.emit(max(POSITION_MIN, min(POSITION_MAX, value)))
-
-    def mousePressEvent(self, event):  # noqa: N802 - assinatura do Qt
-        if event.button() == Qt.MouseButton.LeftButton:
-            # Clicou perto do título: arrasta o título; no resto, a legenda.
-            y = event.position().y() / max(1, self.height()) * 100
-            title = self.caption.resolved_title_position()
-            caption = self.caption.position
-            self._dragging_title = abs(y - title) < abs(y - caption)
-            self._move_to(event.position().y())
-
-    def mouseMoveEvent(self, event):  # noqa: N802 - assinatura do Qt
-        if event.buttons() & Qt.MouseButton.LeftButton:
-            self._move_to(event.position().y())
-
-    def _paint_background(self, painter: QPainter, frame: QRectF) -> None:
-        width, height = frame.width(), frame.height()
-        if self.frame.isNull():
-            background = QLinearGradient(0, 0, 0, height)
-            background.setColorAt(0, QColor("#4A5568"))
-            background.setColorAt(1, QColor("#1A202C"))
-            painter.fillRect(frame, background)
-            # Silhueta de quem fala, só para dar escala.
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(255, 255, 255, 38))
-            painter.drawEllipse(QPointF(width / 2, height * 0.40), width * 0.15, width * 0.15)
-            painter.drawRoundedRect(QRectF(width * 0.22, height * 0.50, width * 0.56,
-                                           height * 0.6), width * 0.2, width * 0.2)
-            return
-        image = self.frame
-        cover = image.scaled(int(width), int(height), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                             Qt.TransformationMode.SmoothTransformation)
-        left = (cover.width() - width) / 2
-        top = (cover.height() - height) / 2
-        if self.framing == "blur":
-            # Desfoque barato: reduz e amplia de novo, escurecido como no corte.
-            tiny = cover.scaled(max(1, cover.width() // 12), max(1, cover.height() // 12),
-                                Qt.AspectRatioMode.IgnoreAspectRatio,
-                                Qt.TransformationMode.SmoothTransformation)
-            blurred = tiny.scaled(cover.width(), cover.height(),
-                                  Qt.AspectRatioMode.IgnoreAspectRatio,
-                                  Qt.TransformationMode.SmoothTransformation)
-            painter.drawImage(QPointF(-left, -top), blurred)
-            painter.fillRect(frame, QColor(0, 0, 0, 50))
-            fit = image.scaled(int(width), int(height), Qt.AspectRatioMode.KeepAspectRatio,
-                               Qt.TransformationMode.SmoothTransformation)
-            painter.drawImage(QPointF((width - fit.width()) / 2, (height - fit.height()) / 2), fit)
-        else:
-            painter.drawImage(QPointF(-left, -top), cover)
-
-    def paintEvent(self, _event):  # noqa: N802 - assinatura do Qt
-        style = self.caption
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        width, height = self.width(), self.height()
-        frame = QRectF(0.5, 0.5, width - 1, height - 1)
-        clip = QPainterPath()
-        clip.addRoundedRect(frame, 14, 14)
-        painter.setClipPath(clip)
-        self._paint_background(painter, frame)
-
-        scale = height / HEIGHT
-        family = QFont(style.font)
-        family.setBold(True)
-        # Título na caixa da cor de destaque, na altura escolhida.
-        title_font = QFont(family)
-        title_font.setPixelSize(max(6, round(style.size * 0.84 * scale)))
-        painter.setFont(title_font)
-        metrics = QFontMetricsF(title_font)
-        title = tr("Título do corte")
-        box_width = metrics.horizontalAdvance(title) + 12
-        box_height = metrics.height() + 6
-        top = height * style.resolved_title_position() / 100 - box_height / 2
-        box = QRectF((width - box_width) / 2, top, box_width, box_height)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(style.highlight_color))
-        painter.drawRect(box)
-        dark_text = is_light(style.highlight_color)   # mesma regra do ASS
-        painter.setPen(QColor("#141414") if dark_text else QColor("#FFFFFF"))
-        painter.drawText(box, Qt.AlignmentFlag.AlignCenter, title)
-
-        # Legenda: o grupo com a segunda palavra sendo falada, como na animação escolhida.
-        words = [w.upper() if style.uppercase else w for w in PREVIEW_WORDS[:style.words]]
-        active = min(1, len(words) - 1)
-        if style.animation == "word":
-            words, active = [words[active]], 0
-        grow = style.animation in {"highlight", "pop"}
-        base = QFont(family)
-        base.setPixelSize(max(6, round(style.size * scale)))
-        big = QFont(family)
-        big.setPixelSize(max(6, round(style.size * (1.12 if grow else 1) * scale)))
-        space = QFontMetricsF(base).horizontalAdvance(" ")
-        fonts = [big if i == active else base for i in range(len(words))]
-        advances = [QFontMetricsF(font).horizontalAdvance(word)
-                    for font, word in zip(fonts, words, strict=True)]
-        line_width = sum(advances) + space * (len(words) - 1)
-        x = (width - line_width) / 2
-        middle = height * style.position / 100
-        baseline = middle + QFontMetricsF(base).ascent() / 2 - 1
-        if style.background:
-            pad = max(2.0, style.size / 5 * scale)
-            box_h = QFontMetricsF(base).height()
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(0, 0, 0, 160))
-            painter.drawRect(QRectF(x - pad, middle - box_h / 2 - pad / 2,
-                                    line_width + 2 * pad, box_h + pad))
-        outline = QPen(QColor("#000000"), max(1.5, style.size / 12 * scale * 2))
-        outline.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        for index, word in enumerate(words):
-            if style.animation == "none" or style.animation == "word":
-                colour = style.text_color
-            elif style.animation == "karaoke":
-                colour = style.highlight_color if index <= active else style.text_color
-            else:
-                colour = style.highlight_color if index == active else style.text_color
-            path = QPainterPath()
-            path.addText(QPointF(x, baseline), fonts[index], word)
-            if not style.background:
-                painter.strokePath(path, outline)
-            painter.fillPath(path, QColor(colour))
-            x += advances[index] + space
-        painter.setClipping(False)
-        painter.setPen(QPen(theme.qcolor("border_strong"), 1))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(frame, 14, 14)
 
 
 class FrameGrabber(QThread):
@@ -416,7 +265,7 @@ class ClipsPage(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 20, 28, 0)
         root.setSpacing(0)
-        page = ScrollColumn(self, spacing=14)
+        page = self.page = ScrollColumn(self, spacing=14)
         root.addWidget(page, 1)
         page.add(PageHeader(
             "Cortes",
@@ -427,22 +276,23 @@ class ClipsPage(QWidget):
         page.add(self._destination_group())
         page.add(SectionLabel("Cortes", self))
         page.add(self._ranges_group())
-        page.add(SectionLabel("Enquadramento", self))
-        page.add(self._style_group())
-        page.add(SectionLabel("Legenda", self))
-        page.add(self._caption_group())
-        page.add(SectionLabel("Acabamento", self))
+        # Tudo o que muda a imagem fica junto, ao lado de uma prévia que acompanha a rolagem.
+        page.add(SectionLabel("Visual do corte", self))
+        page.add(self._visual_group())
+        page.add(SectionLabel("Ritmo e efeitos", self))
         page.add(self._finish_group())
-        page.add(SectionLabel("Transcrição", self))
+        page.add(SectionLabel("Saída e transcrição", self))
         page.add(self._transcription_group())
         page.add_stretch()
         root.addWidget(self._action_bar())
+        self.preview_rail.follow(page)
         self._frame_timer = QTimer(self)
         self._frame_timer.setSingleShot(True)
         self._frame_timer.setInterval(450)
         self._frame_timer.timeout.connect(self._grab_frame)
         self._grabber: FrameGrabber | None = None
         self._add_row()
+        self._layout_changed()
 
     def _source_group(self) -> InsetGroup:
         group = InsetGroup(self)
@@ -453,7 +303,8 @@ class ClipsPage(QWidget):
         group.add_row(self._path_row(
             group, "Vídeo de origem",
             "Use um arquivo do computador ou cole um link: só os trechos escolhidos são "
-            "baixados.", self.source_edit, button))
+            "baixados. Com um arquivo, a prévia mostra um quadro dele.", self.source_edit,
+            button))
         return group
 
     def _ranges_group(self) -> InsetGroup:
@@ -462,9 +313,8 @@ class ClipsPage(QWidget):
         column = QVBoxLayout(host)
         column.setContentsMargins(16, 12, 16, 14)
         column.setSpacing(8)
-        column.addWidget(Muted(
-            "Informe início e fim de cada corte em mm:ss ou hh:mm:ss. O título aparece "
-            "animado nos primeiros segundos.", host))
+        self.ranges_hint = Muted(RANGES_HINTS["animated"], host)
+        column.addWidget(self.ranges_hint)
         self.rows_layout = QVBoxLayout()
         self.rows_layout.setSpacing(8)
         column.addLayout(self.rows_layout)
@@ -492,49 +342,110 @@ class ClipsPage(QWidget):
         group.add_row(host)
         return group
 
-    def _style_group(self) -> InsetGroup:
-        group = InsetGroup(self)
-        self.framing_combo = Select(group)
-        for label, value in FRAMINGS:
-            self.framing_combo.addItem(label, userData=value)
-        self.framing_combo.setCurrentIndex(max(0, self.framing_combo.findData(
-            getattr(self.cfg, "clips_framing", "blur"))))
-        self.framing_combo.currentIndexChanged.connect(self._framing_changed)
-        # O texto de apoio muda com a opção escolhida (_framing_changed).
-        self.framing_row = SettingRow(
-            "Enquadramento 9:16", " ", self.framing_combo, group)
-        group.add_row(self.framing_row)
-
-        self.pauses_switch = Switch(group)
-        self.pauses_switch.setChecked(bool(getattr(self.cfg, "clips_remove_pauses", True)))
-        self.pauses_switch.toggled.connect(self._pauses_toggled)
-        group.add_row(SettingRow(
-            "Remover pausas",
-            "Corta os silêncios entre as falas usando o tempo de cada palavra.",
-            self.pauses_switch, group))
-        self.pause_combo = Select(group)
-        for label, value in PAUSES:
-            self.pause_combo.addItem(label, userData=value)
-        self.pause_combo.setCurrentIndex(max(0, self.pause_combo.findData(
-            float(getattr(self.cfg, "clips_min_pause", 0.6)))))
-        self.pause_combo.setEnabled(self.pauses_switch.isChecked())
-        self.pause_combo.currentIndexChanged.connect(self._save_style)
-        self.pause_row = group.add_row(SettingRow(
-            "Pausa mínima", "Silêncios menores que isso ficam no vídeo.", self.pause_combo, group))
-        self._framing_changed()
-        return group
-
-    def _caption_group(self) -> InsetGroup:
+    def _visual_group(self) -> InsetGroup:
+        """Prévia à esquerda; à direita, enquadramento, título e legenda, de cima para baixo."""
         group = InsetGroup(self)
         style = self._saved_style()
         host = QWidget(group)
         line = QHBoxLayout(host)
-        line.setContentsMargins(16, 14, 16, 14)
-        line.setSpacing(22)
-        self.preview = CaptionPreview(host)
-        self.preview.position_changed.connect(self._preview_moved)
-        line.addWidget(self.preview, 0, Qt.AlignmentFlag.AlignTop)
+        line.setContentsMargins(16, 14, 16, 16)
+        line.setSpacing(24)
 
+        holder = QWidget(host)
+        holder_column = QVBoxLayout(holder)
+        holder_column.setContentsMargins(0, 0, 0, 0)
+        holder_column.setSpacing(8)
+        self.preview = CaptionPreview(holder)
+        self.preview.position_changed.connect(self._preview_moved)
+        holder_column.addWidget(self.preview)
+        self.preview_hint = Muted("Arraste a legenda na prévia. A imagem é aproximada.", holder)
+        self.preview_hint.setFixedWidth(self.preview.width())
+        holder_column.addWidget(self.preview_hint)
+        self.preview_rail = StickyRail(holder, host)
+        line.addWidget(self.preview_rail)
+
+        column = QVBoxLayout()
+        column.setSpacing(8)
+        column.addWidget(Headline("Enquadramento", host))
+        self.framing_picker = ChoicePicker(FRAMINGS, self.preview.state, host)
+        self.framing_picker.set_value(str(getattr(self.cfg, "clips_framing", "blur")))
+        column.addWidget(self.framing_picker)
+        self.framing_hint = Muted("", host)
+        column.addWidget(self.framing_hint)
+
+        column.addSpacing(10)
+        column.addWidget(Headline("Título", host))
+        self.title_picker = ChoicePicker(TITLE_MODES, self.preview.state, host)
+        self.title_picker.set_value(
+            "banner" if getattr(self.cfg, "clips_banner", False) else "animated")
+        column.addWidget(self.title_picker)
+        self.title_hint = Muted("", host)
+        column.addWidget(self.title_hint)
+        title_form = QGridLayout()
+        title_form.setHorizontalSpacing(12)
+        title_form.setVerticalSpacing(10)
+        title_form.setColumnStretch(1, 1)
+        self.title_combo = Select(host)
+        for label, value in TITLE_TIMES:
+            self.title_combo.addItem(label, userData=value)
+        self.title_combo.setCurrentIndex(max(0, self.title_combo.findData(
+            float(getattr(self.cfg, "clips_title_seconds", 2.0)))))
+        self.title_stepper = Stepper(host)
+        self.title_stepper.setRange(TITLE_MIN, TITLE_MAX)
+        self.title_stepper.setValue(style.resolved_title_position())
+        title_line = QHBoxLayout()
+        title_line.setSpacing(10)
+        title_line.addWidget(self.title_stepper)
+        title_line.addWidget(Muted("% da altura; arraste o título na prévia", host, wrap=False))
+        title_line.addStretch(1)
+        self.label_edit = TextField("Ex.: nome do podcast, convidado ou episódio", host)
+        self.label_edit.setText(str(getattr(self.cfg, "clips_banner_label", "") or ""))
+        self.label_edit.setClearButtonEnabled(True)
+        self.label_edit.setMaxLength(80)
+        self._title_rows: dict[str, list[QWidget]] = {"animated": [], "banner": []}
+        title_rows = [("animated", "Tempo na tela", self.title_combo),
+                      ("animated", "Altura do título", title_line),
+                      ("banner", "Linha de cima", self.label_edit)]
+        for index, (mode, label, control) in enumerate(title_rows):
+            heading = Headline(label, host)
+            title_form.addWidget(heading, index, 0)
+            if isinstance(control, QWidget):
+                alignment = Qt.AlignmentFlag(0) if control is self.label_edit \
+                    else Qt.AlignmentFlag.AlignLeft
+                title_form.addWidget(control, index, 1, alignment)
+                widgets = [heading, control]
+            else:
+                holder_row = QWidget(host)
+                holder_row.setLayout(control)
+                control.setContentsMargins(0, 0, 0, 0)
+                title_form.addWidget(holder_row, index, 1)
+                widgets = [heading, holder_row]
+            self._title_rows[mode] += widgets
+        column.addLayout(title_form)
+
+        column.addSpacing(6)
+        column.addWidget(Divider(host))
+        column.addSpacing(6)
+        column.addWidget(Headline("Legenda", host))
+        column.addLayout(self._caption_form(host, style))
+        column.addWidget(Muted(
+            "A fonte precisa estar instalada no computador. O título usa a fonte da legenda "
+            "e a cor da palavra falada.", host))
+        column.addStretch(1)
+        line.addLayout(column, 1)
+        group.add_row(host)
+
+        self.framing_picker.changed.connect(self._layout_changed)
+        self.title_picker.changed.connect(self._layout_changed)
+        self.title_combo.currentIndexChanged.connect(self._save_style)
+        self.title_stepper.valueChanged.connect(self._save_style)
+        self.preview.title_position_changed.connect(self.title_stepper.setValue)
+        self.label_edit.textChanged.connect(self._refresh_preview)
+        self.label_edit.editingFinished.connect(self._save_style)
+        self.preview.set_style(style)
+        return group
+
+    def _caption_form(self, host: QWidget, style: CaptionStyle) -> QGridLayout:
         form = QGridLayout()
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(10)
@@ -558,7 +469,7 @@ class ClipsPage(QWidget):
         colors.addWidget(Muted("Texto", host, wrap=False))
         colors.addSpacing(10)
         colors.addWidget(self.highlight_color)
-        colors.addWidget(Muted("Palavra falada", host, wrap=False))
+        colors.addWidget(Muted("Palavra falada e título", host, wrap=False))
         colors.addStretch(1)
         self.position_stepper = Stepper(host)
         self.position_stepper.setRange(POSITION_MIN, POSITION_MAX)
@@ -568,14 +479,6 @@ class ClipsPage(QWidget):
         position_line.addWidget(self.position_stepper)
         position_line.addWidget(Muted("% da altura; arraste na prévia", host, wrap=False))
         position_line.addStretch(1)
-        self.title_stepper = Stepper(host)
-        self.title_stepper.setRange(TITLE_MIN, TITLE_MAX)
-        self.title_stepper.setValue(style.resolved_title_position())
-        title_line = QHBoxLayout()
-        title_line.setSpacing(10)
-        title_line.addWidget(self.title_stepper)
-        title_line.addWidget(Muted("% da altura; arraste o título na prévia", host, wrap=False))
-        title_line.addStretch(1)
         self.words_combo = Select(host)
         for count in range(1, 5):
             self.words_combo.addItem(
@@ -592,7 +495,6 @@ class ClipsPage(QWidget):
 
         rows = [("Animação", self.animation_combo), ("Fonte", self.font_combo),
                 ("Tamanho", self.size_combo), ("Cores", colors), ("Altura", position_line),
-                ("Altura do título", title_line),
                 ("Palavras", self.words_combo), ("Maiúsculas", self.upper_switch),
                 ("Caixa atrás", self.background_switch)]
         for index, (label, control) in enumerate(rows):
@@ -601,15 +503,6 @@ class ClipsPage(QWidget):
                 form.addWidget(control, index, 1, Qt.AlignmentFlag.AlignLeft)
             else:
                 form.addLayout(control, index, 1)
-        column = QVBoxLayout()
-        column.setSpacing(12)
-        column.addLayout(form)
-        column.addWidget(Muted(
-            "A fonte precisa estar instalada no computador. A prévia é aproximada; o título "
-            "usa a cor da palavra falada.", host))
-        column.addStretch(1)
-        line.addLayout(column, 1)
-        group.add_row(host)
 
         for combo in (self.font_combo, self.size_combo, self.words_combo, self.animation_combo):
             combo.currentIndexChanged.connect(self._save_style)
@@ -618,28 +511,38 @@ class ClipsPage(QWidget):
         self.upper_switch.toggled.connect(self._save_style)
         self.background_switch.toggled.connect(self._save_style)
         self.position_stepper.valueChanged.connect(self._save_style)
-        self.title_stepper.valueChanged.connect(self._save_style)
-        self.preview.title_position_changed.connect(self.title_stepper.setValue)
-        self.preview.set_style(style)
-        return group
+        return form
 
     def _finish_group(self) -> InsetGroup:
         group = self.finish_group = InsetGroup(self)
         cfg = self.cfg
-        self.title_combo = Select(group)
-        for label, value in TITLE_TIMES:
-            self.title_combo.addItem(label, userData=value)
-        self.title_combo.setCurrentIndex(max(0, self.title_combo.findData(
-            float(getattr(cfg, "clips_title_seconds", 2.0)))))
+        self.pauses_switch = Switch(group)
+        self.pauses_switch.setChecked(bool(getattr(cfg, "clips_remove_pauses", True)))
+        self.pauses_switch.toggled.connect(self._pauses_toggled)
         group.add_row(SettingRow(
-            "Título na tela", "Quanto tempo o título de cada corte fica visível.",
-            self.title_combo, group))
+            "Remover pausas",
+            "Corta os silêncios entre as falas usando o tempo de cada palavra.",
+            self.pauses_switch, group))
+        self.pause_combo = Select(group)
+        for label, value in PAUSES:
+            self.pause_combo.addItem(label, userData=value)
+        self.pause_combo.setCurrentIndex(max(0, self.pause_combo.findData(
+            float(getattr(cfg, "clips_min_pause", 0.6)))))
+        self.pause_combo.currentIndexChanged.connect(self._save_style)
+        self.pause_row = group.add_row(SettingRow(
+            "Pausa mínima", "Silêncios menores que isso ficam no vídeo.", self.pause_combo, group))
         self.zoom_switch = Switch(group)
         self.zoom_switch.setChecked(bool(getattr(cfg, "clips_zoom_cuts", False)))
         self.zoom_row = group.add_row(SettingRow(
             "Zoom nas emendas",
             "Alterna uma leve aproximação a cada pausa removida: o salto vira um corte de "
             "câmera, como nos vídeos de quem edita à mão.", self.zoom_switch, group))
+        self.punch_switch = Switch(group)
+        self.punch_switch.setChecked(bool(getattr(cfg, "clips_emphasis_zoom", False)))
+        group.add_row(SettingRow(
+            "Zoom na ênfase",
+            "Aproxima rápido a imagem nos pontos do plano da IA ou, sem plano, na palavra dita "
+            "com mais força.", self.punch_switch, group))
         self.sfx_switch = Switch(group)
         self.sfx_switch.setChecked(bool(getattr(cfg, "clips_sound_effects", False)))
         group.add_row(SettingRow(
@@ -653,17 +556,21 @@ class ClipsPage(QWidget):
         self.sounds_edit.editingFinished.connect(self._save_style)
         sounds_button = Button("Escolher pasta", "folder", "secondary", group)
         sounds_button.clicked.connect(self._choose_sounds)
-        group.add_row(self._path_row(
+        self.sounds_row = group.add_row(self._path_row(
             group, "Seus sons (opcional)",
             "Uma pasta com arquivos chamados whoosh, pop, impacto, ding e subida (WAV, MP3, OGG…) "
             "troca os sons padrão pelos seus. O que faltar continua com o som do app.",
             self.sounds_edit, sounds_button))
-        self.punch_switch = Switch(group)
-        self.punch_switch.setChecked(bool(getattr(cfg, "clips_emphasis_zoom", False)))
-        group.add_row(SettingRow(
-            "Zoom na ênfase",
-            "Aproxima rápido a imagem nos pontos do plano da IA ou, sem plano, na palavra dita "
-            "com mais força.", self.punch_switch, group))
+        for switch in (self.zoom_switch, self.sfx_switch, self.punch_switch):
+            switch.toggled.connect(self._save_style)
+        self.sfx_switch.toggled.connect(self._sounds_toggled)
+        self._pauses_toggled(self.pauses_switch.isChecked(), save=False)
+        self._sounds_toggled(self.sfx_switch.isChecked())
+        return group
+
+    def _transcription_group(self) -> InsetGroup:
+        group = InsetGroup(self)
+        cfg = self.cfg
         self.progress_switch = Switch(group)
         self.progress_switch.setChecked(bool(getattr(cfg, "clips_progress_bar", False)))
         group.add_row(SettingRow(
@@ -682,26 +589,19 @@ class ClipsPage(QWidget):
             "Salvar a legenda em .srt",
             "Um arquivo ao lado de cada corte, para enviar como legenda separada.",
             self.srt_switch, group))
-        self.title_combo.currentIndexChanged.connect(self._save_style)
-        for switch in (self.zoom_switch, self.sfx_switch, self.punch_switch,
-                       self.progress_switch, self.loudness_switch, self.srt_switch):
+        for switch in (self.progress_switch, self.loudness_switch, self.srt_switch):
             switch.toggled.connect(self._save_style)
-        group.set_row_visible(self.zoom_row, self.pauses_switch.isChecked())
-        return group
-
-    def _transcription_group(self) -> InsetGroup:
-        group = InsetGroup(self)
         self.language_combo = Select(group)
         for label, value in LANGUAGES:
             self.language_combo.addItem(label, userData=value)
         self.language_combo.setCurrentIndex(max(0, self.language_combo.findData(
-            getattr(self.cfg, "transcription_language", "pt"))))
+            getattr(cfg, "transcription_language", "pt"))))
         group.add_row(SettingRow("Idioma da fala", "", self.language_combo, group))
         self.model_combo = Select(group)
         for label, value in MODELS:
             self.model_combo.addItem(label, userData=value)
         self.model_combo.setCurrentIndex(max(0, self.model_combo.findData(
-            getattr(self.cfg, "transcription_model", "medium"))))
+            getattr(cfg, "transcription_model", "medium"))))
         group.add_row(SettingRow(
             "Modelo Whisper",
             "O mesmo da aba Legendar. Usa a GPU NVIDIA quando disponível e a CPU nos demais "
@@ -790,6 +690,9 @@ class ClipsPage(QWidget):
         row = ClipRow(len(self.rows) + 1, self)
         row.removed.connect(self._remove_row)
         row.changed.connect(self._update_run_enabled)
+        row.title.textChanged.connect(self._refresh_preview)
+        if hasattr(self, "title_picker"):
+            row.title.setPlaceholderText(tr(TITLE_PLACEHOLDERS[self.title_picker.value()]))
         if not self.rows:
             row.start.editingFinished.connect(self._frame_timer.start)
         self.rows.append(row)
@@ -801,6 +704,7 @@ class ClipsPage(QWidget):
     def apply_plan_text(self, text: str) -> int:
         """Troca a lista de cortes pelos do plano; devolve quantos cortes entraram."""
         ranges = parse_plan(text)
+        look = parse_look(text)
         while len(self.rows) > 1:
             row = self.rows.pop()
             self.rows_layout.removeWidget(row)
@@ -817,7 +721,13 @@ class ClipsPage(QWidget):
             # Quem colou um plano com sons quer ouvir os sons.
             self.sfx_switch.setChecked(any(m.sound for c in ranges for m in c.markers))
             self.punch_switch.setChecked(any(m.zoom for c in ranges for m in c.markers))
+        if look.label is not None:
+            self.label_edit.setText(look.label)
+        if look.title_mode:
+            # O tamanho dos títulos que a IA escreveu depende do tipo: segue o dela.
+            self.title_picker.set_value(look.title_mode)
         self._refresh_rows()
+        self._save_style()
         return len(ranges)
 
     def _apply_plan(self) -> None:
@@ -848,18 +758,52 @@ class ClipsPage(QWidget):
             row.set_number(number)
         self.add_button.setEnabled(len(self.rows) < MAX_CLIPS)
         self._update_run_enabled()
+        self._refresh_preview()
 
-    def _pauses_toggled(self, checked: bool) -> None:
-        self.pause_combo.setEnabled(checked)
-        if hasattr(self, "zoom_row"):
-            # Sem pausas removidas não há emendas para disfarçar.
-            self.finish_group.set_row_visible(self.zoom_row, checked)
+    def _pauses_toggled(self, checked: bool, save: bool = True) -> None:
+        # Sem pausas removidas não há pausa mínima nem emendas para disfarçar.
+        self.finish_group.set_row_visible(self.pause_row, checked)
+        self.finish_group.set_row_visible(self.zoom_row, checked)
+        if save:
+            self._save_style()
+
+    def _sounds_toggled(self, checked: bool) -> None:
+        self.finish_group.set_row_visible(self.sounds_row, checked)
+
+    def _layout_changed(self, *_args) -> None:
+        """Enquadramento ou título trocados: textos de apoio, campos que valem e prévia."""
+        framing, mode = self.framing_picker.value(), self.title_picker.value()
+        self.framing_hint.setText(tr(FRAMING_HINTS.get(framing, "")))
+        self.title_hint.setText(tr(TITLE_HINTS[mode]))
+        self.ranges_hint.setText(tr(RANGES_HINTS[mode]))
+        for key, widgets in self._title_rows.items():
+            for widget in widgets:
+                widget.setVisible(key == mode)
+        for row in self.rows:
+            row.title.setPlaceholderText(tr(TITLE_PLACEHOLDERS[mode]))
+        # Com a faixa no topo a legenda não pode subir para dentro dela.
+        low = BANNER_CAPTION_MIN if mode == "banner" else POSITION_MIN
+        self.position_stepper.setRange(low, POSITION_MAX)
         self._save_style()
 
-    def _framing_changed(self, *_args) -> None:
-        value = str(self.framing_combo.currentData() or "blur")
-        self.framing_row.subtitle.setText(tr(FRAMING_HINTS.get(value, "")))
-        self._save_style()
+    def banner(self) -> bool:
+        return self.title_picker.value() == "banner"
+
+    def _preview_title(self) -> str:
+        """O título do primeiro corte que tiver um, para a prévia mostrar o texto de verdade."""
+        return next((row.title.text().strip() for row in self.rows if row.title.text().strip()),
+                    "")
+
+    def _refresh_preview(self, *_args) -> None:
+        if not hasattr(self, "srt_switch"):
+            return   # ainda montando a página
+        preview = self.preview
+        preview.set_style(self.caption_style())
+        preview.set_framing(self.framing_picker.value())
+        preview.set_banner(self.banner())
+        preview.set_texts(self._preview_title(), self.label_edit.text())
+        self.framing_picker.refresh()
+        self.title_picker.refresh()
 
     # ------------------------------------------------------------------ estilo da legenda
     def _saved_style(self) -> CaptionStyle:
@@ -899,11 +843,12 @@ class ClipsPage(QWidget):
         if not hasattr(self, "srt_switch"):
             return   # ainda montando a página
         style = self.caption_style()
-        self.preview.set_style(style)
-        self.preview.set_framing(str(self.framing_combo.currentData() or "blur"))
+        self._refresh_preview()
         self.words_combo.setEnabled(style.animation != "word")
         cfg = self.cfg
-        cfg.clips_framing = str(self.framing_combo.currentData() or "blur")
+        cfg.clips_framing = self.framing_picker.value()
+        cfg.clips_banner = self.banner()
+        cfg.clips_banner_label = self.label_edit.text().strip()
         cfg.clips_remove_pauses = self.pauses_switch.isChecked()
         cfg.clips_min_pause = float(self.pause_combo.currentData() or 0.6)
         cfg.clips_font = style.font
@@ -1024,7 +969,9 @@ class ClipsPage(QWidget):
             source=self._source(),
             ranges=tuple(ranges),
             output_dir=Path(self.output_edit.text().strip()),
-            framing=str(self.framing_combo.currentData() or "blur"),
+            framing=self.framing_picker.value(),
+            banner=self.banner(),
+            banner_label=self.label_edit.text().strip(),
             remove_pauses=self.pauses_switch.isChecked(),
             min_pause=float(self.pause_combo.currentData() or 0.6),
             style=self.caption_style(),

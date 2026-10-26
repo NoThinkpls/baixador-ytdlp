@@ -467,6 +467,27 @@ EN: dict[str, str] = {
     "Este arquivo só tem áudio. Os cortes verticais precisam de vídeo; para legendar só o áudio, use a aba Legendar.": "This file only has audio. Vertical clips need video; to caption audio only, use the Captions tab.",
     "Este vídeo não tem som: sem fala não há legenda nem pausas para tirar. Para só deixá-lo vertical, use Ferramentas → Criar versão vertical.": "This video has no sound: without speech there are no captions or pauses to remove. To just make it vertical, use Tools → Create vertical version.",
     "Não foi possível ler este arquivo como vídeo.": "Could not read this file as a video.",
+    # Página Cortes 1.15.0: escolhas com miniatura e título fixo no topo
+    "Seguir a pessoa": "Follow the person", "automático": "automatic",
+    "vídeo inteiro": "whole video", "Cortar no centro": "Center crop",
+    "tela cheia": "full screen", "Título animado": "Animated title",
+    "entra e some": "pops in and out", "Título fixo no topo": "Fixed title on top",
+    "faixa com cartão": "banner with card",
+    "Aproxima e acompanha quem está falando, como o reenquadrar do CapCut. Procura rostos e, sem rosto, segue o movimento. Vídeos já verticais ficam como estão.": "Zooms in and follows whoever is speaking, like CapCut's auto reframe. It looks for faces and, without one, follows the motion. Videos that are already vertical stay as they are.",
+    "O título de cada corte entra com um pulo e some depois do tempo escolhido.": "Each clip's title pops in and disappears after the chosen time.",
+    "Uma faixa escura no alto com o título num cartão na cor de destaque, do começo ao fim; o vídeo fica embaixo, como nos canais de cortes de podcast.": "A dark band at the top with the title on a card in the highlight color, from start to end; the video sits below, like podcast clip channels.",
+    "Informe início e fim de cada corte em mm:ss ou hh:mm:ss. O título fica no cartão do topo durante todo o corte.": "Enter the start and end of each clip as mm:ss or hh:mm:ss. The title stays on the top card for the whole clip.",
+    "Título no cartão (opcional)": "Title on the card (optional)",
+    "Visual do corte": "Clip look", "Ritmo e efeitos": "Pacing and effects",
+    "Saída e transcrição": "Output and transcription", "Tempo na tela": "Time on screen",
+    "Linha de cima": "Top line",
+    "Ex.: nome do podcast, convidado ou episódio": "E.g. podcast name, guest or episode",
+    "Arraste a legenda na prévia. A imagem é aproximada.": "Drag the caption in the preview. The image is approximate.",
+    "Palavra falada e título": "Spoken word and title",
+    "A fonte precisa estar instalada no computador. O título usa a fonte da legenda e a cor da palavra falada.": "The font must be installed on the computer. The title uses the caption font and the spoken word color.",
+    "Prévia do corte": "Clip preview",
+    "Arraste a legenda para cima ou para baixo": "Drag the caption up or down",
+    "Use um arquivo do computador ou cole um link: só os trechos escolhidos são baixados. Com um arquivo, a prévia mostra um quadro dele.": "Use a file from your computer or paste a link: only the chosen parts are downloaded. With a file, the preview shows a frame from it.",
 }
 
 

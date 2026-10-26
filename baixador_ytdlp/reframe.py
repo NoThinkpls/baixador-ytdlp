@@ -691,11 +691,13 @@ class _Analysis:
 def analyze(source: Path, offset: float, length: float, *,
             voice: tuple | None = None,
             progress: Callable[[float], None] | None = None,
-            cancelled: Callable[[], bool] | None = None) -> Track | None:
+            cancelled: Callable[[], bool] | None = None,
+            aspect: float = 9 / 16) -> Track | None:
     """Caminho da câmera ao longo do corte; ``None`` = não há o que rastrear.
 
     ``voice`` é ``(amostras, taxa)`` do áudio do trecho (o mesmo que vai para o Whisper):
-    com ele, havendo várias pessoas, a câmera segue quem está falando.
+    com ele, havendo várias pessoas, a câmera segue quem está falando. ``aspect`` é
+    largura/altura da janela (mais larga que 9:16 com o título fixo no topo).
     """
     import av
     import numpy as np
@@ -721,8 +723,8 @@ def analyze(source: Path, offset: float, length: float, *,
         # montagem, então a análise precisa ver o quadro já em pé, como ele.
         turns = quarter_turns(container, stream)
         width, height = (coded_h, coded_w) if turns % 2 else (coded_w, coded_h)
-        if not width or not height or width / height <= 9 / 16 + 0.01:
-            return None   # já é vertical: não há para onde mover a janela
+        if not width or not height or width / height <= aspect + 0.01:
+            return None   # já cabe na janela: não há para onde movê-la
         scale = INPUT_SIZE / max(width, height)
         small = (max(2, int(coded_w * scale) // 2 * 2), max(2, int(coded_h * scale) // 2 * 2))
         detail_scale = min(1.0, DETAIL_SIZE / max(width, height))
@@ -761,7 +763,7 @@ def analyze(source: Path, offset: float, length: float, *,
         {ident: (center, side, scores[ident].get(index))
          for ident, (center, side) in frame.items()}
         for index, frame in enumerate(state.observations)]
-    view = (height * 9 / 16) / width
+    view = (height * aspect) / width
     speakers, cuts, wide = choose_speakers(observations, state.shot_starts, rate_grid, view)
     # Quadro sem nenhum rosto: o movimento da cena indica onde está a ação.
     targets = [x if x is not None or observations[i] else state.motion[i]
