@@ -61,14 +61,14 @@ class PaginaCortesTests(unittest.TestCase):
         self.assertEqual((style.size, style.text_color, style.highlight_color),
                          (104, "#00FF00", "#FF00AA"))
         self.assertEqual((style.position, style.words, style.uppercase), (35, 2, False))
-        self.assertEqual(page.framing_combo.currentData(), "track")
+        self.assertEqual(page.framing_picker.value(), "track")
         self.assertEqual(page.preview.caption.position, 35)
 
     def test_mudar_controles_salva_nas_configuracoes(self) -> None:
         page, cfg = self._page()
         page.position_stepper.setValue(40)
         page.highlight_color.set_color("#00e5ff")
-        page.framing_combo.setCurrentIndex(page.framing_combo.findData("track"))
+        page.framing_picker.set_value("track")
         self.assertEqual((cfg.clips_position, cfg.clips_highlight_color, cfg.clips_framing),
                          (40, "#00E5FF", "track"))
         self.assertTrue(cfg.save.called)

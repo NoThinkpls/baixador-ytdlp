@@ -15,10 +15,10 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 
 from . import effects, reframe, sfx
-from .clips import (HEIGHT, WIDTH, ClipError, ClipOptions, ClipRange, Loudness, Tracking,
+from .clips import (WIDTH, ClipError, ClipOptions, ClipRange, Loudness, Tracking,
                     audio_command, build_ass, build_srt, clamp_range, clip_destination, is_url,
                     keep_intervals, output_length, remap_time, remap_words, render_command,
-                    require_video_and_audio, section_offset, stream_kinds,
+                    require_video_and_audio, section_offset, stream_kinds, video_height,
                     words_from_transcript)
 from .config import Settings
 from .diagnostics import get_logger, log_event, report_exception
@@ -382,13 +382,14 @@ class ClipWorker(QThread):
                     voice = effects.read_wav(audio)
                 except Exception as exc:  # noqa: BLE001 - sem voz, decide pelos rostos
                     report_exception("áudio para achar quem fala", exc)
+            area = video_height(self.options.banner)   # menor com o título fixo no topo
             track = reframe.analyze(source, offset, length, voice=voice,
                                     progress=lambda share: self._stage("track", share),
-                                    cancelled=self._cancelled.is_set)
+                                    cancelled=self._cancelled.is_set, aspect=WIDTH / area)
             self._check()
             if track is None:
                 return None
-            scaled = track.scaled_width(HEIGHT)
+            scaled = track.scaled_width(area)
             commands = reframe.crop_commands(track.samples, intervals, scaled, WIDTH, remap_time,
                                              track.fps, track.cuts)
             if not commands or scaled <= WIDTH:
@@ -464,7 +465,7 @@ class ClipWorker(QThread):
                 zoom_cuts=options.zoom_cuts and options.remove_pauses,
                 progress_colour=options.style.highlight_color if options.progress_bar else "",
                 normalize_audio=options.normalize_audio, sounds=sounds,
-                **(effect_extras or {}))
+                banner=options.banner, **(effect_extras or {}))
             code, message = self._ffmpeg(command, output_length(intervals), "render")
             if code == 0:
                 break
@@ -515,7 +516,8 @@ class ClipWorker(QThread):
         subtitles.write_text(build_ass(
             remap_words(words, intervals), total, title=clip.title,
             title_seconds=self.options.title_seconds,
-            style=self.options.style), encoding="utf-8")
+            style=self.options.style, banner=self.options.banner,
+            banner_label=self.options.banner_label), encoding="utf-8")
         tracking = (self._track(source, offset, length, intervals, folder, audio)
                     if self.options.framing == "track" else None)
         effect_extras, sounds = self._effects(clip, audio, words, intervals, total, folder)

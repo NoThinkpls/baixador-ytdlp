@@ -3,6 +3,31 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.15.0] - 2026-10-26
+
+### Adicionado
+
+- Cortes, **Título fixo no topo**: uma faixa escura no alto com o título num cartão na cor
+  de destaque, do começo ao fim do corte, e o vídeo embaixo (seguindo a pessoa, com fundo
+  desfocado ou cortado no centro), no formato dos canais de cortes de podcast. Uma linha
+  menor opcional vai acima do título (nome do podcast, convidado, episódio). O título
+  diminui sozinho para caber em até 3 linhas; a legenda não sobe para dentro da faixa e os
+  zooms mexem só no vídeo. "Seguir a pessoa" mede a janela pela área do vídeo, mais larga
+  que 9:16.
+
+### Alterado
+
+- Página **Cortes** mais fácil de entender: enquadramento e tipo de título viraram cartões
+  com miniatura (o bonequinho da prévia, ou um quadro do vídeo) em vez de listas, cada um
+  mostrando o resultado com a legenda e as cores escolhidas. A prévia grande mostra o
+  título do primeiro corte em vez de "Título do corte", quebra o título em linhas como o
+  vídeo final e acompanha a rolagem da página. Tudo o que muda a imagem ficou junto em
+  **Visual do corte**; remoção de pausas e efeitos foram para **Ritmo e efeitos**; barra
+  de progresso, volume, .srt, idioma e modelo para **Saída e transcrição**. Opções que
+  não valem no momento (pausa mínima sem remover pausas, pasta de sons sem efeitos,
+  campos do outro tipo de título) ficam escondidas.
+- Rótulos de seção em caixa alta agora são traduzidos no idioma inglês.
+
 ## [1.14.5] - 2026-10-26
 
 ### Corrigido
