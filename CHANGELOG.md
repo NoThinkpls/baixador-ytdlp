@@ -3,7 +3,7 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
-## [1.15.0] - 2026-10-26
+## [1.16.0] - 2026-10-26
 
 ### Adicionado
 
@@ -12,10 +12,81 @@ formato Keep a Changelog.
   `historico`. Usa o mesmo motor e as configurações salvas da interface, devolve o resultado em
   JSON no stdout e o andamento no stderr, e convive com a janela aberta. Referência em
   [`docs/LINHA-DE-COMANDO.md`](docs/LINHA-DE-COMANDO.md). Em `cortar`, `--plano` aceita o plano
-  da IA da 1.14.2 e `--pasta-sons` e `--altura-titulo` seguem a página Cortes.
+  da IA da 1.14.2 e `--pasta-sons` e `--altura-titulo` seguem a página Cortes, e `--titulo fixo` com
+  `--linha-titulo` faz o título fixo no topo da 1.15.0.
 - Skill `baixador` para o Claude Code (`.claude/skills/baixador/SKILL.md`): pedidos no chat como
   "baixa esse vídeo em 720p" ou "faz um corte de 1:20 a 2:05" viram o comando certo, executado
   no computador da pessoa.
+
+## [1.15.0] - 2026-10-26
+
+### Adicionado
+
+- Cortes, **Título fixo no topo**: uma faixa escura no alto com o título num cartão na cor
+  de destaque, do começo ao fim do corte, e o vídeo embaixo (seguindo a pessoa, com fundo
+  desfocado ou cortado no centro), no formato dos canais de cortes de podcast. Uma linha
+  menor opcional vai acima do título (nome do podcast, convidado, episódio). O título
+  diminui sozinho para caber em até 3 linhas; a legenda não sobe para dentro da faixa e os
+  zooms mexem só no vídeo. "Seguir a pessoa" mede a janela pela área do vídeo, mais larga
+  que 9:16.
+
+### Alterado
+
+- Página **Cortes** mais fácil de entender: enquadramento e tipo de título viraram cartões
+  com miniatura (o bonequinho da prévia, ou um quadro do vídeo) em vez de listas, cada um
+  mostrando o resultado com a legenda e as cores escolhidas. A prévia grande mostra o
+  título do primeiro corte em vez de "Título do corte", quebra o título em linhas como o
+  vídeo final e acompanha a rolagem da página. Tudo o que muda a imagem ficou junto em
+  **Visual do corte**; remoção de pausas e efeitos foram para **Ritmo e efeitos**; barra
+  de progresso, volume, .srt, idioma e modelo para **Saída e transcrição**. Opções que
+  não valem no momento (pausa mínima sem remover pausas, pasta de sons sem efeitos,
+  campos do outro tipo de título) ficam escondidas.
+- Rótulos de seção em caixa alta agora são traduzidos no idioma inglês.
+
+## [1.14.5] - 2026-10-26
+
+### Corrigido
+
+- Cortes, **Seguir a pessoa**: numa live com várias câmeras, a janela largava quem falava
+  (andando com o microfone) e ia para quem estava parado atrás, ida e volta, ou para o
+  tecladista e nucas detectadas por engano nas cenas da plateia. Agora quem fala é decidido
+  pelo LR-ASD (IJCV 2025, licença MIT, 3,4 MB, na CPU), um modelo treinado para isso que
+  olha a boca de cada rosto junto com o áudio, quadro a quadro. No vídeo de exemplo do
+  TalkNet, quem fala ficou com nota +3,0 e os outros abaixo de -3. As trocas de câmera
+  são detectadas pela cor (como o PySceneDetect) e cada cena é decidida sozinha; rosto
+  que aparece menos de 0,5 s não conta; a troca de pessoa corta no momento em que a outra
+  começa a falar. Cena em que ninguém fala: um rosto é seguido, um grupo que cabe na
+  janela fica junto e pessoas espalhadas aparecem no quadro inteiro com fundo desfocado.
+- Cortes, **Efeitos sonoros**: os sons não combinavam com o vídeo. O impacto tinha um grave
+  quase no volume máximo, acima da própria voz, e a subida era um tom de ficção científica.
+  Agora o volume de cada som (do app ou da sua pasta) é medido e fica de 8 a 14 dB abaixo
+  da voz do corte, o impacto tem corpo audível no celular sem ronco, a subida virou um
+  chiado que cresce (prato ao contrário) e o pop um toque seco. Todo som vem junto de algo
+  na imagem, como num editor: o whoosh só numa emenda e os outros com o zoom rápido; com o
+  zoom na ênfase desligado, só o whoosh fica. Dois sons nunca a menos de 3 s, e o texto
+  pronto do plano da IA pede de 1 a 3 efeitos por corte.
+
+## [1.14.4] - 2026-10-26
+
+### Alterado
+
+- Cortes, **Seguir a pessoa**: com mais de uma pessoa em cena, a câmera segue quem está falando,
+  não o maior rosto. Cada rosto é acompanhado entre os quadros e o movimento da boca dele é
+  comparado com o volume da voz; a boca que mexe no ritmo da fala vence. Vale quem mais falou
+  no corte inteiro (a pessoa principal) somado a quem fala nos segundos em volta, então num
+  diálogo a câmera troca de pessoa. A troca é um corte seco (sem panorâmica atravessando o
+  quadro), só acontece quando a outra pessoa vence por 0,8 s e nunca antes de 2 s na atual.
+  Num vídeo de teste com duas pessoas e a maior delas mexendo a boca fora do ritmo, a câmera
+  ficou em quem falava em 93–97% do tempo (antes, 55–59%); num diálogo, 83% (antes, 33%).
+  Continua tudo em CPU e sem modelo novo. O modelo Light-ASD também foi avaliado e, nestes
+  vídeos, errou mais e deixava a análise duas vezes mais lenta.
+
+### Corrigido
+
+- Cortes, **Remover pausas**: o fim da fala era cortado (a última sílaba, o "s", a voz morrendo).
+  O Whisper marca o fim da palavra cedo; agora o trecho só termina depois que o volume realmente
+  cai (até 0,7 s além do fim marcado), com folga mínima de 0,28 s no fim (0,12 s no começo), sem
+  invadir a fala seguinte. Cada emenda ganha uma rampa de volume de 25 ms, sem estalo.
 
 ## [1.14.3] - 2026-10-26
 

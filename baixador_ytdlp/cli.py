@@ -418,9 +418,13 @@ def _parse_clip(value: str):
 
 
 def _read_plan(value: str):
-    """Plano da IA (``{"bx":1,…}``) colado direto ou num arquivo de texto."""
+    """Plano da IA (``{"bx":1,…}``) colado direto ou num arquivo de texto.
+
+    Devolve os cortes e, quando o plano traz, o tipo de título (``"t"``: ``"f"`` fixo ou
+    ``"a"`` animado) e a linha de cima do título fixo (``"l"``).
+    """
     from .clips import ClipError
-    from .plano_ia import parse_plan
+    from .plano_ia import find_plan, parse_plan
 
     path = Path(value).expanduser()
     try:
@@ -428,9 +432,14 @@ def _read_plan(value: str):
     except OSError as exc:
         raise CliError(f"Não foi possível ler o plano: {exc}") from exc
     try:
-        return tuple(parse_plan(text))
+        ranges = tuple(parse_plan(text))
+        plan = find_plan(text)
     except ClipError as exc:
         raise CliError(str(exc)) from exc
+    kind = str(plan.get("t") or "").strip().casefold()
+    title = {"f": "fixo", "a": "animado"}.get(kind, "")
+    label = " ".join(str(plan.get("l") or "").split())
+    return ranges, title, label
 
 
 def cmd_cortar(args) -> dict:
@@ -443,7 +452,11 @@ def cmd_cortar(args) -> dict:
     if args.plano:
         if ranges:
             raise CliError("Use --corte ou --plano, não os dois.")
-        ranges = _read_plan(args.plano)
+        ranges, plan_title, plan_label = _read_plan(args.plano)
+        # O tipo de título e a linha de cima do plano valem quando não vieram na linha de comando.
+        args.titulo = args.titulo or plan_title or None
+        if args.linha_titulo is None and plan_label:
+            args.linha_titulo = plan_label
     if not ranges:
         raise CliError("Informe ao menos um --corte INICIO-FIM ou um --plano.")
     planned_sound = any(marker.sound for clip in ranges for marker in clip.markers)
@@ -476,7 +489,11 @@ def cmd_cortar(args) -> dict:
         source=source, ranges=ranges, output_dir=output_dir, framing=framing,
         remove_pauses=flag(args.remover_pausas, cfg.clips_remove_pauses),
         min_pause=cfg.clips_min_pause, style=style,
-        title_seconds=cfg.clips_title_seconds,
+        title_seconds=(args.duracao_titulo if args.duracao_titulo is not None
+                       else cfg.clips_title_seconds),
+        banner=(args.titulo == "fixo") if args.titulo else cfg.clips_banner,
+        banner_label=(args.linha_titulo if args.linha_titulo is not None
+                      else cfg.clips_banner_label),
         language=args.idioma or cfg.transcription_language,
         model_size=args.modelo or cfg.transcription_model,
         zoom_cuts=flag(args.zoom_emendas, cfg.clips_zoom_cuts),
@@ -645,8 +662,15 @@ def build_parser() -> argparse.ArgumentParser:
                         "de --corte")
     p.add_argument("--pasta-sons", metavar="DIR",
                    help="seus sons (whoosh, pop, impacto, ding, subida); vazio = os do app")
+    p.add_argument("--titulo", choices=("animado", "fixo"),
+                   help="animado (entra e some) ou fixo (faixa escura no topo com o título num "
+                        "cartão, o corte inteiro)")
+    p.add_argument("--linha-titulo", metavar="TEXTO",
+                   help="título fixo: linha pequena acima do título (podcast, convidado, episódio)")
+    p.add_argument("--duracao-titulo", type=float, metavar="S",
+                   help="título animado: segundos na tela (0 = o corte inteiro)")
     p.add_argument("--altura-titulo", type=int, metavar="%",
-                   help="centro do título em %% da altura (0 = automático)")
+                   help="título animado: centro em %% da altura (0 = automático)")
     p.add_argument("--pasta", help="destino dos cortes")
     p.add_argument("--enquadramento", help="blur, crop ou track (segue a pessoa)")
     p.add_argument("--animacao", help="highlight, color, karaoke, word, pop ou none")

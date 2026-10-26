@@ -13,7 +13,7 @@ from .plataforma import is_macos, is_windows, pasta_dados_usuario, pasta_do_exec
 
 APP_NAME = "baixador-ytdlp"
 APP_ID = "BaixadorYtdlp"
-APP_VERSION = "1.15.0"
+APP_VERSION = "1.16.0"
 IS_WINDOWS = is_windows()
 
 
@@ -266,6 +266,8 @@ class Settings:
     clips_emphasis_zoom: bool = False
     clips_sounds_folder: str = ""        # vazio = sons do próprio app
     clips_title_position: int = 0         # 0 = automático
+    clips_banner: bool = False            # título fixo no topo (faixa com cartão)
+    clips_banner_label: str = ""          # linha pequena acima do título fixo
     window_geometry: str = ""        # legado (blob do Qt); ignorado desde a 1.8.1
     window_rect: list[int] = field(default_factory=list)  # x, y, largura, altura
     window_maximized: bool = False

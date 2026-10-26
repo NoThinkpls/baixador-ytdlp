@@ -64,7 +64,8 @@ def Hint(text: str = "", parent=None, wrap: bool = True) -> QLabel:
 
 def SectionLabel(text: str = "", parent=None) -> QLabel:
     """Rótulo de seção em caixa alta — a assinatura tipográfica do Discord."""
-    return _label(text.upper(), theme.section_label(), "sectionLabel", parent)
+    # Traduz antes de pôr em caixa alta: o catálogo guarda "Cortes", não "CORTES".
+    return _label(tr(text).upper(), theme.section_label(), "sectionLabel", parent)
 
 
 class Divider(QFrame):

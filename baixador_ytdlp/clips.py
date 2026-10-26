@@ -5,7 +5,8 @@ Cada corte passa por (ver ``workers.ClipWorker``):
 1. o trecho do arquivo local, ou baixado do link com ``--download-sections``;
 2. o áudio do trecho, transcrito pelo processo isolado do Whisper com o tempo de cada palavra;
 3. as pausas longas, que viram cortes (``keep_intervals``) e deslocam os tempos das palavras;
-4. uma legenda ASS de 2–3 palavras com a palavra falada em destaque e um título animado;
+4. uma legenda ASS de 2–3 palavras com a palavra falada em destaque e um título animado
+   (ou fixo, num cartão na faixa de cima: ``banner_events``);
 5. um único FFmpeg que recorta, emenda, enquadra em 1080x1920 e grava a legenda;
 6. opcionalmente, os sons e o zoom rápido de ``effects`` (do plano da IA ou automáticos).
 
@@ -28,7 +29,16 @@ WIDTH, HEIGHT = 1080, 1920
 MAX_CLIP_SECONDS = 600       # acima de 10 min deixa de ser um corte e a transcrição pesa
 MIN_CLIP_SECONDS = 1.0
 DEFAULT_MIN_PAUSE = 0.6      # silêncio maior que isso entre duas palavras é removido
-SPEECH_PAD = 0.12            # folga mantida antes e depois da fala, para não comer sílabas
+SPEECH_PAD = 0.12            # folga mantida antes da fala, para não comer a primeira sílaba
+# O Whisper marca o fim da palavra cedo: a última sílaba, o "s" e a voz morrendo ficam
+# depois do tempo dele. Por isso o fim de cada trecho ganha mais folga que o começo e,
+# com o áudio em mãos, só corta quando o volume realmente cai.
+TAIL_PAD = 0.28
+MAX_TAIL = 0.7               # nunca segura mais que isso depois do fim marcado da palavra
+MAX_LEAD = 0.2               # nem começa mais que isso antes do início marcado
+RELEASE = 0.08               # depois que o volume cai, um respiro antes da emenda
+SPLICE_FADE = 0.025          # rampa de volume em cada emenda, sem estalo
+ENERGY_FRAME = 0.02          # janela (s) da medida de volume usada nas emendas
 MIN_KEEP = 0.08              # pedaço menor que isso só gera um salto de imagem
 CAPTION_HOLD = 0.35          # a última palavra do grupo fica na tela um pouco depois de dita
 CAPTION_MAX_GAP = 0.6        # pausa que fecha um grupo mesmo antes de completar as palavras
@@ -41,6 +51,22 @@ ZOOM = 1.08                  # aproximação nas emendas, para disfarçar o salt
 PROGRESS_HEIGHT = 12         # barra de progresso do corte, em pixels
 TITLE_HIGH, TITLE_LOW = 17, 83   # título automático: no alto, ou embaixo
 TITLE_MIN, TITLE_MAX = 6, 94
+# Título fixo no topo: faixa escura com um cartão na cor de destaque e o vídeo embaixo,
+# o formato dos canais de cortes de podcast.
+BANNER_HEIGHT = 576                  # o vídeo fica nos 1344 px de baixo
+BANNER_BACKGROUND = "#0E0E10"
+BANNER_CARD = (48, 84, 1032, 528)    # x1, y1, x2, y2 do cartão dentro da faixa
+BANNER_RADIUS = 30
+BANNER_PADDING = 44                  # folga do texto dentro do cartão
+BANNER_LABEL_SIZE = 34               # linha pequena de cima (canal, convidado, episódio)
+BANNER_LABEL_SPACE = 70              # altura que essa linha ocupa no topo do cartão
+BANNER_TITLE_SIZES = (108, 100, 92, 84, 76, 68, 60, 54)
+BANNER_MAX_LINES = 3
+BANNER_LINE_HEIGHT = 1.05
+# Largura média de uma letra maiúscula em negrito, em frações do \fs do libass. A Arial Bold
+# mede 0,52–0,59 em frases comuns; o resto é folga para fontes mais largas.
+CHAR_WIDTH = 0.62
+BANNER_CAPTION_MIN = 38              # a legenda nunca sobe para dentro da faixa (% da altura)
 
 
 class ClipError(RuntimeError):
@@ -70,6 +96,10 @@ class ClipOptions:
     min_pause: float = DEFAULT_MIN_PAUSE
     style: CaptionStyle = field(default_factory=lambda: CaptionStyle())
     title_seconds: float = 2.0       # 0 = o corte inteiro
+    # Título fixo no topo: faixa escura com o título num cartão, o corte inteiro; o vídeo
+    # (seguindo a pessoa, cortado ou com fundo desfocado) fica na área de baixo.
+    banner: bool = False
+    banner_label: str = ""           # linha pequena acima do título (canal, episódio…)
     language: str = "pt"
     model_size: str = "medium"
     zoom_cuts: bool = False          # alterna aproximação a cada emenda das pausas removidas
@@ -197,26 +227,83 @@ def words_from_transcript(path: Path) -> list[dict]:
     return words
 
 
+class Loudness:
+    """Volume do trecho em janelas de 20 ms, para achar onde a fala acaba de verdade."""
+
+    def __init__(self, samples, rate: int):
+        import numpy as np
+
+        step = max(1, int(rate * ENERGY_FRAME))
+        count = len(samples) // step
+        frames = np.asarray(samples[:count * step], dtype=np.float32).reshape(count, step)
+        self.db = 20 * np.log10(np.maximum(np.sqrt((frames * frames).mean(axis=1)), 1e-6))
+        if count:
+            floor, loud = np.percentile(self.db, 10), np.percentile(self.db, 90)
+            # Um quarto do caminho entre o ruído de fundo e a voz: o fim da palavra
+            # ("s", "r", voz morrendo) ainda está acima disso; o silêncio da sala, não.
+            self.threshold = float(floor + max(6.0, (loud - floor) * 0.25))
+        else:
+            self.threshold = 0.0
+
+    def _voiced(self, index: int) -> bool:
+        return 0 <= index < len(self.db) and float(self.db[index]) >= self.threshold
+
+    def speech_end(self, after: float, limit: float) -> float:
+        """Primeiro instante depois de ``after`` em que o volume cai e fica caído (40 ms)."""
+        index = int(after / ENERGY_FRAME)
+        last = int(limit / ENERGY_FRAME)
+        while index < last and (self._voiced(index) or self._voiced(index + 1)):
+            index += 1
+        return min(limit, index * ENERGY_FRAME)
+
+    def speech_start(self, before: float, limit: float) -> float:
+        """O mesmo para trás: onde a voz começa antes do início marcado da palavra."""
+        index = int(before / ENERGY_FRAME) - 1
+        first = int(limit / ENERGY_FRAME)
+        while index > first and (self._voiced(index) or self._voiced(index - 1)):
+            index -= 1
+        return max(limit, (index + 1) * ENERGY_FRAME)
+
+
 def keep_intervals(words: list[dict], length: float, min_pause: float = DEFAULT_MIN_PAUSE,
-                   pad: float = SPEECH_PAD) -> list[tuple[float, float]]:
+                   pad: float = SPEECH_PAD, tail: float = TAIL_PAD,
+                   loudness: Loudness | None = None) -> list[tuple[float, float]]:
     """Trechos ``(início, fim)`` com fala; pausas acima de ``min_pause`` ficam de fora.
 
     O começo e o fim do corte contam como pausas também: silêncio antes da primeira
     palavra e depois da última sai. Sem palavras (música, silêncio), o corte fica inteiro.
+    Com ``loudness`` (o áudio do trecho), a emenda só acontece depois que a voz cai, até
+    ``MAX_TAIL`` além do fim marcado: assim a palavra termina antes do corte.
     """
     if length <= 0:
         return []
     if not words:
         return [(0.0, length)]
+
+    def finish_of(end: float, following: float) -> float:
+        cut = end + tail
+        if loudness is not None:
+            cut = max(cut, loudness.speech_end(end, end + MAX_TAIL) + RELEASE)
+        return min(cut, following)
+
+    def start_of(begin: float, preceding: float) -> float:
+        cut = begin - pad
+        if loudness is not None:
+            cut = min(cut, loudness.speech_start(begin, begin - MAX_LEAD) - RELEASE / 2)
+        return max(cut, preceding)
+
     intervals: list[list[float]] = []
-    cursor_start = 0.0 if words[0]["start"] <= min_pause else max(0.0, words[0]["start"] - pad)
+    cursor_start = (0.0 if words[0]["start"] <= min_pause
+                    else start_of(words[0]["start"], 0.0))
     cursor_end = words[0]["end"]
     for word in words[1:]:
         if word["start"] - cursor_end > min_pause:
-            intervals.append([cursor_start, cursor_end + pad])
-            cursor_start = word["start"] - pad
+            # Folgas de uma fala e da outra não se cruzam: metade da pausa para cada lado.
+            middle = (cursor_end + word["start"]) / 2
+            intervals.append([cursor_start, finish_of(cursor_end, middle)])
+            cursor_start = start_of(word["start"], middle)
         cursor_end = max(cursor_end, word["end"])
-    finish = length if length - cursor_end <= min_pause else cursor_end + pad
+    finish = length if length - cursor_end <= min_pause else finish_of(cursor_end, length)
     intervals.append([cursor_start, finish])
 
     merged: list[list[float]] = []
@@ -224,7 +311,8 @@ def keep_intervals(words: list[dict], length: float, min_pause: float = DEFAULT_
         start, end = max(0.0, start), min(length, end)
         if end - start < MIN_KEEP:
             continue
-        if merged and start <= merged[-1][1]:
+        # Sobra de pausa curta demais para valer a emenda: junta os dois trechos.
+        if merged and start - merged[-1][1] < MIN_KEEP:
             merged[-1][1] = max(merged[-1][1], end)
         else:
             merged.append([start, end])
@@ -358,6 +446,96 @@ class CaptionStyle:
         return round(HEIGHT * self.resolved_title_position() / 100)
 
 
+def video_height(banner: bool) -> int:
+    """Altura da área do vídeo: a tela toda, ou o que sobra embaixo da faixa do título."""
+    return HEIGHT - BANNER_HEIGHT if banner else HEIGHT
+
+
+def _text_width(text: str, size: float) -> float:
+    return len(text) * CHAR_WIDTH * size
+
+
+def wrap_text(text: str, size: float, width: float) -> list[str]:
+    """Quebra por palavras pela largura estimada (a mesma conta na prévia e no ASS)."""
+    lines: list[str] = []
+    for word in text.split():
+        if lines and _text_width(f"{lines[-1]} {word}", size) <= width:
+            lines[-1] = f"{lines[-1]} {word}"
+        else:
+            lines.append(word)
+    return lines
+
+
+def banner_title_layout(title: str, label: bool = False) -> tuple[int, list[str]]:
+    """Maior fonte em que o título cabe no cartão (até 3 linhas) e as linhas quebradas."""
+    x1, y1, x2, y2 = BANNER_CARD
+    width = x2 - x1 - 2 * BANNER_PADDING
+    height = y2 - y1 - 2 * BANNER_PADDING - (BANNER_LABEL_SPACE if label else 0)
+    size, lines = BANNER_TITLE_SIZES[-1], wrap_text(title, BANNER_TITLE_SIZES[-1], width)
+    for candidate in BANNER_TITLE_SIZES:
+        wrapped = wrap_text(title, candidate, width)
+        if (len(wrapped) <= BANNER_MAX_LINES
+                and len(wrapped) * candidate * BANNER_LINE_HEIGHT <= height
+                and all(_text_width(line, candidate) <= width for line in wrapped)):
+            size, lines = candidate, wrapped
+            break
+    return size, lines
+
+
+def banner_label_text(label: str, uppercase: bool = True) -> str:
+    text = " ".join(label.split())
+    return text.upper() if uppercase else text
+
+
+def banner_label_size(label: str) -> int:
+    """A linha de cima não quebra: se for comprida, a fonte diminui até caber no cartão."""
+    x1, _y1, x2, _y2 = BANNER_CARD
+    width = x2 - x1 - 2 * BANNER_PADDING
+    return max(20, min(BANNER_LABEL_SIZE, int(width / max(1.0, _text_width(label, 1.0)))))
+
+
+def _rounded_rect(x1: int, y1: int, x2: int, y2: int, radius: int) -> str:
+    """Retângulo de cantos redondos em desenho ASS (\\p1), com curvas de Bézier."""
+    r = radius
+    k = round(r * 0.448)    # 1 - 0,552: o ponto de controle de um quarto de círculo
+    return (f"m {x1 + r} {y1} l {x2 - r} {y1} b {x2 - k} {y1} {x2} {y1 + k} {x2} {y1 + r} "
+            f"l {x2} {y2 - r} b {x2} {y2 - k} {x2 - k} {y2} {x2 - r} {y2} "
+            f"l {x1 + r} {y2} b {x1 + k} {y2} {x1} {y2 - k} {x1} {y2 - r} "
+            f"l {x1} {y1 + r} b {x1} {y1 + k} {x1 + k} {y1} {x1 + r} {y1}")
+
+
+def banner_events(title: str, label: str, total: float,
+                  style: CaptionStyle = CaptionStyle()) -> list[str]:
+    """Cartão na cor de destaque com a linha de cima e o título, do começo ao fim.
+
+    Sem título nem linha de cima, só a faixa escura (que vem do FFmpeg) fica.
+    """
+    style = style.normalized()
+    title = banner_label_text(title, style.uppercase)
+    label = banner_label_text(label, style.uppercase)
+    if not title and not label:
+        return []
+    x1, y1, x2, y2 = BANNER_CARD
+    span = f"{ass_time(0)},{ass_time(max(total, 0.5))}"
+    fill = ass_colour(style.highlight_color, HIGHLIGHT_HEX)
+    rows = [f"Dialogue: 0,{span},Banner,,0,0,0,,"
+            f"{{\\an7\\pos(0,0)\\1c{fill}&\\bord0\\shad0\\p1}}"
+            f"{_rounded_rect(x1, y1, x2, y2, BANNER_RADIUS)}{{\\p0}}"]
+    top = y1 + BANNER_PADDING
+    if label:
+        rows.append(f"Dialogue: 1,{span},Banner,,0,0,0,,"
+                    f"{{\\an8\\q2\\pos({WIDTH // 2},{top})\\fs{banner_label_size(label)}}}"
+                    f"{ass_text(label)}")
+        top += BANNER_LABEL_SPACE
+    if title:
+        size, lines = banner_title_layout(title, bool(label))
+        middle = round((top + y2 - BANNER_PADDING) / 2)
+        rows.append(f"Dialogue: 1,{span},Banner,,0,0,0,,"
+                    f"{{\\an5\\q2\\pos({WIDTH // 2},{middle})\\fs{size}}}"
+                    + "\\N".join(ass_text(line) for line in lines))
+    return rows
+
+
 def ass_header(style: CaptionStyle) -> str:
     style = style.normalized()
     title_text = "&H00141414" if is_light(style.highlight_color) else "&H00FFFFFF"
@@ -390,7 +568,10 @@ def ass_header(style: CaptionStyle) -> str:
         # vem do \\pos do evento (``title_position``).
         f"Style: Title,{style.font},{round(style.size * 0.84)},{title_text},&H000000FF,"
         f"{highlight},&H00000000,-1,0,0,0,"
-        "100,100,0,0,3,22,0,5,90,90,0,1\n\n"
+        "100,100,0,0,3,22,0,5,90,90,0,1\n"
+        # Título fixo no topo: texto que contrasta com o cartão, sem contorno.
+        f"Style: Banner,{style.font},{BANNER_TITLE_SIZES[0]},{title_text},&H000000FF,"
+        "&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1\n\n"
         "[Events]\n"
         "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n"
     )
@@ -476,10 +657,16 @@ def title_event(title: str, seconds: float, total: float, y: int | None = None) 
 
 
 def build_ass(words: list[dict], total: float, *, title: str = "", title_seconds: float = 2.0,
-              style: CaptionStyle = CaptionStyle()) -> str:
+              style: CaptionStyle = CaptionStyle(), banner: bool = False,
+              banner_label: str = "") -> str:
     style = style.normalized()
+    if banner:
+        # Legenda lá em cima cairia em cima do cartão: desce para a área do vídeo.
+        style = replace(style, position=max(style.position, BANNER_CAPTION_MIN))
     rows = caption_events(caption_groups(words, style.words), total, style)
-    if title.strip():
+    if banner:
+        rows[:0] = banner_events(title, banner_label, total, style)
+    elif title.strip():
         rows.insert(0, title_event(title, title_seconds if title_seconds > 0 else total, total,
                                    style.title_y))
     return ass_header(style) + "\n".join(rows) + ("\n" if rows else "")
@@ -512,25 +699,44 @@ class Tracking:
     """Janela que acompanha a pessoa: posições enviadas ao ``crop`` por ``sendcmd``."""
     commands: Path          # arquivo do sendcmd (``tempo crop@track x valor;``)
     first_x: int            # posição no primeiro quadro, antes do primeiro comando
+    # Trechos (no tempo do corte final) em que ninguém fala e as pessoas não cabem na
+    # janela: ali entra o quadro inteiro com fundo desfocado, como no enquadramento "blur".
+    wide: tuple[tuple[float, float], ...] = ()
 
 
-def _framing_graph(framing: str, tracking: Tracking | None = None) -> str:
-    """De ``[vc]`` (o corte emendado) até um quadro 1080x1920 rotulado ``[vf]``."""
+def _framing_graph(framing: str, tracking: Tracking | None = None, height: int = HEIGHT) -> str:
+    """De ``[vc]`` (o corte emendado) até um quadro 1080 x ``height`` rotulado ``[vf]``.
+
+    ``height`` é menor que 1920 com o título fixo no topo (``video_height``).
+    """
     if framing == "track" and tracking is not None:
-        # Altura em 1920 e janela de 1080 que anda na horizontal conforme a análise.
+        # Altura da área e janela de 1080 que anda na horizontal conforme a análise.
         # yuv444p antes do crop: em 4:2:0 o x só anda de 2 em 2 pixels.
-        return (f"[vc]scale=-2:{HEIGHT},format=yuv444p,"
-                f"sendcmd=f={_escape_filter_path(tracking.commands)},"
-                f"crop@track={WIDTH}:{HEIGHT}:{tracking.first_x}:0,setsar=1[vf]")
+        follow = (f"scale=-2:{height},format=yuv444p,"
+                  f"sendcmd=f={_escape_filter_path(tracking.commands)},"
+                  f"crop@track={WIDTH}:{height}:{tracking.first_x}:0,setsar=1")
+        if not tracking.wide:
+            return f"[vc]{follow}[vf]"
+        enable = "+".join(f"between(t,{start:.3f},{end - 0.001:.3f})"
+                          for start, end in tracking.wide)
+        return (f"[vc]split=2[vtr][vwi];[vtr]{follow}[vtf];"
+                + _blur_fit("[vwi]", "[vwf]", "w", height) +
+                f";[vtf][vwf]overlay=0:0:enable='{enable}',setsar=1[vf]")
     if framing in {"crop", "track"}:
-        return (f"[vc]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-                f"crop={WIDTH}:{HEIGHT},setsar=1[vf]")
+        return (f"[vc]scale={WIDTH}:{height}:force_original_aspect_ratio=increase,"
+                f"crop={WIDTH}:{height},setsar=1[vf]")
     # Mesmo visual de "Criar versão vertical" nas Ferramentas.
-    return (f"[vc]split=2[bg][fg];"
-            f"[bg]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT},"
-            "boxblur=luma_radius=24:luma_power=2,eq=brightness=-0.08[bgb];"
-            f"[fg]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease[fgs];"
-            "[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1[vf]")
+    return _blur_fit("[vc]", "[vf]", "", height)
+
+
+def _blur_fit(source: str, output: str, tag: str = "", height: int = HEIGHT) -> str:
+    """Quadro inteiro no meio, com o próprio vídeo ampliado e desfocado atrás."""
+    return (f"{source}split=2[bg{tag}][fg{tag}];"
+            f"[bg{tag}]scale={WIDTH}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={WIDTH}:{height},boxblur=luma_radius=24:luma_power=2,eq=brightness=-0.08"
+            f"[bgb{tag}];"
+            f"[fg{tag}]scale={WIDTH}:{height}:force_original_aspect_ratio=decrease[fgs{tag}];"
+            f"[bgb{tag}][fgs{tag}]overlay=(W-w)/2:(H-h)/2,setsar=1{output}")
 
 
 def zoom_windows(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
@@ -547,11 +753,14 @@ def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: 
                  tracking: Tracking | None = None, *, zoom_cuts: bool = False,
                  progress_colour: str = "", normalize_audio: bool = False,
                  effects: Sequence[Effect] = (), effect_inputs: dict[str, int] | None = None,
-                 punch: Sequence[tuple[float, float]] = ()) -> str:
+                 punch: Sequence[tuple[float, float]] = (),
+                 effect_gains: dict[str, float] | None = None, banner: bool = False) -> str:
     """Recorta cada trecho com fala, emenda vídeo e áudio juntos, enquadra e grava a legenda.
 
     ``effects`` são os sons automáticos; ``effect_inputs`` diz em qual entrada do
-    FFmpeg está o WAV de cada tipo. ``punch`` são as janelas do zoom rápido na ênfase.
+    FFmpeg está o WAV de cada tipo e ``effect_gains`` o volume de cada um (acertado pela
+    voz em ``sfx.matched_gains``). ``punch`` são as janelas do zoom rápido na ênfase.
+    ``banner`` põe o vídeo embaixo da faixa do título fixo; os zooms ficam só no vídeo.
     """
     if not intervals:
         raise ClipError("Não sobrou nenhum trecho para montar o corte.")
@@ -559,7 +768,13 @@ def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: 
     pads: list[str] = []
     for index, (start, end) in enumerate(intervals):
         parts.append(f"[0:v:0]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{index}]")
-        parts.append(f"[0:a:0]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{index}]")
+        fade = ""
+        if len(intervals) > 1 and end - start > 4 * SPLICE_FADE:
+            # Rampa curta nas pontas: emenda seca dá estalo e soa como palavra cortada.
+            fade = (f",afade=t=in:d={SPLICE_FADE}"
+                    f",afade=t=out:st={end - start - SPLICE_FADE:.3f}:d={SPLICE_FADE}")
+        parts.append(f"[0:a:0]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS"
+                     f"{fade}[a{index}]")
         pads.append(f"[v{index}][a{index}]")
     inputs = effect_inputs or {}
     effects = [effect for effect in effects if effect.kind in inputs]
@@ -567,29 +782,35 @@ def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: 
     parts.append(f"{''.join(pads)}concat=n={len(intervals)}:v=1:a=1[vc]{audio}")
     if effects:
         mixed = "[ac1]" if normalize_audio else "[ac]"
-        parts.append(_effects_graph(effects, inputs, "[ac0]", mixed))
+        parts.append(_effects_graph(effects, inputs, "[ac0]", mixed, effect_gains or {}))
         audio = mixed
     if normalize_audio:
         # -14 LUFS é o alvo do YouTube, TikTok e Reels; uma passada só, sem arquivo extra.
         parts.append(f"{audio}loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[ac]")
-    parts.append(_framing_graph(framing if framing in FRAMINGS else "blur", tracking))
+    area = video_height(banner)
+    parts.append(_framing_graph(framing if framing in FRAMINGS else "blur", tracking, area))
     video = "[vf]"
     windows = zoom_windows(intervals) if zoom_cuts else []
     if windows:
         # A cada emenda alterna 100% e 108%: o salto de imagem da pausa removida vira um
         # "corte de câmera", como fazem os editores de vídeos curtos.
         enable = "+".join(f"between(t,{start:.3f},{end - 0.001:.3f})" for start, end in windows)
-        zoomed = f"{round(WIDTH * ZOOM / 2) * 2}:{round(HEIGHT * ZOOM / 2) * 2}"
-        parts.append(f"[vf]split=2[vn][vz];[vz]scale={zoomed},crop={WIDTH}:{HEIGHT}[vzc];"
+        zoomed = f"{round(WIDTH * ZOOM / 2) * 2}:{round(area * ZOOM / 2) * 2}"
+        parts.append(f"[vf]split=2[vn][vz];[vz]scale={zoomed},crop={WIDTH}:{area}[vzc];"
                      f"[vn][vzc]overlay=0:0:enable='{enable}'[vzm]")
         video = "[vzm]"
     if punch:
         # Zoom rápido (e mais forte) na palavra enfatizada, por cima do zoom das emendas.
         enable = "+".join(f"between(t,{start:.3f},{end - 0.001:.3f})" for start, end in punch)
-        zoomed = f"{round(WIDTH * PUNCH / 2) * 2}:{round(HEIGHT * PUNCH / 2) * 2}"
-        parts.append(f"{video}split=2[pn][pz];[pz]scale={zoomed},crop={WIDTH}:{HEIGHT}[pzc];"
+        zoomed = f"{round(WIDTH * PUNCH / 2) * 2}:{round(area * PUNCH / 2) * 2}"
+        parts.append(f"{video}split=2[pn][pz];[pz]scale={zoomed},crop={WIDTH}:{area}[pzc];"
                      f"[pn][pzc]overlay=0:0:enable='{enable}'[vpm]")
         video = "[vpm]"
+    if banner:
+        # A faixa escura em cima; o cartão e o título vêm na legenda ASS.
+        colour = "0x" + BANNER_BACKGROUND.lstrip("#")
+        parts.append(f"{video}pad={WIDTH}:{HEIGHT}:0:{BANNER_HEIGHT}:color={colour}[vbn]")
+        video = "[vbn]"
     tail = f"subtitles=filename={_escape_filter_path(subtitles)}," if subtitles else ""
     if progress_colour:
         total = max(0.1, output_length(intervals))
@@ -603,7 +824,7 @@ def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: 
 
 
 def _effects_graph(effects: Sequence[Effect], inputs: dict[str, int], speech: str,
-                   output: str) -> str:
+                   output: str, gains: dict[str, float] | None = None) -> str:
     """Cada som entra atrasado até o seu instante e é somado à voz, sem mudar o volume dela."""
     parts, labels = [], []
     for kind, index in sorted(inputs.items()):
@@ -615,7 +836,7 @@ def _effects_graph(effects: Sequence[Effect], inputs: dict[str, int], speech: st
         for name, time in zip(names, times, strict=True):
             delayed = name.replace("[sx", "[sd")
             parts.append(f"{name}adelay=delays={round(time * 1000)}:all=1,"
-                         f"volume={GAIN.get(kind, 0.5)}{delayed}")
+                         f"volume={(gains or {}).get(kind, GAIN.get(kind, 0.3))}{delayed}")
             labels.append(delayed)
     parts.append(f"{speech}{''.join(labels)}amix=inputs={len(labels) + 1}:duration=first:"
                  f"normalize=0{output}")

@@ -65,16 +65,28 @@ class CameraVirtualTests(unittest.TestCase):
         self.assertLessEqual(max(path), 0.85)
         self.assertGreater(path[-1], 0.75)             # e chega lá
 
+    def test_troca_de_pessoa_corta_seco(self) -> None:
+        targets = [0.25] * 30 + [0.75] * 30
+        path = reframe.camera_path(targets, rate=10.0, view=0.3, cuts=[30])
+        self.assertAlmostEqual(path[29], 0.25, places=3)
+        self.assertAlmostEqual(path[30], 0.75, places=3)      # sem panorâmica no meio
+        panned = reframe.camera_path(targets, rate=10.0, view=0.3)
+        self.assertTrue(any(0.3 < value < 0.7 for value in panned))   # sem corte: atravessa
+
+    def test_corte_seco_chega_ao_ffmpeg(self) -> None:
+        samples = [(i / 10, 0.25 if i < 30 else 0.75) for i in range(60)]
+        commands = reframe.crop_commands(samples, [(0.0, 6.0)], 3412, 1080, remap_time, 30.0,
+                                         cuts=[3.0])
+        xs = [x for _t, x in commands]
+        left, right = round(0.25 * 3412 - 540), round(0.75 * 3412 - 540)
+        jump = next(i for i, x in enumerate(xs) if x != left)
+        self.assertEqual(xs[jump], right)                     # de um quadro para o outro
+        self.assertAlmostEqual(jump / 30, 3.0, delta=0.04)
+
     def test_lacunas_repetem_o_ultimo_alvo(self) -> None:
         self.assertEqual(reframe.fill_gaps([None, 0.3, None, 0.6, None]),
                          [0.3, 0.3, 0.3, 0.6, 0.6])
         self.assertIsNone(reframe.fill_gaps([None, None]))
-
-    def test_rosto_maior_e_continuidade(self) -> None:
-        faces = [(0.2, 0.010), (0.7, 0.009), (0.5, 0.001)]
-        self.assertEqual(reframe.pick_face(faces, None), 0.2)
-        self.assertEqual(reframe.pick_face(faces, 0.65), 0.7)   # parecidos: fica perto
-        self.assertIsNone(reframe.pick_face([], 0.5))
 
     @unittest.skipUnless(HAS_STACK, "numpy ausente")
     def test_centro_do_movimento(self) -> None:
@@ -114,6 +126,201 @@ class YuNetTests(unittest.TestCase):
         assert path is not None
         detector = reframe.FaceDetector(path)
         self.assertEqual(detector.centers(np.zeros((360, 640, 3), dtype=np.uint8)), [])
+
+
+def _phrases(count: int, start: int = 0, talk: float = 2.0, pause: float = -2.5,
+             period: int = 50) -> list[float]:
+    """Nota do LR-ASD de quem fala: frases de 1,4 s e pausas de 0,6 s (a 25 quadros/s)."""
+    return [talk if (start + i) % period < period * 0.7 else pause for i in range(count)]
+
+
+class QuemFalaTests(unittest.TestCase):
+    """Várias pessoas em cena: a câmera vai para quem fala, não para o maior rosto."""
+
+    def test_segue_quem_fala_mesmo_com_rosto_menor(self) -> None:
+        notes = _phrases(250)
+        observations = [{0: (0.25, 0.20, -3.0), 1: (0.75, 0.06, notes[i])} for i in range(250)]
+        chosen, cuts, wide = reframe.choose_speakers(observations)
+        self.assertEqual(set(chosen), {0.75})
+        self.assertEqual((cuts, any(wide)), ([], False))
+
+    def test_quem_esta_parado_atras_nao_rouba_a_camera(self) -> None:
+        # O caso do corte "SANTO": a pregadora anda com o microfone e alguém fica parado
+        # atrás, às vezes com o rosto maior que o dela. Antes a câmera ia e voltava.
+        count = 500
+        notes = _phrases(count)
+        observations = []
+        for i in range(count):
+            frame = {0: (0.3 + 0.4 * i / count, 0.07, notes[i])}
+            if i % 40 < 30:                       # o detector às vezes perde quem está atrás
+                frame[1] = (0.55, 0.09, -2.0)
+            observations.append(frame)
+        chosen, cuts, _wide = reframe.choose_speakers(observations)
+        self.assertEqual(cuts, [])
+        self.assertTrue(all(x == observations[i][0][0] for i, x in enumerate(chosen)))
+
+    def test_dialogo_troca_de_pessoa_sem_pingue_pongue(self) -> None:
+        count, half = 600, 300
+        left, right = _phrases(count), _phrases(count, start=17)
+        observations = [{0: (0.25, 0.08, left[i] if i < half else -2.0),
+                         1: (0.75, 0.08, -2.0 if i < half else right[i])} for i in range(count)]
+        chosen, cuts, _wide = reframe.choose_speakers(observations)
+        self.assertEqual(len(cuts), 1)             # uma troca, e ela é um corte seco
+        self.assertEqual(chosen[cuts[0] - 1], 0.25)
+        self.assertEqual(chosen[cuts[0]], 0.75)
+        self.assertAlmostEqual(cuts[0], half, delta=reframe.SWITCH_SECONDS * 25 + 15)
+
+    def test_conversa_rapida_respeita_tempo_minimo_na_pessoa(self) -> None:
+        # Os dois se alternam a cada 0,6 s: a câmera não pode trocar nesse ritmo.
+        count = 500
+        observations = [{0: (0.25, 0.08, 2.0 if (i // 15) % 2 == 0 else -2.0),
+                         1: (0.75, 0.08, -2.0 if (i // 15) % 2 == 0 else 2.0)}
+                        for i in range(count)]
+        _chosen, cuts, _wide = reframe.choose_speakers(observations)
+        gaps = [b - a for a, b in zip([0, *cuts], cuts, strict=False)]
+        self.assertTrue(all(gap >= reframe.MIN_SHOT_SECONDS * 25 for gap in gaps))
+
+    def test_comeca_em_quem_vai_falar_primeiro(self) -> None:
+        notes = [-2.0] * 50 + _phrases(200)
+        observations = [{0: (0.25, 0.12, -3.0), 1: (0.75, 0.06, notes[i])} for i in range(250)]
+        chosen, cuts, _wide = reframe.choose_speakers(observations)
+        self.assertEqual((set(chosen), cuts), ({0.75}, []))
+
+    def test_cena_nova_corta_seco_e_decide_de_novo(self) -> None:
+        # Live com várias câmeras: a trilha 0 é de uma cena, a 1 de outra (rostos não
+        # atravessam cortes); cada cena escolhe o seu orador.
+        notes = _phrases(300)
+        observations = ([{0: (0.3, 0.08, notes[i])} for i in range(150)]
+                        + [{1: (0.7, 0.08, notes[i]), 2: (0.2, 0.08, -3.0)}
+                           for i in range(150, 300)])
+        chosen, cuts, _wide = reframe.choose_speakers(observations, shots=[150])
+        self.assertEqual(cuts, [150])
+        self.assertEqual(set(chosen[:150]), {0.3})
+        self.assertEqual(set(chosen[150:]), {0.7})
+
+    def test_ninguem_falando_com_pessoas_espalhadas_mostra_o_quadro_inteiro(self) -> None:
+        # Plateia ou banda: seguir um rosto qualquer (o "tecladista") não faz sentido.
+        crowd = [{0: (0.15, 0.06, -3.0), 1: (0.85, 0.05, -2.5)} for _ in range(100)]
+        solo = [{2: (0.6, 0.1, -1.0)} for _ in range(100)]
+        chosen, cuts, wide = reframe.choose_speakers(crowd + solo, shots=[100])
+        self.assertEqual(wide, [True] * 100 + [False] * 100)
+        self.assertEqual(cuts, [100])
+        self.assertEqual(set(chosen[100:]), {0.6})          # um rosto só: segue ele
+
+    def test_ninguem_falando_grupo_que_cabe_fica_junto(self) -> None:
+        observations = [{0: (0.42, 0.06, -3.0), 1: (0.56, 0.06, -3.0)} for _ in range(100)]
+        chosen, _cuts, wide = reframe.choose_speakers(observations)
+        self.assertFalse(any(wide))
+        self.assertTrue(all(abs(x - 0.49) < 1e-9 for x in chosen if x is not None))
+
+    def test_rosto_relampago_nao_conta(self) -> None:
+        # Nuca ou reflexo detectado por 4 quadros, com nota alta por acaso.
+        observations = [{0: (0.3, 0.08, -2.0)} for _ in range(100)]
+        for i in range(40, 44):
+            observations[i][1] = (0.8, 0.2, 3.0)
+        chosen, cuts, wide = reframe.choose_speakers(observations)
+        self.assertEqual((set(chosen), cuts, any(wide)), ({0.3}, [], False))
+
+    def test_sem_modelo_fica_no_maior_rosto(self) -> None:
+        observations = [{0: (0.25, 0.2, None), 1: (0.75, 0.05, None)} for _ in range(100)]
+        chosen, cuts, wide = reframe.choose_speakers(observations)
+        self.assertEqual((set(chosen), cuts, any(wide)), ({0.25}, [], False))
+
+    def test_rosto_que_falha_por_um_instante_segura_a_posicao(self) -> None:
+        notes = _phrases(250)
+        observations = [{0: (0.25, 0.2, -3.0), 1: (0.75, 0.06, notes[i])} for i in range(250)]
+        for i in range(60, 64):
+            del observations[i][1]               # o detector perdeu quem fala
+        chosen, cuts, _wide = reframe.choose_speakers(observations)
+        self.assertEqual(chosen[60:64], [None] * 4)   # None = repete a última posição
+        self.assertEqual(cuts, [])
+
+    def test_trechos_inteiros_vao_para_o_tempo_do_corte(self) -> None:
+        windows = reframe.output_windows([(1.0, 5.0)], [(0.0, 2.0), (3.0, 6.0)], remap_time)
+        self.assertEqual(windows, ((1.0, 4.0),))     # a pausa de 2 a 3 s sumiu na emenda
+        self.assertEqual(reframe.output_windows([(2.2, 2.8)], [(0.0, 2.0), (3.0, 6.0)],
+                                                remap_time), ())
+
+
+@unittest.skipUnless(HAS_STACK, "numpy ausente")
+class TrilhasECenasTests(unittest.TestCase):
+    def test_trilhas_seguem_o_mesmo_rosto_na_ordem_recebida(self) -> None:
+        tracker = reframe.FaceTracker()
+        small = reframe.Face(0.70, 0.3, 0.08, 0.15)
+        large = reframe.Face(0.20, 0.3, 0.15, 0.30)
+        first = tracker.assign([small, large], 0)
+        # O maior escolhe primeiro, mas a resposta vem na ordem dos rostos recebidos.
+        moved = [reframe.Face(0.71, 0.3, 0.08, 0.15), reframe.Face(0.21, 0.3, 0.15, 0.30)]
+        second = tracker.assign(moved, 2)
+        self.assertEqual([t.ident for t in first], [t.ident for t in second])
+        self.assertNotEqual(first[0].ident, first[1].ident)
+        later = tracker.assign([moved[0]], 2 + reframe.TRACK_GAP + 1)
+        self.assertNotIn(later[0].ident, {t.ident for t in first})   # sumiu demais: novo
+
+    def test_rosto_nao_atravessa_corte_de_camera(self) -> None:
+        tracker = reframe.FaceTracker()
+        face = reframe.Face(0.4, 0.3, 0.1, 0.2)
+        before = tracker.assign([face], 0)[0]
+        tracker.new_shot()
+        after = tracker.assign([face], 2)[0]       # mesma posição, outra cena: outra pessoa
+        self.assertNotEqual(before.ident, after.ident)
+
+    def test_caixa_suavizada_e_presenca(self) -> None:
+        track = reframe.FaceTrack(0, 0)
+        for index, x in [(0, 0.30), (2, 0.50), (4, 0.31), (6, 0.32)]:   # 2: detecção torta
+            track.boxes[index] = (x, 0.2, 0.1, 0.2)
+        box = track.box_at(3, aspect=0.5)
+        assert box is not None
+        cx, cy, side = box
+        self.assertAlmostEqual(cx, 0.365, places=6)      # mediana: o pulo do quadro 2 some
+        self.assertAlmostEqual(cy, 0.3, places=6)
+        self.assertAlmostEqual(side, 0.1, places=6)      # max(0,1, 0,2 * 0,5)
+        self.assertIsNotNone(track.box_at(7))            # quadro sem detecção logo depois
+        self.assertIsNone(track.box_at(6 + reframe.DETECT_EVERY + 1))   # já saiu de cena
+
+    def test_corte_de_camera_pelo_histograma(self) -> None:
+        rng = np.random.default_rng(3)
+        detector = reframe.ShotDetector()
+        dark = np.zeros((90, 160, 3), dtype=np.uint8)
+        bright = np.full((90, 160, 3), 200, dtype=np.uint8)
+        found = []
+        for index in range(60):
+            base = dark if index < 30 else bright
+            noise = rng.integers(0, 30, base.shape, dtype=np.uint8)   # gente mexendo, ruído
+            if detector.feed(reframe.color_histogram(base + noise)):
+                found.append(index)
+        self.assertEqual(found, [30])
+
+    def test_fusao_lenta_conta_um_corte_so(self) -> None:
+        detector = reframe.ShotDetector()
+        found = []
+        for index in range(40):
+            value = min(255, index * 40)      # 7 quadros mudando muito, um atrás do outro
+            frame = np.full((90, 160, 3), value, dtype=np.uint8)
+            if detector.feed(reframe.color_histogram(frame)):
+                found.append(index)
+        self.assertEqual(len(found), 1)
+
+
+@unittest.skipUnless(HAS_STACK, "numpy ausente")
+class DetectorTests(unittest.TestCase):
+    def test_caixas_repetidas_viram_uma(self) -> None:
+        faces = [(10, 10, 50, 60, 0.9), (12, 11, 50, 60, 0.8), (300, 10, 50, 60, 0.7)]
+        kept = reframe.suppress(faces)
+        self.assertEqual([face[4] for face in kept], [0.9, 0.7])
+
+    def test_decodifica_pontos_do_rosto(self) -> None:
+        outputs = {}
+        for stride in (8, 16, 32):
+            cells = (640 // stride) ** 2
+            for name, size in (("cls", 1), ("obj", 1), ("bbox", 4), ("kps", 10)):
+                outputs[f"{name}_{stride}"] = np.zeros((1, cells, size), dtype=np.float32)
+        index = 5 * 20 + 10
+        outputs["cls_32"][0, index, 0] = outputs["obj_32"][0, index, 0] = 0.9
+        outputs["kps_32"][0, index] = [0.25, 0.5, 0.75, 0.5, 0.5, 0.75, 0.3, 1.0, 0.7, 1.0]
+        face = reframe.decode_yunet(outputs, landmarks=True)[0]
+        self.assertAlmostEqual(face[5][3][0], (10 + 0.3) * 32, places=3)   # canto da boca
+        self.assertAlmostEqual(face[5][3][1], (5 + 1.0) * 32, places=3)
 
 
 class SendcmdTests(unittest.TestCase):
@@ -194,6 +401,38 @@ class SeguirPessoaRealTests(unittest.TestCase):
         off = [abs(a - b) for a, b in zip(seen, expected, strict=True)]
         self.assertGreater(len(seen), 85)
         self.assertLessEqual(max(off), 1)     # quadro certo; ±1 é o arredondamento da cor
+
+    def test_trecho_sem_orador_mostra_o_quadro_inteiro(self) -> None:
+        # Entre 1 e 2 s ninguém fala e as pessoas não cabem na janela: entra o quadro
+        # inteiro com fundo desfocado. Fora dele, a janela que segue a pessoa.
+        from baixador_ytdlp.clips import Tracking, filter_graph
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "cmd.txt").write_text("0.0000 crop@track x 0;\n", encoding="utf-8")
+            subprocess.run([FFMPEG, "-v", "error", "-f", "lavfi", "-i",
+                            "testsrc2=size=1280x720:rate=25", "-f", "lavfi", "-i",
+                            "anullsrc=r=48000:cl=mono", "-t", "3", "-c:v", "libx264",
+                            "-preset", "ultrafast", "-shortest", "fonte.mp4"],
+                           cwd=root, check=True)
+            tracking = Tracking(root / "cmd.txt", 0, ((1.0, 2.0),))
+            graph = filter_graph([(0.0, 3.0)], "track", None, tracking)
+            subprocess.run([FFMPEG, "-v", "error", "-i", "fonte.mp4", "-filter_complex", graph,
+                            "-map", "[v]", "-map", "[ac]", "-c:v", "libx264", "-preset",
+                            "ultrafast", "saida.mp4"], cwd=root, check=True)
+            blue = []
+            for moment in (0.5, 1.5, 2.5):
+                raw = subprocess.run(
+                    [FFMPEG, "-v", "error", "-ss", str(moment), "-i", str(root / "saida.mp4"),
+                     "-frames:v", "1", "-vf", "scale=108:192", "-f", "rawvideo", "-pix_fmt",
+                     "rgb24", "-"], capture_output=True, check=True).stdout
+                row = np.frombuffer(raw, dtype=np.uint8).reshape(192, 108, 3)[90].astype(int)
+                # A faixa azul do testsrc2 fica no meio do quadro: a janela presa à esquerda
+                # não chega nela; o quadro inteiro mostra.
+                blue.append(int(((row[:, 2] > 150) & (row[:, 0] < 100) & (row[:, 1] < 100)).sum()))
+        self.assertEqual(blue[0], 0)
+        self.assertGreater(blue[1], 8)
+        self.assertEqual(blue[2], 0)
 
     def test_video_de_celular_girado_e_tratado_como_vertical(self) -> None:
         # Gravado deitado (1280x720) com marca de rotação: na tela, e no corte, é vertical.

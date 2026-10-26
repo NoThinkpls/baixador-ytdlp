@@ -70,6 +70,15 @@ class PlanoTests(unittest.TestCase):
         plan = effects.plan_effects(intervals, [_word("agora", 3.1)], 10.5)
         self.assertEqual([effect.kind for effect in plan], ["whoosh"])
 
+    def test_sem_zoom_na_enfase_nao_ha_pop(self) -> None:
+        # Pop sem o zoom junto é um som solto, sem nada na tela: fica de fora.
+        intervals = [(0.0, 3.0), (4.5, 20.0)]
+        emphasis = [_word("agora", 10.0)]
+        self.assertEqual([e.kind for e in effects.plan_effects(intervals, emphasis, 18.5)],
+                         ["whoosh", "pop"])
+        self.assertEqual([e.kind for e in effects.plan_effects(intervals, emphasis, 18.5,
+                                                               pops=False)], ["whoosh"])
+
     def test_remap_mantem_o_volume_da_palavra(self) -> None:
         moved = remap_words([_word("oi", 3.0, level=-7.0)], [(0.0, 1.0), (2.5, 4.0)])
         self.assertEqual(moved[0]["level"], -7.0)
@@ -84,6 +93,50 @@ class SonsTests(unittest.TestCase):
             self.assertGreater(len(sound), 0.08 * sfx.SAMPLE_RATE, kind)
             self.assertGreater(float(np.abs(sound).max()), 0.5, kind)
             self.assertLessEqual(float(np.abs(sound).max()), 0.9, kind)
+
+    def test_impacto_se_ouve_no_celular_sem_ronco(self) -> None:
+        # O impacto antigo era quase só grave abaixo de 120 Hz, que o celular não toca e
+        # que no fone vira ronco; o corpo do som precisa estar na faixa audível.
+        sound = sfx.impacto().mean(axis=1)
+        spectrum = np.abs(np.fft.rfft(sound)) ** 2
+        freqs = np.fft.rfftfreq(sound.size, 1 / sfx.SAMPLE_RATE)
+        self.assertGreater(spectrum[freqs >= 120].sum() / spectrum.sum(), 0.35)
+        self.assertLess(spectrum[freqs < 35].sum() / spectrum.sum(), 0.02)
+
+    def test_subida_e_chiado_sem_tom_de_ficcao(self) -> None:
+        # Nada de senoide subindo com vibrato: nenhuma frequência isolada domina o som.
+        sound = sfx.subida().mean(axis=1)
+        spectrum = np.abs(np.fft.rfft(sound)) ** 2
+        band = spectrum[(np.fft.rfftfreq(sound.size, 1 / sfx.SAMPLE_RATE) > 100)]
+        self.assertLess(float(band.max() / band.sum()), 0.002)
+
+    def test_volume_do_som_acompanha_a_voz(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            files = {kind: path for kind, (path, _lead) in
+                     sfx.prepare(Path(tmp), {"whoosh", "impacto"}).items()}
+            quiet = sfx.matched_gains(files, -30.0)
+            loud = sfx.matched_gains(files, -18.0)
+            fixed = sfx.matched_gains(files, None)
+        for kind in files:
+            # 12 dB a mais na voz = som 4x mais forte, sempre abaixo de -6 dBFS no pico.
+            self.assertAlmostEqual(loud[kind] / quiet[kind], 10 ** (12 / 20), delta=0.05)
+            self.assertLessEqual(loud[kind] * 0.89, sfx.PEAK_LIMIT + 1e-3)
+            self.assertEqual(fixed[kind], sfx.GAIN[kind])
+        voice = sfx.voice_level(np.sin(np.arange(48000) / 48000 * 2 * np.pi * 300) * 0.1,
+                                48000)
+        self.assertAlmostEqual(voice, 20 * np.log10(0.1 / np.sqrt(2)), delta=0.5)
+        self.assertIsNone(sfx.voice_level(np.zeros(48000), 48000))
+
+    @unittest.skipUnless(FFMPEG, "FFmpeg não instalado")
+    def test_som_da_pessoa_em_mp3_tambem_e_medido(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            own = Path(tmp) / "pop.mp3"
+            subprocess.run([FFMPEG, "-v", "error", "-f", "lavfi", "-i",
+                            "sine=f=800:d=0.3:sample_rate=48000", "-af", "volume=0.9",
+                            str(own)], check=True)
+            gains = sfx.matched_gains({"pop": own}, -24.0)
+        self.assertNotEqual(gains["pop"], sfx.GAIN["pop"])
+        self.assertLess(gains["pop"], 0.5)
 
     def test_pico_do_whoosh_na_antecedencia(self) -> None:
         sound = sfx.whoosh()
@@ -223,9 +276,13 @@ class WorkerComEfeitosTests(unittest.TestCase):
         self.assertIn("efeito-impacto.wav", joined)
         self.assertIn("efeito-subida.wav", joined)
         self.assertNotIn("efeito-pop.wav", joined)      # a regra automática não entra
-        # fala21 começa em 10,5 s; com 1,86 s de pausa cortada, cai em 8,64 s.
-        self.assertIn("between(t,8.640,", graph)
-        self.assertIn("adelay=delays=2420:all=1", graph)   # subida termina na emenda (4,02 s)
+        # fala21 começa em 10,5 s; com 1,70 s de pausa cortada, cai em 8,80 s (o fim da
+        # fala antes da pausa ganha a folga maior de TAIL_PAD).
+        self.assertIn("between(t,8.800,", graph)
+        # Subida termina na emenda (4,18 s), que ganha o zoom: o som tem algo na tela.
+        start = round((4.18 - sfx.SUBIDA_SECONDS) * 1000)
+        self.assertIn(f"adelay=delays={start}:all=1", graph)
+        self.assertIn("between(t,4.180,", graph)
 
 
 if __name__ == "__main__":

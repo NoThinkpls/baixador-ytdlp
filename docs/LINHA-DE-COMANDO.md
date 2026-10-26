@@ -1,6 +1,6 @@
 # Linha de comando
 
-Desde a 1.15.0 o mesmo executável do app aceita comandos sem abrir a janela:
+Desde a 1.16.0 o mesmo executável do app aceita comandos sem abrir a janela:
 
 ```
 baixador-ytdlp cli <comando> [opções]
@@ -93,16 +93,26 @@ arquivo local ou um link (só os trechos são baixados). Exemplo:
 baixador-ytdlp cli cortar video.mp4 --corte "1:20-2:05=O gancho" --corte 10:00-10:45 --efeitos
 ```
 
-Opções: `--pasta`, `--enquadramento blur|crop|track`, `--animacao
-highlight|color|karaoke|word|pop|none`, `--cor-destaque #RRGGBB`, `--palavras 1-4`,
-`--idioma`, `--modelo` e as chaves liga/desliga `--remover-pausas`, `--zoom-emendas`,
-`--barra`, `--normalizar`, `--srt`, `--efeitos`, `--zoom-enfase` (cada uma com `--no-…`).
-Sem a opção, vale o que está salvo na página Cortes.
+Enquadramento (`--enquadramento`): `track` segue quem está falando (detector de rosto e, com
+mais de uma pessoa, o LR-ASD decide quem fala), `blur` mostra o vídeo inteiro com fundo
+desfocado e `crop` corta no centro.
+
+Título (`--titulo`): `animado` entra no começo e some (`--duracao-titulo S`, 0 = o corte
+inteiro; `--altura-titulo %`, 0 = automático); `fixo` é a faixa escura no topo com o título
+num cartão na cor de destaque o corte inteiro, e o vídeo embaixo. `--linha-titulo TEXTO` põe a
+linha pequena acima do título fixo (nome do podcast, convidado, episódio). O título fixo
+diminui sozinho para caber em até 3 linhas.
+
+Outras opções: `--pasta`, `--animacao highlight|color|karaoke|word|pop|none`,
+`--cor-destaque #RRGGBB`, `--palavras 1-4`, `--idioma`, `--modelo` e as chaves liga/desliga
+`--remover-pausas`, `--zoom-emendas`, `--barra`, `--normalizar`, `--srt`, `--efeitos`,
+`--zoom-enfase` (cada uma com `--no-…`). Sem a opção, vale o que está salvo na página Cortes.
 
 No lugar de `--corte`, `--plano` recebe o [plano da IA](PLANO-DA-IA.md) (`{"bx":1,"c":[…]}`,
-colado ou num arquivo): cortes, títulos e onde entra cada som e zoom. Como na página, um plano
-com sons ou zoom liga **Efeitos sonoros** e **Zoom na ênfase**. `--pasta-sons DIR` usa os seus
-sons e `--altura-titulo %` posiciona o título (0 = automático).
+colado ou num arquivo): cortes, títulos e onde entra cada som e zoom. Se o plano traz `"t"`
+(`"f"` fixo, `"a"` animado) e `"l"` (linha de cima), eles valem quando `--titulo` e
+`--linha-titulo` não foram passados. Como na página, um plano com sons ou zoom liga
+**Efeitos sonoros** e **Zoom na ênfase**. `--pasta-sons DIR` usa os seus sons.
 
 Para o Claude escolher os melhores momentos: `legendar video.mp4 --formato json`, ler a
 transcrição com os tempos e então chamar `cortar` com os intervalos escolhidos ou com um plano.

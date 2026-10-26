@@ -15,10 +15,10 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 
 from . import effects, reframe, sfx
-from .clips import (HEIGHT, WIDTH, ClipError, ClipOptions, ClipRange, Tracking, audio_command,
-                    build_ass, build_srt, clamp_range, clip_destination, is_url, keep_intervals,
-                    output_length, remap_time, remap_words, render_command,
-                    require_video_and_audio, section_offset, stream_kinds,
+from .clips import (WIDTH, ClipError, ClipOptions, ClipRange, Loudness, Tracking,
+                    audio_command, build_ass, build_srt, clamp_range, clip_destination, is_url,
+                    keep_intervals, output_length, remap_time, remap_words, render_command,
+                    require_video_and_audio, section_offset, stream_kinds, video_height,
                     words_from_transcript)
 from .config import Settings
 from .diagnostics import get_logger, log_event, report_exception
@@ -358,25 +358,46 @@ class ClipWorker(QThread):
             raise ClipError("A transcrição terminou sem gerar o arquivo esperado.")
         return words_from_transcript(output)
 
-    def _track(self, source: Path, offset: float, length: float, intervals,
-               folder: Path) -> Tracking | None:
-        """Analisa onde está a pessoa; qualquer falha vira corte centralizado, nunca erro."""
-        self.progress.emit(self._label("procurando quem está em cena para acompanhar…"))
+    @staticmethod
+    def _loudness(audio: Path) -> Loudness | None:
+        """Volume do trecho para as emendas; sem ele, só as folgas fixas."""
         try:
-            track = reframe.analyze(source, offset, length,
+            samples, rate = effects.read_wav(audio)
+            return Loudness(samples, rate)
+        except Exception as exc:  # noqa: BLE001 - as folgas fixas ainda funcionam
+            report_exception("volume do trecho para as emendas", exc)
+            return None
+
+    def _track(self, source: Path, offset: float, length: float, intervals,
+               folder: Path, audio: Path | None = None) -> Tracking | None:
+        """Analisa onde está a pessoa; qualquer falha vira corte centralizado, nunca erro.
+
+        Com o áudio do trecho, havendo várias pessoas, a câmera segue quem está falando.
+        """
+        self.progress.emit(self._label("procurando quem está falando para acompanhar…"))
+        try:
+            voice = None
+            if audio is not None:
+                try:
+                    voice = effects.read_wav(audio)
+                except Exception as exc:  # noqa: BLE001 - sem voz, decide pelos rostos
+                    report_exception("áudio para achar quem fala", exc)
+            area = video_height(self.options.banner)   # menor com o título fixo no topo
+            track = reframe.analyze(source, offset, length, voice=voice,
                                     progress=lambda share: self._stage("track", share),
-                                    cancelled=self._cancelled.is_set)
+                                    cancelled=self._cancelled.is_set, aspect=WIDTH / area)
             self._check()
             if track is None:
                 return None
-            scaled = track.scaled_width(HEIGHT)
+            scaled = track.scaled_width(area)
             commands = reframe.crop_commands(track.samples, intervals, scaled, WIDTH, remap_time,
-                                             track.fps)
+                                             track.fps, track.cuts)
             if not commands or scaled <= WIDTH:
                 return None
             path = folder / "enquadramento.txt"
             path.write_text(reframe.sendcmd_text(commands), encoding="utf-8")
-            return Tracking(path, commands[0][1])
+            return Tracking(path, commands[0][1],
+                            reframe.output_windows(track.wide, intervals, remap_time))
         except ClipError:
             raise
         except Exception as exc:  # noqa: BLE001 - o rastreamento é opcional
@@ -404,9 +425,11 @@ class ClipWorker(QThread):
                 leveled = [{**word, "level": level}
                            for word, level in zip(words, levels, strict=True)]
                 emphasis = effects.emphasis_words(remap_words(leveled, intervals), total)
-                planned = effects.plan_effects(intervals, emphasis, total)
+                planned = effects.plan_effects(intervals, emphasis, total,
+                                               pops=options.emphasis_zoom)
                 punch = effects.punch_windows(emphasis, total)
                 origin = "regra automática"
+            planned = effects.with_visuals(planned, options.emphasis_zoom)
             extras: dict = {}
             sounds: dict[str, Path] = {}
             if options.emphasis_zoom and punch:
@@ -418,6 +441,8 @@ class ClipWorker(QThread):
                 extras["effects"] = effects.schedule(
                     planned, {kind: lead for kind, (_path, lead) in prepared.items()})
                 sounds = {kind: path for kind, (path, _lead) in prepared.items()}
+                samples, rate = effects.read_wav(audio)
+                extras["effect_gains"] = sfx.matched_gains(sounds, sfx.voice_level(samples, rate))
             log_event("Efeitos (%s): %d som(ns), %d zoom(s)", origin,
                       len(extras.get("effects", ())), len(extras.get("punch", ())))
             return extras, sounds
@@ -440,7 +465,7 @@ class ClipWorker(QThread):
                 zoom_cuts=options.zoom_cuts and options.remove_pauses,
                 progress_colour=options.style.highlight_color if options.progress_bar else "",
                 normalize_audio=options.normalize_audio, sounds=sounds,
-                **(effect_extras or {}))
+                banner=options.banner, **(effect_extras or {}))
             code, message = self._ffmpeg(command, output_length(intervals), "render")
             if code == 0:
                 break
@@ -483,15 +508,17 @@ class ClipWorker(QThread):
             raise ClipError(f"Não foi possível ler o áudio do trecho: {message}")
         words = self._transcribe(audio, folder)
 
-        intervals = (keep_intervals(words, length, self.options.min_pause)
+        intervals = (keep_intervals(words, length, self.options.min_pause,
+                                    loudness=self._loudness(audio))
                      if self.options.remove_pauses else [(0.0, length)])
         total = output_length(intervals)
         subtitles = folder / "legenda.ass"
         subtitles.write_text(build_ass(
             remap_words(words, intervals), total, title=clip.title,
             title_seconds=self.options.title_seconds,
-            style=self.options.style), encoding="utf-8")
-        tracking = (self._track(source, offset, length, intervals, folder)
+            style=self.options.style, banner=self.options.banner,
+            banner_label=self.options.banner_label), encoding="utf-8")
+        tracking = (self._track(source, offset, length, intervals, folder, audio)
                     if self.options.framing == "track" else None)
         effect_extras, sounds = self._effects(clip, audio, words, intervals, total, folder)
 

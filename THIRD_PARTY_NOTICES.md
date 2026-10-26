@@ -21,6 +21,10 @@ de cada pacote empacotado estão em `THIRD_PARTY_LICENSES.md`, gerado no CI por
   usado em "Seguir a pessoa" nos cortes) — MIT; Copyright (c) 2020 Shiqi Yu. Licença em
   `assets/models/LICENSE-YuNet.txt`.
   Fonte: https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet
+- LR-ASD, detector de quem está falando (`assets/models/lr_asd_ava.onnx`, pesos
+  `pretrain_AVA.model` convertidos por `scripts/export_lr_asd.py`, usado em "Seguir a
+  pessoa" com várias pessoas em cena) — MIT; Copyright (c) 2025 Liao Junhua. Licença em
+  `assets/models/LICENSE-LR-ASD.txt`. Fonte: https://github.com/Junhua-Liao/LR-ASD
 - tokenizers e huggingface-hub — Apache-2.0.
 - NumPy — BSD-3-Clause.
 - CUDA Runtime, cuBLAS e cuDNN (Windows) — termos de redistribuição da NVIDIA.

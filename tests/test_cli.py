@@ -65,13 +65,16 @@ class CliParsingTests(unittest.TestCase):
 
     def test_ai_plan_from_text_or_file_keeps_markers(self) -> None:
         line = '{"bx":1,"c":[["0:10","0:40","GANCHO",[["0:15","graça","i",1]]]]}'
-        clips = cli._read_plan("Resposta da IA...\n" + line)
+        clips, title, label = cli._read_plan("Resposta da IA...\n" + line)
+        self.assertEqual((title, label), ("", ""))
         self.assertEqual((clips[0].start, clips[0].end, clips[0].title), (10, 40, "GANCHO"))
         self.assertEqual(clips[0].markers[0].sound, "impacto")
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "plano.txt"
             path.write_text(line, encoding="utf-8")
-            self.assertEqual(cli._read_plan(str(path)), clips)
+            self.assertEqual(cli._read_plan(str(path))[0], clips)
+        fixed = '{"bx":1,"t":"f","l":"PR. JOÃO · DOMINGO","c":[["0:10","0:40","GANCHO",[]]]}'
+        self.assertEqual(cli._read_plan(fixed)[1:], ("fixo", "PR. JOÃO · DOMINGO"))
         with self.assertRaises(cli.CliError):
             cli._read_plan("sem plano nenhum")
 
@@ -151,6 +154,20 @@ class CliRunTests(unittest.TestCase):
         self.assertTrue(options.sound_effects)
         self.assertEqual(options.style.title_position, 80)
         self.assertEqual(options.ranges[0].markers[0].sound, "whoosh")
+        self.assertFalse(options.banner)
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "video.mp4"
+            source.write_bytes(b"x")
+            with patch.object(cli, "_toolchain", return_value=(None, SimpleNamespace())), \
+                    patch("baixador_ytdlp.workers.ClipWorker", _ClipWorker):
+                code, result, _ = _run(["cortar", str(source), "--corte", "0:10-0:40=Gancho",
+                                        "--titulo", "fixo", "--linha-titulo", "Podcast X",
+                                        "--enquadramento", "track"])
+        self.assertEqual(code, cli.EXIT_OK, result)
+        options = captured["options"]
+        self.assertTrue(options.banner)
+        self.assertEqual(options.banner_label, "Podcast X")
+        self.assertEqual(options.framing, "track")
         code, result, _ = _run(["cortar", str(source)])
         self.assertEqual(code, cli.EXIT_FAILED)
         self.assertIn("--plano", result["erro"])
