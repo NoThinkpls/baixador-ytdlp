@@ -43,6 +43,49 @@ def normalize_quotes(text: str) -> str:
     return (text or "").translate(_QUOTES).replace("&#34;", '"').replace("&quot;", '"')
 
 
+def _repair_inner_quotes(text: str, start: int) -> str:
+    """O objeto a partir de ``start`` com as aspas de dentro dos textos escapadas.
+
+    Título entre aspas ("ISSO É MEDO?") vem da IA com aspas curvas dentro do texto; depois
+    de ``normalize_quotes`` elas viram retas e fecham o texto no meio. No formato do plano,
+    uma aspa só fecha o texto quando a seguinte coisa é ``,`` ``]`` ``}`` ou ``:``; as
+    outras são do próprio texto e ganham a barra invertida.
+    """
+    out: list[str] = []
+    depth, inside, index = 0, False, start
+    while index < len(text):
+        char = text[index]
+        if inside:
+            if char == "\\" and index + 1 < len(text):
+                out.append(text[index:index + 2])
+                index += 2
+                continue
+            if char == '"':
+                after = index + 1
+                while after < len(text) and text[after].isspace():
+                    after += 1
+                if text[after:after + 1] in {",", "]", "}", ":"}:
+                    inside = False
+                    out.append(char)
+                else:
+                    out.append('\\"')
+                index += 1
+                continue
+            out.append(char)
+        else:
+            out.append(char)
+            if char == '"':
+                inside = True
+            elif char in "{[":
+                depth += 1
+            elif char in "}]":
+                depth -= 1
+                if depth == 0:
+                    break
+        index += 1
+    return "".join(out)
+
+
 class PlanError(ClipError):
     """O texto colado não traz um plano que o app consiga usar."""
 
@@ -73,10 +116,13 @@ def find_plan(text: str) -> dict:
             "no fim da resposta da IA.")
     try:
         plan, _end = json.JSONDecoder().raw_decode(text, match.start())
-    except json.JSONDecodeError as exc:
-        raise PlanError(
-            "O plano está incompleto ou com erro de digitação (JSON inválido). Copie a "
-            "linha inteira de novo.") from exc
+    except json.JSONDecodeError:
+        try:
+            plan = json.loads(_repair_inner_quotes(text, match.start()))
+        except json.JSONDecodeError as exc:
+            raise PlanError(
+                "O plano está incompleto ou com erro de digitação (JSON inválido). Copie a "
+                "linha inteira de novo.") from exc
     if not isinstance(plan, dict):
         raise PlanError("O plano colado não está no formato esperado.")
     return plan

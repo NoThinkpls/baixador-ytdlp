@@ -3,6 +3,21 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.15.1] - 2026-10-26
+
+### Corrigido
+
+- **Plano da IA** com título entre aspas dava "JSON inválido". A IA escreve as aspas do
+  título curvas, como as outras; o app troca todas por retas e as de dentro fechavam o
+  texto no meio. Agora uma aspa só fecha o texto quando vem seguida de `,` `]` `}` ou
+  `:`, e as outras ficam no título.
+
+### Alterado
+
+- Nome do arquivo de cada corte: o título vem primeiro, para achar o corte na pasta.
+  Era `video_corte01_TITULO.mp4`; agora é `TITULO - video - corte01.mp4` (sem título,
+  `video - corte01.mp4`), com espaços em vez de sublinhados.
+
 ## [1.15.0] - 2026-10-26
 
 ### Adicionado
