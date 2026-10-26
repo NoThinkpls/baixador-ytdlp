@@ -424,7 +424,7 @@ def _read_plan(value: str):
     ``"a"`` animado) e a linha de cima do título fixo (``"l"``).
     """
     from .clips import ClipError
-    from .plano_ia import find_plan, parse_plan
+    from .plano_ia import parse_look, parse_plan
 
     path = Path(value).expanduser()
     try:
@@ -433,13 +433,11 @@ def _read_plan(value: str):
         raise CliError(f"Não foi possível ler o plano: {exc}") from exc
     try:
         ranges = tuple(parse_plan(text))
-        plan = find_plan(text)
+        look = parse_look(text)
     except ClipError as exc:
         raise CliError(str(exc)) from exc
-    kind = str(plan.get("t") or "").strip().casefold()
-    title = {"f": "fixo", "a": "animado"}.get(kind, "")
-    label = " ".join(str(plan.get("l") or "").split())
-    return ranges, title, label
+    title = {"banner": "fixo", "animated": "animado"}.get(look.title_mode, "")
+    return ranges, title, look.label or ""
 
 
 def cmd_cortar(args) -> dict:

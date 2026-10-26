@@ -80,6 +80,22 @@ class CartaoNoTopoTests(unittest.TestCase):
         self.assertLessEqual(len(label) * CHAR_WIDTH * size, CARD_WIDTH)
 
 
+class PlanoComVisualTests(unittest.TestCase):
+    def test_plano_traz_tipo_de_titulo_e_linha_de_cima(self) -> None:
+        from baixador_ytdlp.plano_ia import parse_look
+        look = parse_look('Resposta… {"bx":1,"t":"f","l":"  PR. JOÃO ·  CULTO DE DOMINGO ",'
+                          '"c":[["1:00","1:40","X",[]]]}')
+        self.assertEqual((look.title_mode, look.label), ("banner", "PR. JOÃO · CULTO DE DOMINGO"))
+        self.assertEqual(parse_look('{"bx":1,"t":"a","c":[]}').title_mode, "animated")
+
+    def test_plano_antigo_ou_estranho_nao_muda_a_pagina(self) -> None:
+        from baixador_ytdlp.plano_ia import parse_look
+        look = parse_look('{"bx":1,"c":[["1:00","1:40","X",[]]]}')
+        self.assertEqual((look.title_mode, look.label), ("", None))
+        look = parse_look('{"bx":1,"t":"qualquer","l":42,"c":[]}')
+        self.assertEqual((look.title_mode, look.label), ("", None))
+
+
 class MontagemComFaixaTests(unittest.TestCase):
     def test_video_vai_para_baixo_da_faixa(self) -> None:
         area = HEIGHT - BANNER_HEIGHT
@@ -217,6 +233,20 @@ class PaginaVisualTests(unittest.TestCase):
             options = page._options()
         self.assertTrue(options.banner)
         self.assertEqual(options.banner_label, "Flow #594")
+
+    def test_plano_da_ia_escolhe_titulo_fixo_e_linha_de_cima(self) -> None:
+        page, cfg = self._page()
+        page.apply_plan_text('{"bx":1,"t":"f","l":"Pr. João · Culto",'
+                             '"c":[["1:00","1:40","\\"DEUS NÃO TE ESQUECEU\\"",[]]]}')
+        self.assertEqual(page.title_picker.value(), "banner")
+        self.assertEqual(page.label_edit.text(), "Pr. João · Culto")
+        self.assertTrue(cfg.clips_banner)
+        self.assertEqual(cfg.clips_banner_label, "Pr. João · Culto")
+        self.assertEqual(page.preview.state.title, '"DEUS NÃO TE ESQUECEU"')
+        # Plano sem "t" e "l" (o formato antigo) não mexe no que a pessoa escolheu.
+        page.apply_plan_text('{"bx":1,"c":[["2:00","2:40","OUTRO",[]]]}')
+        self.assertEqual((page.title_picker.value(), page.label_edit.text()),
+                         ("banner", "Pr. João · Culto"))
 
     def test_titulo_fixo_salvo_volta_na_abertura(self) -> None:
         page, _cfg = self._page(clips_banner=True, clips_banner_label="Canal",

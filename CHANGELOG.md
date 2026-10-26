@@ -12,8 +12,9 @@ formato Keep a Changelog.
   `historico`. Usa o mesmo motor e as configurações salvas da interface, devolve o resultado em
   JSON no stdout e o andamento no stderr, e convive com a janela aberta. Referência em
   [`docs/LINHA-DE-COMANDO.md`](docs/LINHA-DE-COMANDO.md). Em `cortar`, `--plano` aceita o plano
-  da IA da 1.14.2 e `--pasta-sons` e `--altura-titulo` seguem a página Cortes, e `--titulo fixo` com
-  `--linha-titulo` faz o título fixo no topo da 1.15.0.
+  da IA da 1.14.2 e `--pasta-sons` e `--altura-titulo` seguem a página Cortes; `--titulo fixo|animado`,
+  `--linha-titulo` e `--duracao-titulo` cobrem os tipos de título da 1.15.0, e os campos `t` e
+  `l` do plano valem quando essas opções não são passadas.
 - Skill `baixador` para o Claude Code (`.claude/skills/baixador/SKILL.md`): pedidos no chat como
   "baixa esse vídeo em 720p" ou "faz um corte de 1:20 a 2:05" viram o comando certo, executado
   no computador da pessoa.
@@ -29,6 +30,10 @@ formato Keep a Changelog.
   diminui sozinho para caber em até 3 linhas; a legenda não sobe para dentro da faixa e os
   zooms mexem só no vídeo. "Seguir a pessoa" mede a janela pela área do vídeo, mais larga
   que 9:16.
+- **Plano da IA**: dois campos opcionais, `t` (tipo de título: `"f"` fixo no topo ou
+  `"a"` animado) e `l` (a linha de cima do título fixo). Ao aplicar um plano com eles, a
+  página troca o tipo de título e preenche a linha; planos antigos continuam iguais. O
+  texto pronto para a IA em docs/PLANO-DA-IA.md explica os dois tamanhos de título.
 
 ### Alterado
 

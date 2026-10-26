@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (QAbstractButton, QApplication, QColorDialog, QFil
 from ..clips import (BANNER_CAPTION_MIN, HIGHLIGHT_HEX, TITLE_MAX, TITLE_MIN, CaptionStyle,
                      ClipError, ClipOptions, format_clock, is_url, make_range, parse_time)
 from ..effects import Marker
-from ..plano_ia import markers_text, parse_plan
+from ..plano_ia import markers_text, parse_look, parse_plan
 from ..processes import CREATE_NO_WINDOW
 from ..workers import ClipWorker
 from . import theme
@@ -704,6 +704,7 @@ class ClipsPage(QWidget):
     def apply_plan_text(self, text: str) -> int:
         """Troca a lista de cortes pelos do plano; devolve quantos cortes entraram."""
         ranges = parse_plan(text)
+        look = parse_look(text)
         while len(self.rows) > 1:
             row = self.rows.pop()
             self.rows_layout.removeWidget(row)
@@ -720,7 +721,13 @@ class ClipsPage(QWidget):
             # Quem colou um plano com sons quer ouvir os sons.
             self.sfx_switch.setChecked(any(m.sound for c in ranges for m in c.markers))
             self.punch_switch.setChecked(any(m.zoom for c in ranges for m in c.markers))
+        if look.label is not None:
+            self.label_edit.setText(look.label)
+        if look.title_mode:
+            # O tamanho dos títulos que a IA escreveu depende do tipo: segue o dela.
+            self.title_picker.set_value(look.title_mode)
         self._refresh_rows()
+        self._save_style()
         return len(ranges)
 
     def _apply_plan(self) -> None:
