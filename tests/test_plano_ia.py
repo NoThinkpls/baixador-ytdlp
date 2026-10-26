@@ -8,7 +8,8 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from baixador_ytdlp.clips import remap_time
-from baixador_ytdlp.effects import Marker, find_word, place_markers, schedule
+from baixador_ytdlp.effects import (Effect, Marker, find_word, place_markers, schedule,
+                                     with_visuals)
 from baixador_ytdlp.plano_ia import PlanError, find_plan, parse_plan
 
 LINHA = ('{"bx":1,"c":[["12:03","12:58.5","A GRAÇA QUE ALCANÇA",'
@@ -91,6 +92,26 @@ class EncaixeTests(unittest.TestCase):
         placed = schedule(planned, {"subida": 1.6, "impacto": 0.01})
         self.assertEqual(sorted((e.kind, e.time) for e in placed),
                          [("impacto", 9.99), ("subida", 8.4)])
+
+    def test_som_vem_com_zoom_e_whoosh_so_na_emenda(self) -> None:
+        # Nathan: os sons "não batiam" com o vídeo. Som solto, sem nada mudando na tela,
+        # não entra: o pop ganha o zoom e o whoosh sem emenda por perto sai.
+        intervals = [(0.0, 3.0), (5.0, 20.0)]
+        planned, zooms = place_markers([Marker(733.0, "pop"), Marker(738.0, "whoosh")], 723.0,
+                                       [], intervals, 18.0, remap_time)
+        self.assertEqual([(e.kind, e.time) for e in planned], [("pop", 8.0)])
+        self.assertEqual(zooms, [(8.0, 8.6)])
+
+    def test_sons_nao_se_amontoam(self) -> None:
+        planned, _ = place_markers([Marker(733.0, "pop"), Marker(734.0, "ding"),
+                                    Marker(737.0, "impacto")], 723.0, [], [(0.0, 20.0)], 20.0,
+                                   remap_time)
+        self.assertEqual([(e.kind, e.time) for e in planned], [("pop", 10.0), ("impacto", 14.0)])
+
+    def test_zoom_desligado_deixa_so_o_whoosh(self) -> None:
+        planned = [Effect(3.0, "whoosh"), Effect(8.0, "pop"), Effect(12.0, "impacto")]
+        self.assertEqual(with_visuals(planned, zoom=False), [Effect(3.0, "whoosh")])
+        self.assertEqual(with_visuals(planned, zoom=True), planned)
 
 
 class PaginaTests(unittest.TestCase):

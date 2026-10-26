@@ -579,6 +579,9 @@ class Tracking:
     """Janela que acompanha a pessoa: posições enviadas ao ``crop`` por ``sendcmd``."""
     commands: Path          # arquivo do sendcmd (``tempo crop@track x valor;``)
     first_x: int            # posição no primeiro quadro, antes do primeiro comando
+    # Trechos (no tempo do corte final) em que ninguém fala e as pessoas não cabem na
+    # janela: ali entra o quadro inteiro com fundo desfocado, como no enquadramento "blur".
+    wide: tuple[tuple[float, float], ...] = ()
 
 
 def _framing_graph(framing: str, tracking: Tracking | None = None) -> str:
@@ -586,18 +589,31 @@ def _framing_graph(framing: str, tracking: Tracking | None = None) -> str:
     if framing == "track" and tracking is not None:
         # Altura em 1920 e janela de 1080 que anda na horizontal conforme a análise.
         # yuv444p antes do crop: em 4:2:0 o x só anda de 2 em 2 pixels.
-        return (f"[vc]scale=-2:{HEIGHT},format=yuv444p,"
-                f"sendcmd=f={_escape_filter_path(tracking.commands)},"
-                f"crop@track={WIDTH}:{HEIGHT}:{tracking.first_x}:0,setsar=1[vf]")
+        follow = (f"scale=-2:{HEIGHT},format=yuv444p,"
+                  f"sendcmd=f={_escape_filter_path(tracking.commands)},"
+                  f"crop@track={WIDTH}:{HEIGHT}:{tracking.first_x}:0,setsar=1")
+        if not tracking.wide:
+            return f"[vc]{follow}[vf]"
+        enable = "+".join(f"between(t,{start:.3f},{end - 0.001:.3f})"
+                          for start, end in tracking.wide)
+        return (f"[vc]split=2[vtr][vwi];[vtr]{follow}[vtf];"
+                + _blur_fit("[vwi]", "[vwf]", "w") +
+                f";[vtf][vwf]overlay=0:0:enable='{enable}',setsar=1[vf]")
     if framing in {"crop", "track"}:
         return (f"[vc]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
                 f"crop={WIDTH}:{HEIGHT},setsar=1[vf]")
     # Mesmo visual de "Criar versão vertical" nas Ferramentas.
-    return (f"[vc]split=2[bg][fg];"
-            f"[bg]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT},"
-            "boxblur=luma_radius=24:luma_power=2,eq=brightness=-0.08[bgb];"
-            f"[fg]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease[fgs];"
-            "[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1[vf]")
+    return _blur_fit("[vc]", "[vf]")
+
+
+def _blur_fit(source: str, output: str, tag: str = "") -> str:
+    """Quadro inteiro no meio, com o próprio vídeo ampliado e desfocado atrás."""
+    return (f"{source}split=2[bg{tag}][fg{tag}];"
+            f"[bg{tag}]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+            f"crop={WIDTH}:{HEIGHT},boxblur=luma_radius=24:luma_power=2,eq=brightness=-0.08"
+            f"[bgb{tag}];"
+            f"[fg{tag}]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease[fgs{tag}];"
+            f"[bgb{tag}][fgs{tag}]overlay=(W-w)/2:(H-h)/2,setsar=1{output}")
 
 
 def zoom_windows(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
@@ -614,11 +630,13 @@ def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: 
                  tracking: Tracking | None = None, *, zoom_cuts: bool = False,
                  progress_colour: str = "", normalize_audio: bool = False,
                  effects: Sequence[Effect] = (), effect_inputs: dict[str, int] | None = None,
-                 punch: Sequence[tuple[float, float]] = ()) -> str:
+                 punch: Sequence[tuple[float, float]] = (),
+                 effect_gains: dict[str, float] | None = None) -> str:
     """Recorta cada trecho com fala, emenda vídeo e áudio juntos, enquadra e grava a legenda.
 
     ``effects`` são os sons automáticos; ``effect_inputs`` diz em qual entrada do
-    FFmpeg está o WAV de cada tipo. ``punch`` são as janelas do zoom rápido na ênfase.
+    FFmpeg está o WAV de cada tipo e ``effect_gains`` o volume de cada um (acertado pela
+    voz em ``sfx.matched_gains``). ``punch`` são as janelas do zoom rápido na ênfase.
     """
     if not intervals:
         raise ClipError("Não sobrou nenhum trecho para montar o corte.")
@@ -640,7 +658,7 @@ def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: 
     parts.append(f"{''.join(pads)}concat=n={len(intervals)}:v=1:a=1[vc]{audio}")
     if effects:
         mixed = "[ac1]" if normalize_audio else "[ac]"
-        parts.append(_effects_graph(effects, inputs, "[ac0]", mixed))
+        parts.append(_effects_graph(effects, inputs, "[ac0]", mixed, effect_gains or {}))
         audio = mixed
     if normalize_audio:
         # -14 LUFS é o alvo do YouTube, TikTok e Reels; uma passada só, sem arquivo extra.
@@ -676,7 +694,7 @@ def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: 
 
 
 def _effects_graph(effects: Sequence[Effect], inputs: dict[str, int], speech: str,
-                   output: str) -> str:
+                   output: str, gains: dict[str, float] | None = None) -> str:
     """Cada som entra atrasado até o seu instante e é somado à voz, sem mudar o volume dela."""
     parts, labels = [], []
     for kind, index in sorted(inputs.items()):
@@ -688,7 +706,7 @@ def _effects_graph(effects: Sequence[Effect], inputs: dict[str, int], speech: st
         for name, time in zip(names, times, strict=True):
             delayed = name.replace("[sx", "[sd")
             parts.append(f"{name}adelay=delays={round(time * 1000)}:all=1,"
-                         f"volume={GAIN.get(kind, 0.5)}{delayed}")
+                         f"volume={(gains or {}).get(kind, GAIN.get(kind, 0.3))}{delayed}")
             labels.append(delayed)
     parts.append(f"{speech}{''.join(labels)}amix=inputs={len(labels) + 1}:duration=first:"
                  f"normalize=0{output}")

@@ -380,7 +380,7 @@ class ClipWorker(QThread):
             if audio is not None:
                 try:
                     voice = effects.read_wav(audio)
-                except Exception as exc:  # noqa: BLE001 - sem voz, segue o maior rosto
+                except Exception as exc:  # noqa: BLE001 - sem voz, decide pelos rostos
                     report_exception("áudio para achar quem fala", exc)
             track = reframe.analyze(source, offset, length, voice=voice,
                                     progress=lambda share: self._stage("track", share),
@@ -395,7 +395,8 @@ class ClipWorker(QThread):
                 return None
             path = folder / "enquadramento.txt"
             path.write_text(reframe.sendcmd_text(commands), encoding="utf-8")
-            return Tracking(path, commands[0][1])
+            return Tracking(path, commands[0][1],
+                            reframe.output_windows(track.wide, intervals, remap_time))
         except ClipError:
             raise
         except Exception as exc:  # noqa: BLE001 - o rastreamento é opcional
@@ -423,9 +424,11 @@ class ClipWorker(QThread):
                 leveled = [{**word, "level": level}
                            for word, level in zip(words, levels, strict=True)]
                 emphasis = effects.emphasis_words(remap_words(leveled, intervals), total)
-                planned = effects.plan_effects(intervals, emphasis, total)
+                planned = effects.plan_effects(intervals, emphasis, total,
+                                               pops=options.emphasis_zoom)
                 punch = effects.punch_windows(emphasis, total)
                 origin = "regra automática"
+            planned = effects.with_visuals(planned, options.emphasis_zoom)
             extras: dict = {}
             sounds: dict[str, Path] = {}
             if options.emphasis_zoom and punch:
@@ -437,6 +440,8 @@ class ClipWorker(QThread):
                 extras["effects"] = effects.schedule(
                     planned, {kind: lead for kind, (_path, lead) in prepared.items()})
                 sounds = {kind: path for kind, (path, _lead) in prepared.items()}
+                samples, rate = effects.read_wav(audio)
+                extras["effect_gains"] = sfx.matched_gains(sounds, sfx.voice_level(samples, rate))
             log_event("Efeitos (%s): %d som(ns), %d zoom(s)", origin,
                       len(extras.get("effects", ())), len(extras.get("punch", ())))
             return extras, sounds

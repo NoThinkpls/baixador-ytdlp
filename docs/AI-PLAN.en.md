@@ -60,7 +60,13 @@ What the app does with each point:
 
 - converts the time to the final video, after the removed pauses;
 - a **whoosh** near a cut (within 1.5 s) moves to the cut, with its peak right on it;
+  with no cut nearby the whoosh is dropped (there would be no transition on screen);
 - the **riser** ends exactly on the point; the other sounds start on it;
+- every sound other than the whoosh gets the quick punch-in at that point, so something
+  happens on screen with it; with **Zoom on emphasis** off, only the whoosh remains;
+- two sounds stay at least 3 s apart (a riser ending on an impact counts as one effect);
+  anything closer is dropped;
+- each sound's volume is measured and set a few dB below the clip's voice;
 - points outside their own clip, unreadable times and unknown sounds are ignored (an
   unknown sound with `zoom` 1 becomes zoom only); the rest of the plan still applies.
 
@@ -77,12 +83,13 @@ JSON, with no line breaks and no comments, in this format:
 {"bx":1,"c":[["START","END","TITLE",[["TIME","WORD","SOUND",ZOOM]]]]}
 - One item in "c" per suggested clip (20 at most), with START and END taken from the SRT
   (mm:ss or hh:mm:ss) and the clip's short title.
-- In each clip, 2 to 6 effects, only where they reinforce the speech: TIME from the SRT;
+- In each clip, 1 to 3 effects, only where they reinforce the speech: TIME from the SRT;
   WORD exactly as spoken at that moment; SOUND = w (topic change), p (word highlight),
   i (strong sentence or climax), d (key idea), s (tension that ends on the point) or ""
   (no sound); ZOOM = 1 to punch in at that point, 0 for none.
-- Do not repeat the same sound within 4 seconds and do not put effects in the first
-  2 seconds of a clip.
+- Leave at least 4 seconds between two sounds and do not put effects in the first
+  2 seconds of a clip. Use w only on a pause or topic change. Prefer a few well-placed
+  effects over many.
 ```
 
 ## Your own sounds

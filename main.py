@@ -229,6 +229,18 @@ def _run_self_test(report_path: Path) -> int:
             raise RuntimeError(f"{reframe.MODEL_NAME} não foi incluído no pacote.")
         reframe.FaceDetector(model).centers(numpy.zeros((360, 640, 3), dtype=numpy.uint8))
 
+        checkpoint("speaker_model")
+        # LR-ASD, que diz quem está falando quando há várias pessoas: sem ele a câmera
+        # voltaria a escolher pelo tamanho do rosto sem ninguém perceber.
+        from baixador_ytdlp import speaker
+        model = speaker.model_path()
+        if model is None:
+            raise RuntimeError(f"{speaker.MODEL_NAME} não foi incluído no pacote.")
+        crops = [numpy.zeros((speaker.FACE_SIZE, speaker.FACE_SIZE), dtype=numpy.uint8)] * 10
+        notes = speaker.SpeakerModel(model).scores(numpy.zeros((40, 13), dtype=numpy.float32), crops)
+        if len(notes) != 10:
+            raise RuntimeError(f"LR-ASD devolveu {len(notes)} notas; esperado 10.")
+
         checkpoint("decode_audio")
         with tempfile.TemporaryDirectory(prefix="baixador-self-test-") as temporary:
             wav_path = Path(temporary) / "silence.wav"

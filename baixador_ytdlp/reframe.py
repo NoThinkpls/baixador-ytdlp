@@ -5,12 +5,14 @@ e com o que o app já leva: o PyAV decodifica alguns quadros por segundo, o dete
 rostos YuNet (OpenCV Zoo, MIT, 230 KB) roda no onnxruntime do Whisper e, quando não há
 rosto (pessoa de costas, longe), o movimento entre quadros indica onde está a ação.
 
-Com mais de um rosto em cena, quem fala é quem a câmera segue ("active speaker
-detection" em versão leve): cada rosto é acompanhado entre os quadros, o movimento da
-boca dele (descontado o da cabeça) vira uma curva no tempo e essa curva é comparada com
-o volume da fala. A boca que abre e fecha junto com a voz é de quem está falando. Quando
-a comparação não decide (boca coberta, rosto pequeno), vale quem mais falou no corte e,
-por último, o maior rosto. Tudo em CPU, sem modelo extra.
+Com mais de um rosto em cena, quem fala é quem a câmera segue: o LR-ASD (Liao et al.,
+IJCV 2025, MIT, 3,4 MB), um modelo de "active speaker detection" treinado no AVA, olha a
+boca de cada rosto junto com o áudio e diz quadro a quadro se aquela pessoa está falando
+(ver ``speaker.py``). É o que o AutoClip e o TalkNet fazem, na CPU. Os cortes de câmera de
+uma live com várias câmeras são achados pelo histograma de cor (como o PySceneDetect) e
+cada cena é decidida sozinha: rosto não atravessa corte. Cena em que ninguém fala (plateia,
+banda) mostra um rosto só, o grupo que cabe na janela ou o quadro inteiro com fundo
+desfocado, como o AutoFlip.
 Depois uma "câmera virtual" suaviza o caminho: zona morta para não tremer, velocidade
 máxima para não chicotear e média móvel no fim. O FFmpeg recebe a posição do corte por
 ``sendcmd``, alguns valores por segundo.
@@ -23,32 +25,44 @@ from __future__ import annotations
 import math
 import sys
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import speaker
 from .plataforma import pasta_do_executavel
 
 MODEL_NAME = "face_detection_yunet_2023mar.onnx"
 INPUT_SIZE = 640                 # o YuNet 2023mar tem entrada fixa de 640x640
-SAMPLE_FPS = 10.0                # quadros analisados por segundo (a boca precisa disso)
+DETECT_EVERY = 2                 # detector de rostos a cada 2 quadros (12,5 por segundo)
 FACE_SCORE = 0.6
 MOTION_THRESHOLD = 24            # diferença de cinza que conta como movimento
 MOTION_MIN_SHARE = 0.004         # fração mínima de pixels em movimento para confiar nele
+MOTION_GAP = 3                   # quadros entre as duas imagens comparadas no movimento
 DEAD_ZONE = 0.06                 # deslocamento (fração da largura) que a câmera ignora
 MAX_SPEED = 0.35                 # fração da largura por segundo
 SETTLE_SECONDS = 0.8             # parado por esse tempo = a câmera assenta
 EASE_SECONDS = 0.45              # duração aproximada da aceleração e da frenagem
 DEFAULT_FPS = 30.0               # quando o vídeo não informa a taxa de quadros
 NMS_IOU = 0.3                    # caixas do mesmo rosto em âncoras vizinhas viram uma só
-DETAIL_SIZE = 1280               # lado maior do quadro de onde sai o recorte da boca
-MOUTH_PATCH = (24, 16)           # boca reduzida a 24x16 tons de cinza para comparar
-MIN_MOUTH_PX = 6.0               # boca menor que isso no quadro não dá leitura confiável
-TRACK_MEMORY = 2.0               # segundos que um rosto pode sumir e continuar o mesmo
-SPEAKER_WINDOW = 4.0             # janela (s) em que se decide quem fala agora
-SPEAKER_MIN_CORR = 0.15          # correlação mínima entre boca e voz para "está falando"
-SPEAKER_MARGIN = 0.05            # vantagem sobre o segundo colocado para decidir
-SWITCH_SECONDS = 0.8             # outro precisa vencer por esse tempo para a câmera trocar
+DETAIL_SIZE = 1280               # lado maior do quadro de onde sai o recorte do rosto
+MIN_FACE_PX = 24                 # rosto menor que isso (no quadro de detalhe) não tem boca legível
+TRACK_IOU = 0.3                  # sobreposição mínima para ser o mesmo rosto
+TRACK_REACH = 1.0                # ou centro a até 1 largura de rosto (quem anda rápido)
+TRACK_SIZE_RATIO = 1.5           # com tamanho parecido
+TRACK_MEMORY = 0.5               # segundos que um rosto pode sumir e continuar o mesmo
+TRACK_GAP = int(TRACK_MEMORY * speaker.VIDEO_FPS)
+BOX_SMOOTH = 6                   # quadros de cada lado na mediana da caixa do rosto
+MIN_TRACK_SECONDS = 0.5          # rosto que aparece menos que isso não conta
+SCORE_WINDOW = 0.4               # segundos de cada lado na média da nota do LR-ASD
+SPEAK_THRESHOLD = 0.0            # nota (logit) acima disso = falando
+MIN_SPEECH_SECONDS = 0.4         # fala mínima para alguém ser "quem fala" na cena
+SWITCH_SECONDS = 0.8             # outro precisa falar por esse tempo para a câmera trocar
 MIN_SHOT_SECONDS = 2.0           # depois de trocar de pessoa, fica nela pelo menos isso
+GROUP_SIZE = 0.6                 # rosto desse tamanho (relativo ao maior) conta no grupo
+GROUP_PRESENCE = 0.3             # e precisa estar em pelo menos essa parte da cena
+SHOT_DISTANCE = 0.5              # salto mínimo do histograma de cor para ser corte de câmera
+SHOT_RATIO = 3.0                 # e quantas vezes maior que a variação normal da cena
+MIN_SCENE_SECONDS = 0.5          # cortes mais próximos que isso (fusão) contam como um
 
 
 def model_path() -> Path | None:
@@ -179,239 +193,311 @@ def motion_center(previous_gray, gray) -> float | None:
     return float((columns * positions).sum() / total)
 
 
+# ----------------------------------------------------------------- troca de cena
+
+def color_histogram(bgr):
+    """Histograma de cor (8x8x8) normalizado de um quadro BGR pequeno."""
+    import numpy as np
+
+    pixels = bgr[::4, ::4].reshape(-1, 3).astype(np.int32) // 32
+    codes = pixels[:, 0] * 64 + pixels[:, 1] * 8 + pixels[:, 2]
+    counts = np.bincount(codes, minlength=512).astype(np.float32)
+    return counts / max(1.0, float(counts.sum()))
+
+
+class ShotDetector:
+    """Acha os cortes de câmera, como o ``ContentDetector`` do PySceneDetect e o AutoFlip.
+
+    Live com várias câmeras troca de plano o tempo todo: a pessoa que estava à esquerda
+    agora pode ser outra, e trilha de rosto ou câmera virtual que atravessa o corte mistura
+    as duas cenas. Um corte é um salto grande na distribuição de cores entre dois quadros
+    seguidos, bem maior que a variação normal da cena (gente andando, luz piscando).
+    """
+
+    def __init__(self, rate: float = speaker.VIDEO_FPS) -> None:
+        self.previous = None
+        self.recent: list[float] = []
+        self.window = max(4, int(rate))
+        self.min_gap = max(1, int(MIN_SCENE_SECONDS * rate))
+        self.since = 10**9
+
+    def feed(self, histogram) -> bool:
+        import numpy as np
+
+        self.since += 1
+        if self.previous is None:
+            self.previous = histogram
+            return False
+        distance = float(np.abs(histogram - self.previous).sum())
+        self.previous = histogram
+        typical = sorted(self.recent)[len(self.recent) // 2] if self.recent else 0.0
+        self.recent = [*self.recent[-self.window + 1:], distance]
+        if (distance > SHOT_DISTANCE and distance > SHOT_RATIO * typical
+                and self.since >= self.min_gap):
+            self.since = 0
+            self.recent = []
+            return True
+        return False
+
+
 # ----------------------------------------------------------------- quem está falando
 
-def patch(gray, cx: float, cy: float, half_w: float, half_h: float,
-          size: tuple[int, int] = MOUTH_PATCH):
-    """Recorte ``size`` (largura, altura) em torno de ``(cx, cy)`` em pixels, sem o brilho médio.
-
-    Amostragem pelo vizinho mais próximo: barato e suficiente para medir o quanto mudou.
-    """
-    import numpy as np
-
-    height, width = gray.shape[:2]
-    xs = np.clip(np.linspace(cx - half_w, cx + half_w, size[0]).round().astype(int), 0, width - 1)
-    ys = np.clip(np.linspace(cy - half_h, cy + half_h, size[1]).round().astype(int), 0, height - 1)
-    values = gray[ys[:, None], xs[None, :]].astype(np.float32)
-    return values - values.mean()
-
-
-def mouth_patch(gray, face: Face):
-    """Recorte da boca (lábios e queixo) num quadro cinza; ``None`` sem pontos ou boca pequena."""
-    if len(face.points) < 5:
-        return None
-    height, width = gray.shape[:2]
-    (rx, ry), (lx, ly) = face.points[3], face.points[4]
-    rx, lx, ry, ly = rx * width, lx * width, ry * height, ly * height
-    mouth = math.hypot(lx - rx, ly - ry)
-    if mouth < MIN_MOUTH_PX:
-        return None
-    mx, my = (rx + lx) / 2, (ry + ly) / 2 + mouth * 0.15   # um pouco abaixo: lábio e queixo
-    return patch(gray, mx, my, mouth * 0.75, mouth * 0.6)
-
-
-def mouth_activity(before, after) -> float:
-    """Quanto a boca mudou entre dois recortes.
-
-    Descontar o movimento da cabeça (pelo nariz) foi testado e piorou: quem fala também
-    mexe a cabeça no ritmo da fala, e isso ajuda a achar o orador.
-    """
-    import numpy as np
-
-    return float(np.abs(after - before).mean())
+def iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    """Sobreposição de duas caixas ``(x, y, w, h)``."""
+    inter_w = max(0.0, min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0]))
+    inter_h = max(0.0, min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1]))
+    inter = inter_w * inter_h
+    return inter / max(1e-9, a[2] * a[3] + b[2] * b[3] - inter)
 
 
 @dataclass
 class FaceTrack:
-    """Um mesmo rosto ao longo dos quadros (para a boca de um não ser comparada à de outro)."""
+    """Um mesmo rosto dentro de uma cena: caixas detectadas e notas do LR-ASD por quadro."""
     ident: int
-    center: float
-    width: float
-    last_seen: float
-    patches: object = None
-    last_index: int = -1
+    shot: int
+    boxes: dict[int, tuple[float, float, float, float]] = field(default_factory=dict)
+    last: int = -1                                   # último quadro com detecção
+    scores: dict[int, float] = field(default_factory=dict)
+    pending: list = field(default_factory=list)       # (quadro, recorte) ainda sem nota
+
+    def box_at(self, index: int, aspect: float = 9 / 16) -> tuple[float, float, float] | None:
+        """``(centro x, centro y, lado)`` suavizado no quadro; ``None`` se o rosto não está lá.
+
+        Centro em fração da largura e da altura; lado (o maior da caixa) em fração da
+        largura, sendo ``aspect`` a altura do quadro sobre a largura. É a mediana das
+        detecções em volta, como o ``medfilt`` do script dos autores: a caixa do detector
+        treme alguns pixels de um quadro para outro, e o recorte da boca tremeria junto.
+        """
+        near = [frame for frame in range(index - TRACK_GAP, index + TRACK_GAP + 1)
+                if frame in self.boxes]
+        before = [frame for frame in near if frame <= index]
+        after = [frame for frame in near if frame >= index]
+        bridged = bool(before and after)        # detectado antes e depois, sem buraco longo
+        if not bridged and min((abs(frame - index) for frame in near),
+                               default=TRACK_GAP + 1) > DETECT_EVERY:
+            return None
+        window = [self.boxes[frame] for frame in near if abs(frame - index) <= BOX_SMOOTH]
+        if not window:
+            window = [self.boxes[before[-1] if before else after[0]]]
+        return (_median([x + w / 2 for x, _y, w, _h in window]),
+                _median([y + h / 2 for _x, y, _w, h in window]),
+                _median([max(w, h * aspect) for _x, _y, w, h in window]))
+
+
+def _box_distance(old: tuple[float, float, float, float],
+                  new: tuple[float, float, float, float]) -> float | None:
+    """Distância entre os centros (em larguras de rosto) se puder ser o mesmo rosto.
+
+    Sobreposição sozinha falha com quem anda rápido ou com rosto pequeno: entre duas
+    detecções a caixa já saiu de cima da anterior. Vale também o centro perto, com tamanho
+    parecido.
+    """
+    width = max(old[2], new[2])
+    distance = math.hypot(old[0] + old[2] / 2 - new[0] - new[2] / 2,
+                          old[1] + old[3] / 2 - new[1] - new[3] / 2) / max(1e-9, width)
+    similar = width / max(1e-9, min(old[2], new[2])) <= TRACK_SIZE_RATIO
+    if iou(old, new) > TRACK_IOU or (similar and distance <= TRACK_REACH):
+        return distance
+    return None
+
+
+def _median(values: list[float]) -> float:
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    return ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
 
 
 class FaceTracker:
+    """Liga as detecções de um mesmo rosto entre quadros pela sobreposição das caixas."""
+
     def __init__(self) -> None:
         self.tracks: list[FaceTrack] = []
+        self.shot = 0
 
-    def assign(self, faces: list[Face], moment: float) -> list[FaceTrack]:
-        """A trilha de cada rosto: a mais próxima ainda viva e de tamanho parecido, ou nova."""
-        alive = [track for track in self.tracks if moment - track.last_seen <= TRACK_MEMORY]
+    def new_shot(self) -> None:
+        self.shot += 1                        # nenhum rosto atravessa um corte de câmera
+
+    def assign(self, faces: list[Face], index: int) -> list[FaceTrack]:
+        """A trilha de cada rosto, na ordem recebida: a de maior sobreposição ou uma nova."""
+        alive = [track for track in self.tracks
+                 if track.shot == self.shot and index - track.last <= TRACK_GAP]
         taken: set[int] = set()
         result: dict[int, FaceTrack] = {}
-        # Rostos maiores escolhem primeiro; a resposta volta na ordem de ``faces``.
         for position, face in sorted(enumerate(faces), key=lambda item: -item[1].area):
-            best, distance = None, 0.0
+            box = (face.x, face.y, face.w, face.h)
+            best, closest = None, 0.0
             for track in alive:
-                if track.ident in taken:
-                    continue
-                gap = abs(track.center - face.center)
-                ratio = max(track.width, face.w) / max(1e-6, min(track.width, face.w))
-                if gap <= max(track.width, face.w) * 1.5 and ratio <= 1.8 and (
-                        best is None or gap < distance):
-                    best, distance = track, gap
+                if track.ident not in taken:
+                    distance = _box_distance(track.boxes[track.last], box)
+                    if distance is not None and (best is None or distance < closest):
+                        best, closest = track, distance
             if best is None:
-                best = FaceTrack(len(self.tracks), face.center, face.w, moment)
+                best = FaceTrack(len(self.tracks), self.shot)
                 self.tracks.append(best)
-            best.center, best.width, best.last_seen = face.center, face.w, moment
+            best.boxes[index] = box
+            best.last = index
             taken.add(best.ident)
             result[position] = best
         return [result[position] for position in range(len(faces))]
 
 
-def pearson(left: list[float], right: list[float]) -> float:
-    count = len(left)
-    if count < 3:
-        return 0.0
-    mean_l, mean_r = sum(left) / count, sum(right) / count
-    cov = sum((a - mean_l) * (b - mean_r) for a, b in zip(left, right, strict=True))
-    var_l = sum((a - mean_l) ** 2 for a in left)
-    var_r = sum((b - mean_r) ** 2 for b in right)
-    if var_l <= 1e-12 or var_r <= 1e-12:
-        return 0.0
-    return cov / math.sqrt(var_l * var_r)
-
-
-def voice_envelope(samples, sample_rate: int, times: list[float], rate: float) -> list[float]:
-    """Volume da voz (dB) em torno de cada instante analisado, na mesma cadência dos quadros."""
-    import numpy as np
-
-    half = max(1, int(sample_rate / rate / 2))
-    levels = []
-    for moment in times:
-        center = int(moment * sample_rate)
-        chunk = np.asarray(samples[max(0, center - half):center + half], dtype=np.float32)
-        rms = float(np.sqrt(np.mean(chunk * chunk))) if chunk.size else 0.0
-        levels.append(20 * math.log10(max(rms, 1e-5)))
-    return levels
-
-
-def _smooth3(values: list[float]) -> list[float]:
-    return [sum(values[max(0, i - 1):i + 2]) / len(values[max(0, i - 1):i + 2])
-            for i in range(len(values))]
-
-
-def choose_speakers(observations: list[dict[int, tuple[float, float, float | None]]],
-                    voice: list[float] | None, rate: float = SAMPLE_FPS,
-                    ) -> tuple[list[float | None], list[int]]:
-    """Centro x a seguir em cada amostra (o rosto de quem está falando) e onde há troca.
-
-    ``observations[i]`` é ``{trilha: (centro x, área, movimento da boca ou None)}`` e
-    ``voice`` é o volume da fala nos mesmos instantes. Sem rosto, a amostra fica ``None``
-    (o movimento da cena decide).
-
-    Cada rosto ganha uma nota: a correlação entre a boca dele e a voz no corte inteiro (quem
-    mais falou: a pessoa principal) somada à dos segundos em volta (quem fala agora). A câmera só troca de pessoa quando outra vence
-    com folga por ``SWITCH_SECONDS`` e nunca antes de ``MIN_SHOT_SECONDS`` na pessoa atual;
-    sem decisão fica onde está e, sem ninguém escolhido, vai para quem mais falou ou para o
-    maior rosto. As amostras em que a câmera passa de uma pessoa para outra voltam na
-    segunda lista: ali o enquadramento corta seco, como um editor faria, em vez de
-    atravessar o quadro numa panorâmica.
-    """
-    count = len(observations)
-    if not count:
-        return [], []
-    tracks = sorted({ident for frame in observations for ident in frame})
-    series: dict[int, list[float | None]] = {
-        ident: _smooth_optional([frame[ident][2] if ident in frame else None
-                                 for frame in observations]) for ident in tracks}
-    radius = max(2, int(SPEAKER_WINDOW * rate / 2))
-    voice_s = _smooth3(voice) if voice and len(voice) == count else None
-    score = _speaker_scorer(series, voice_s, count, radius, rate)
-    threshold, margin = SPEAKER_MIN_CORR, SPEAKER_MARGIN
-    hold = max(1, int(SWITCH_SECONDS * rate))
-    dwell = int(MIN_SHOT_SECONDS * rate)
-    memory = rate * TRACK_MEMORY
-    current: int | None = None
-    shown: int | None = None             # pessoa que estava na tela na amostra anterior
-    since = -10**9                       # amostra em que a pessoa atual entrou
-    pending: int | None = None
-    streak = 0
-    last_seen: dict[int, int] = {}
-    result: list[float | None] = []
-    cuts: list[int] = []
-    for index, frame in enumerate(observations):
-        for ident in frame:
-            last_seen[ident] = index
-        if not frame:
-            result.append(None)
-            continue
-        alive = [ident for ident, seen in last_seen.items() if index - seen <= memory]
-        winner: int | None = None
-        scores = sorted(((score(ident, index), ident) for ident in alive), reverse=True)
-        if len(alive) == 1:
-            winner = alive[0]
-        elif scores[0][0] >= threshold and scores[0][0] - scores[1][0] >= margin:
-            winner = scores[0][1]
-        if current is not None and index - last_seen.get(current, -10**9) > memory:
-            current = None
-        if winner is not None and winner != current:
-            streak = streak + 1 if pending == winner else 1
-            pending = winner
-            if current is None or (streak >= hold and index - since >= dwell):
-                current, pending, streak = winner, None, 0
-        elif winner == current:
-            pending, streak = None, 0
-        if current is None:
-            present = [(value, ident) for value, ident in scores if ident in frame]
-            if present and present[0][0] >= threshold:
-                current = present[0][1]
-            else:
-                current = max(frame, key=lambda ident: frame[ident][1])
-        if current != shown and current in frame:
-            if shown is not None:
-                cuts.append(index)
-            shown, since = current, index
-        # Rosto atual sumiu por um instante (virou, falhou a detecção): segura a posição.
-        result.append(frame[current][0] if current in frame else None)
-    return result, cuts
-
-
-def _speaker_scorer(series: dict[int, list[float | None]], voice: list[float] | None,
-                    count: int, radius: int, rate: float):
-    """Nota de cada rosto num instante: corte inteiro + janela de ``SPEAKER_WINDOW``.
-
-    Trilha curta tem nota encolhida, porque poucos pontos correlacionam por acaso.
-    """
-    trust = rate * 5                     # pontos para a nota valer metade do que mediu
-
-    def correlation(ident: int, first: int, last: int) -> tuple[float, int]:
-        if voice is None:
-            return 0.0, 0
-        mouth: list[float] = []
-        sound: list[float] = []
-        for j in range(first, last):
-            value = series[ident][j]
-            if value is not None:
-                mouth.append(value)
-                sound.append(voice[j])
-        if len(mouth) < max(4, int(rate * 0.8)):
-            return 0.0, 0
-        return pearson(mouth, sound), len(mouth)
-
-    overall: dict[int, float] = {}
-    for ident in series:
-        value, points = correlation(ident, 0, count)
-        overall[ident] = value * points / (points + trust)
-
-    def score(ident: int, index: int) -> float:
-        local, points = correlation(ident, max(0, index - radius), min(count, index + radius + 1))
-        return overall[ident] + local * points / (points + radius)
-    return score
-
-
-def _smooth_optional(values: list[float | None]) -> list[float | None]:
-    """Média de 3 amostras só onde há leitura; buracos continuam buracos."""
+def smooth_scores(values: list[float | None], radius: int) -> list[float | None]:
+    """Média das notas em volta de cada quadro (só onde o rosto está)."""
     result: list[float | None] = []
     for index, value in enumerate(values):
         if value is None:
             result.append(None)
             continue
-        near = [item for item in values[max(0, index - 1):index + 2] if item is not None]
+        near = [item for item in values[max(0, index - radius):index + radius + 1]
+                if item is not None]
         result.append(sum(near) / len(near))
     return result
+
+
+Observation = dict[int, tuple[float, float, float | None]]
+
+
+def choose_speakers(observations: list[Observation], shots: Sequence[int] = (),
+                    rate: float = speaker.VIDEO_FPS, view: float = 0.3164,
+                    ) -> tuple[list[float | None], list[int], list[bool]]:
+    """Centro x a seguir em cada quadro, onde a câmera corta seco e onde mostra tudo.
+
+    ``observations[i]`` é ``{trilha: (centro x, largura do rosto, nota do LR-ASD ou None)}``
+    e ``shots`` são os quadros em que começa uma cena nova. Cada cena é decidida sozinha:
+
+    - alguém fala nela: a câmera segue quem fala; troca de pessoa só quando outra fala por
+      ``SWITCH_SECONDS`` e nunca antes de ``MIN_SHOT_SECONDS`` na atual (sem pingue-pongue);
+      nas pausas fica em quem falou por último;
+    - ninguém fala (plateia, banda, a câmera longe demais para ler a boca): um rosto só é
+      seguido; vários que cabem na janela ficam juntos; vários espalhados viram o quadro
+      inteiro com fundo desfocado (terceira lista), como o AutoFlip e o OpusClip fazem.
+
+    Rosto que aparece por menos de ``MIN_TRACK_SECONDS`` (nuca, reflexo, detecção falsa)
+    não conta. Sem rosto, a amostra fica ``None`` e o movimento da cena decide.
+    """
+    count = len(observations)
+    bounds = [0, *sorted(shot for shot in set(shots) if 0 < shot < count), count]
+    targets: list[float | None] = []
+    cuts: list[int] = []
+    wide: list[bool] = []
+    for first, last in zip(bounds, bounds[1:], strict=False):
+        local, switches, spread = _choose_in_shot(observations[first:last], rate, view)
+        if first > 0:
+            cuts.append(first)
+        cuts += [first + index for index in switches]
+        targets += local
+        wide += [spread] * (last - first)
+    return targets, cuts, wide
+
+
+def _choose_in_shot(frames: list[Observation], rate: float, view: float,
+                    ) -> tuple[list[float | None], list[int], bool]:
+    count = len(frames)
+    presence: dict[int, int] = {}
+    for frame in frames:
+        for ident in frame:
+            presence[ident] = presence.get(ident, 0) + 1
+    minimum = min(int(MIN_TRACK_SECONDS * rate), max(1, count // 2))
+    real = {ident for ident, seen in presence.items() if seen >= minimum}
+    frames = [{ident: value for ident, value in frame.items() if ident in real}
+              for frame in frames]
+    radius = max(1, int(SCORE_WINDOW * rate))
+    smooth = {ident: smooth_scores([frame[ident][2] if ident in frame else None
+                                    for frame in frames], radius) for ident in real}
+    talking = {ident: sum(1 for value in values if value is not None and value > SPEAK_THRESHOLD)
+               for ident, values in smooth.items()}
+    speakers = {ident for ident, seen in talking.items() if seen >= MIN_SPEECH_SECONDS * rate}
+    if speakers:
+        targets, switches = _follow_speakers(frames, smooth, speakers, rate)
+        return targets, switches, False
+    return _frame_people(frames, view)
+
+
+def _follow_speakers(frames: list[Observation], smooth: dict[int, list[float | None]],
+                     speakers: set[int], rate: float) -> tuple[list[float | None], list[int]]:
+    def speaking(ident: int, index: int) -> float | None:
+        value = smooth[ident][index]
+        return value if value is not None and value > SPEAK_THRESHOLD else None
+
+    # Antes de alguém abrir a boca, a câmera já está em quem vai falar primeiro.
+    current = min(speakers, key=lambda ident: next(
+        index for index in range(len(frames)) if speaking(ident, index) is not None))
+    hold = max(1, int(SWITCH_SECONDS * rate))
+    memory = int(TRACK_MEMORY * rate)
+    dwell = int(MIN_SHOT_SECONDS * rate)
+    shown: int | None = None
+    since = 0
+    pending: int | None = None
+    streak = arrived = 0
+    last_seen: dict[int, int] = {}
+    targets: list[float | None] = []
+    switches: list[int] = []
+    for index, frame in enumerate(frames):
+        for ident in frame:
+            last_seen[ident] = index
+        live = [(value, ident) for ident in frame if ident in speakers
+                for value in [speaking(ident, index)] if value is not None]
+        winner = max(live)[1] if live else None
+        gone = current not in frame and index - last_seen.get(current, -10**9) > memory
+        if gone and winner is not None:
+            current, pending, streak = winner, None, 0      # saiu de cena: vai para quem fala
+        elif winner is not None and winner != current:
+            if pending != winner:
+                pending, streak, arrived = winner, 0, index
+            streak += 1
+            if streak >= hold and index - since >= dwell:
+                # Confirmado: o corte volta para quando a pessoa começou a falar, como um
+                # editor faria, e não fica atrasado o tempo da confirmação.
+                start = max(arrived, since + dwell)
+                current, pending, streak = winner, None, 0
+                for back in range(start, index):
+                    targets[back] = frames[back][current][0] if current in frames[back] else None
+                if any(current in frames[back] for back in range(start, index)):
+                    switches.append(start)
+                    shown, since = current, start
+        elif winner == current:
+            pending, streak = None, 0       # a pessoa atual voltou a falar: fica nela
+        # Ninguém falando (respiração entre frases) não zera a vez de quem estava chegando.
+        if current != shown and current in frame:
+            if shown is not None:
+                switches.append(index)
+            shown, since = current, index
+        # Quem fala sumiu por um instante (virou, falhou a detecção): segura a posição.
+        targets.append(frame[current][0] if current in frame else None)
+    return targets, switches
+
+
+def _frame_people(frames: list[Observation], view: float) -> tuple[list[float | None], list[int], bool]:
+    """Cena sem ninguém falando: um rosto, um grupo que cabe na janela ou o quadro inteiro."""
+    totals: dict[int, list[float]] = {}
+    for frame in frames:
+        for ident, (center, width, _score) in frame.items():
+            entry = totals.setdefault(ident, [0, 0.0, 0.0])
+            entry[0] += 1
+            entry[1] += center
+            entry[2] += width
+    if not totals:
+        return [None] * len(frames), [], False
+    stats = {ident: (seen, center / seen, width / seen)
+             for ident, (seen, center, width) in totals.items()}
+    main = max(stats, key=lambda ident: stats[ident][0] * stats[ident][2] ** 2)
+    group = [ident for ident, (seen, _center, width) in stats.items()
+             if ident == main or (width >= GROUP_SIZE * stats[main][2]
+                                  and seen >= GROUP_PRESENCE * len(frames))]
+    left = min(stats[ident][1] - stats[ident][2] / 2 for ident in group)
+    right = max(stats[ident][1] + stats[ident][2] / 2 for ident in group)
+    if len(group) > 1 and right - left > view * 0.9:
+        return [0.5] * len(frames), [], True
+    targets: list[float | None] = []
+    for frame in frames:
+        present = [frame[ident] for ident in group if ident in frame]
+        if not present:
+            targets.append(None)
+            continue
+        low = min(center - width / 2 for center, width, _score in present)
+        high = max(center + width / 2 for center, width, _score in present)
+        targets.append((low + high) / 2)
+    return targets, [], False
 
 
 # ----------------------------------------------------------------- câmera virtual
@@ -451,7 +537,7 @@ def gaussian(values: list[float], sigma: float) -> list[float]:
     return result
 
 
-def camera_path(targets: list[float], rate: float = SAMPLE_FPS, *, view: float = 0.3164,
+def camera_path(targets: list[float], rate: float = speaker.VIDEO_FPS, *, view: float = 0.3164,
                 cuts: Sequence[int] = ()) -> list[float]:
     """Caminho suave do centro da janela, em fração da largura do vídeo.
 
@@ -500,7 +586,8 @@ class Track:
     width: int                           # dimensões do vídeo de origem
     height: int
     fps: float = DEFAULT_FPS             # um comando de posição por quadro do corte
-    cuts: tuple[float, ...] = ()         # instantes (no corte) em que a câmera troca de pessoa
+    cuts: tuple[float, ...] = ()         # instantes (no corte) em que a câmera corta seco
+    wide: tuple[tuple[float, float], ...] = ()   # trechos (no corte) com o quadro inteiro
 
     def scaled_width(self, height: int) -> int:
         """Largura depois do ``scale=-2:altura`` do FFmpeg."""
@@ -517,6 +604,90 @@ def quarter_turns(container, stream) -> int:
     return 0
 
 
+class _Analysis:
+    """Estado da leitura quadro a quadro (25 por segundo, a cadência do LR-ASD)."""
+
+    def __init__(self, detector: FaceDetector | None, model, features) -> None:
+        self.detector = detector
+        self.model = model
+        self.features = features
+        self.tracker = FaceTracker()
+        self.shots = ShotDetector()
+        self.shot_starts: list[int] = []
+        self.buffer: dict[int, object] = {}       # quadros cinza esperando as caixas
+        self.observations: list[dict[int, tuple[float, float]]] = []
+        self.motion: list[float | None] = []
+        self.grays: dict[int, object] = {}
+        self.size = (1, 1)
+
+    def feed(self, index: int, bgr, fine) -> None:
+        cut = self.shots.feed(color_histogram(bgr))
+        if cut:
+            self.tracker.new_shot()
+            self.shot_starts.append(index)
+        gray = bgr[::4, ::4].mean(axis=2).astype("uint8")
+        if index % DETECT_EVERY == 0 or cut:
+            if self.detector is not None:
+                self.tracker.assign(self.detector.detect(bgr), index)
+            earlier = self.grays.get(index - MOTION_GAP)
+            self.motion.append(None if cut else motion_center(earlier, gray))
+        else:
+            self.motion.append(None)
+        self.grays = {key: value for key, value in self.grays.items()
+                      if key > index - MOTION_GAP}
+        self.grays[index] = gray
+        self.size = (fine.shape[1], fine.shape[0])
+        self.buffer[index] = fine
+        self._settle(index - TRACK_GAP)
+
+    def finish(self, last: int) -> None:
+        for index in range(max(0, last - TRACK_GAP + 1), last + 1):
+            self._settle(index)
+        for track in self.tracker.tracks:
+            self._score(track)
+
+    def _settle(self, index: int) -> None:
+        """Fecha o quadro ``index``: as caixas em volta já são conhecidas."""
+        fine = self.buffer.pop(index, None)
+        if fine is None:
+            return
+        width, height = self.size
+        seen: dict[int, tuple[float, float]] = {}
+        shot = sum(1 for start in self.shot_starts if start <= index)
+        for track in self.tracker.tracks:
+            if track.shot != shot or track.last < index - TRACK_GAP:
+                if track.pending:
+                    self._score(track)
+                continue
+            box = track.box_at(index, height / width)
+            if box is None:
+                continue
+            cx, cy, side = box
+            seen[track.ident] = (cx, side)
+            if self.model is not None and side * width >= MIN_FACE_PX:
+                if track.pending and track.pending[-1][0] != index - 1:
+                    self._score(track)
+                track.pending.append((index, speaker.face_crop(
+                    fine, cx * width, cy * height, side * width)))
+                if len(track.pending) >= speaker.CHUNK_FRAMES:
+                    self._score(track)
+        while len(self.observations) <= index:
+            self.observations.append({})
+        self.observations[index] = seen
+
+    def _score(self, track: FaceTrack) -> None:
+        """Nota do LR-ASD para os recortes acumulados (uma sequência contínua)."""
+        pending, track.pending = track.pending, []
+        first = pending[0][0] if pending else 0
+        if len(pending) < speaker.MIN_CHUNK_FRAMES or first * speaker.AUDIO_STEPS >= len(
+                self.features):
+            return
+        values = self.model.scores(self.features[first * speaker.AUDIO_STEPS:],
+                                   [crop for _index, crop in pending])
+        for (index, _crop), value in zip(pending, values, strict=True):
+            track.scores[index] = value
+
+
 def analyze(source: Path, offset: float, length: float, *,
             voice: tuple | None = None,
             progress: Callable[[float], None] | None = None,
@@ -531,11 +702,16 @@ def analyze(source: Path, offset: float, length: float, *,
 
     path = model_path()
     detector = FaceDetector(path) if path else None
-    tracker = FaceTracker()
-    times: list[float] = []
-    observations: list[dict[int, tuple[float, float, float | None]]] = []
-    motion: list[float | None] = []
-    previous_gray = None
+    model, features = None, None
+    asd = speaker.model_path()
+    if voice is not None and asd is not None and detector is not None:
+        try:
+            features = speaker.mfcc(voice[0], int(voice[1]))
+            model = speaker.SpeakerModel(asd)
+        except Exception:  # noqa: BLE001 - sem o modelo, decide pelo tamanho dos rostos
+            model, features = None, None
+    state = _Analysis(detector, model, features)
+    rate_grid = speaker.VIDEO_FPS
     with av.open(str(source)) as container:
         stream = container.streams.video[0]
         stream.thread_type = "AUTO"
@@ -553,67 +729,57 @@ def analyze(source: Path, offset: float, length: float, *,
         detail = (max(2, int(coded_w * detail_scale) // 2 * 2),
                   max(2, int(coded_h * detail_scale) // 2 * 2))
         container.seek(int(max(0.0, offset - 1.0) * av.time_base), any_frame=False, backward=True)
-        next_sample = 0.0
+        next_index = 0
+        last_index = int(length * rate_grid)
         for frame in container.decode(stream):
             if cancelled and cancelled():
                 return None
             if frame.time is None:
                 continue
             moment = float(frame.time) - offset
-            if moment < next_sample - 0.25 / SAMPLE_FPS:
+            index = min(last_index, round(moment * rate_grid))
+            if index < next_index:
                 continue
-            if moment > length:
-                break
-            next_sample = max(next_sample + 1 / SAMPLE_FPS, moment + 0.5 / SAMPLE_FPS)
             bgr = frame.to_ndarray(format="bgr24", width=small[0], height=small[1])
+            fine = frame.to_ndarray(format="gray", width=detail[0], height=detail[1])
             if turns:
                 bgr = np.ascontiguousarray(np.rot90(bgr, turns))
-            gray = bgr[::4, ::4].mean(axis=2).astype(np.uint8)
-            seen: dict[int, tuple[float, float, float | None]] = {}
-            faces = detector.detect(bgr) if detector else []
-            if faces:
-                # A boca sai de um quadro maior: no de 640 px ela teria poucos pixels.
-                fine = _gray(frame, detail, turns)
-                index = len(times)
-                for face, track in zip(faces, tracker.assign(faces, moment), strict=True):
-                    patch_now = mouth_patch(fine, face)
-                    activity = None
-                    if (patch_now is not None and track.patches is not None
-                            and track.last_index == index - 1):
-                        activity = mouth_activity(track.patches, patch_now)
-                    track.patches, track.last_index = patch_now, index
-                    seen[track.ident] = (face.center, face.area, activity)
-            motion.append(motion_center(previous_gray, gray))
-            previous_gray = gray
-            times.append(max(0.0, moment))
-            observations.append(seen)
+                fine = np.ascontiguousarray(np.rot90(fine, turns))
+            # Vídeo com menos de 25 quadros por segundo: repete o quadro, como o FFmpeg -r 25.
+            for missing in range(next_index, index + 1):
+                state.feed(missing, bgr, fine)
+            next_index = index + 1
             if progress and length:
                 progress(min(1.0, max(0.0, moment) / length))
-    envelope = None
-    if voice is not None:
-        try:
-            envelope = voice_envelope(voice[0], int(voice[1]), times, SAMPLE_FPS)
-        except Exception:  # noqa: BLE001 - sem áudio legível, decide pelo tamanho do rosto
-            envelope = None
-    speakers, cuts = choose_speakers(observations, envelope, SAMPLE_FPS)
-    # Amostra sem nenhum rosto: o movimento da cena indica onde está a ação.
-    targets = [x if x is not None or observations[i] else motion[i]
+            if index >= last_index:
+                break
+    if not next_index:
+        return None
+    state.finish(next_index - 1)
+    scores = {track.ident: track.scores for track in state.tracker.tracks}
+    observations: list[Observation] = [
+        {ident: (center, side, scores[ident].get(index))
+         for ident, (center, side) in frame.items()}
+        for index, frame in enumerate(state.observations)]
+    view = (height * 9 / 16) / width
+    speakers, cuts, wide = choose_speakers(observations, state.shot_starts, rate_grid, view)
+    # Quadro sem nenhum rosto: o movimento da cena indica onde está a ação.
+    targets = [x if x is not None or observations[i] else state.motion[i]
                for i, x in enumerate(speakers)]
     filled = fill_gaps(targets)
     if not filled:
         return None
-    view = (height * 9 / 16) / width
-    path = camera_path(filled, view=view, cuts=cuts)
+    path = camera_path(filled, rate_grid, view=view, cuts=cuts)
+    times = [index / rate_grid for index in range(len(path))]
+    spans = []
+    for index, flag in enumerate(wide):
+        if flag and (not spans or spans[-1][1] != index):
+            spans.append([index, index + 1])
+        elif flag:
+            spans[-1][1] = index + 1
     return Track(list(zip(times, path, strict=True)), width, height,
-                 min(120.0, max(10.0, rate)), tuple(times[cut] for cut in cuts))
-
-
-def _gray(frame, size: tuple[int, int], turns: int):
-    """Quadro em cinza no tamanho de detalhe, já em pé."""
-    import numpy as np
-
-    gray = frame.to_ndarray(format="gray", width=size[0], height=size[1])
-    return np.ascontiguousarray(np.rot90(gray, turns)) if turns else gray
+                 min(120.0, max(10.0, rate)), tuple(times[cut] for cut in cuts),
+                 tuple((start / rate_grid, end / rate_grid) for start, end in spans))
 
 
 # ----------------------------------------------------------------- FFmpeg
@@ -669,6 +835,24 @@ def crop_commands(samples: list[tuple[float, float]], intervals: list[tuple[floa
         moment = max(0.0, (frame - 0.25) / rate)
         commands.append((round(moment, 4), max(0, min(limit, x))))
     return commands
+
+
+def output_windows(windows: Sequence[tuple[float, float]], intervals: list[tuple[float, float]],
+                   remap: Callable[[float, list[tuple[float, float]]], float],
+                   ) -> tuple[tuple[float, float], ...]:
+    """Trechos da origem levados para o tempo do corte já sem as pausas (e emendados)."""
+    result: list[list[float]] = []
+    for start, end in windows:
+        for first, last in intervals:
+            low, high = max(start, first), min(end, last)
+            if high - low <= 1e-6:
+                continue
+            begin, finish = remap(low, intervals), remap(high, intervals)
+            if result and begin - result[-1][1] <= 1e-3:
+                result[-1][1] = finish
+            else:
+                result.append([begin, finish])
+    return tuple((round(begin, 3), round(finish, 3)) for begin, finish in result)
 
 
 def sendcmd_text(commands: list[tuple[float, int]], target: str = "crop@track") -> str:

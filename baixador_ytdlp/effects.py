@@ -8,6 +8,11 @@ Há duas fontes de decisão:
 * sem plano, uma regra simples pelo áudio: whoosh na emenda de uma pausa longa e pop na
   palavra dita bem mais alto, sempre com distância mínima entre eles.
 
+Em qualquer caso, som só entra junto de algo que acontece na imagem, a regra de edição
+de vídeo curto ("o som acompanha o corte, o zoom, o texto que aparece"): o whoosh fica
+na emenda (o salto da imagem) e os outros sons vêm com o zoom rápido naquele ponto.
+Som solto, sem nada mudando na tela, soa como ruído que "não bate" com o vídeo.
+
 Os sons em si ficam em ``sfx``.
 """
 from __future__ import annotations
@@ -31,6 +36,8 @@ PUNCH = 1.15                # aproximação rápida na palavra enfatizada
 PUNCH_SECONDS = 0.6
 WORD_WINDOW = 6.0           # o plano da IA vem do SRT: a palavra é procurada ±6 s em volta
 SNAP_TO_CUT = 1.5           # whoosh do plano a até 1,5 s de uma emenda vai para ela
+SOUND_GAP = 3.0             # dois sons quaisquer nunca a menos de 3 s
+TRANSITION = "whoosh"       # o único som que acompanha a emenda; os outros pedem zoom
 
 
 @dataclass(frozen=True)
@@ -117,8 +124,11 @@ def emphasis_words(words: list[dict], total: float) -> list[dict]:
 
 
 def plan_effects(intervals: list[tuple[float, float]], emphasis: list[dict],
-                 total: float) -> list[Effect]:
-    """Regra automática: whoosh nas emendas que trocam de assunto e pop nas ênfases."""
+                 total: float, *, pops: bool = True) -> list[Effect]:
+    """Regra automática: whoosh nas emendas que trocam de assunto e pop nas ênfases.
+
+    ``pops`` falso (zoom na ênfase desligado): sem pop, que ficaria sem nada na imagem.
+    """
     effects: list[Effect] = []
     last_whoosh = -CUT_SPACING
     for point, gap in cut_points(intervals):
@@ -128,7 +138,7 @@ def plan_effects(intervals: list[tuple[float, float]], emphasis: list[dict],
             continue
         effects.append(Effect(round(point, 3), "whoosh"))
         last_whoosh = point
-    for word in emphasis:
+    for word in emphasis if pops else []:
         if any(abs(word["start"] - effect.time) < EFFECT_SPACING for effect in effects):
             continue
         effects.append(Effect(round(word["start"], 3), "pop"))
@@ -207,20 +217,38 @@ def place_markers(markers: list[Marker], clip_start: float, words: list[dict],
             continue   # ponto de outro corte, ou fora do trecho
         relative = min(max(relative, 0.0), length)
         moment = remap(relative, intervals)
-        if marker.sound == "whoosh":
+        sound = marker.sound
+        if sound == TRANSITION:
             # A troca de assunto que a IA viu quase sempre é uma pausa que o app cortou.
+            # Sem emenda perto não há transição na imagem: o whoosh ficaria solto.
             near = [(min(abs(relative - end), abs(relative - start)), at)
                     for end, start, at in _join_times(intervals)
                     if end - SNAP_TO_CUT <= relative <= start + SNAP_TO_CUT]
             if near:
                 moment = min(near)[1]
+            else:
+                sound = ""
         moment = round(min(max(moment, 0.0), total), 3)
-        if marker.sound and not any(effect.kind == marker.sound
-                                    and abs(effect.time - moment) < 0.3 for effect in effects):
-            effects.append(Effect(moment, marker.sound))
+        if sound and all(_apart(effect, sound, moment) for effect in effects):
+            effects.append(Effect(moment, sound))
+            if sound != TRANSITION:
+                zooms.append(moment)        # o som vem com o zoom: algo acontece na tela
         if marker.zoom:
             zooms.append(moment)
     return sorted(effects, key=lambda effect: effect.time), windows_at(zooms, total)
+
+
+def _apart(effect: Effect, sound: str, moment: float) -> bool:
+    """Longe o bastante de um som já posto; a subida que termina no golpe é a exceção."""
+    if "subida" in (effect.kind, sound) and effect.kind != sound \
+            and abs(effect.time - moment) < 0.3:
+        return True                   # subida que desemboca no impacto: um efeito só
+    return abs(effect.time - moment) >= SOUND_GAP
+
+
+def with_visuals(planned: list[Effect], zoom: bool) -> list[Effect]:
+    """Com o zoom na ênfase desligado, só o whoosh (que tem a emenda) continua."""
+    return [effect for effect in planned if zoom or effect.kind == TRANSITION]
 
 
 def schedule(effects: list[Effect], leads: dict[str, float]) -> list[Effect]:

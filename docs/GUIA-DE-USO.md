@@ -67,13 +67,13 @@ A página **Cortes** transforma trechos de um vídeo em vídeos verticais pronto
 1. Em **Vídeo de origem**, escolha um arquivo ou cole um link do YouTube (só os trechos são baixados). Logo abaixo, em **Salvar cortes em**, confira a pasta de destino.
 2. Em **Cortes**, informe início e fim de cada corte (`mm:ss` ou `hh:mm:ss`) e, se quiser, um título. Use **Adicionar corte** para vários de uma vez (até 20).
 3. Em **Enquadramento**, escolha como o vídeo horizontal vira vertical:
-   - **Seguir a pessoa — automático**: aproxima e acompanha quem está em cena, como o reenquadrar do CapCut. O app procura rostos alguns quadros por segundo e, quando não acha (pessoa de costas ou longe), segue o movimento. A câmera só se mexe quando a pessoa sai do centro e anda devagar, sem tremer.
+   - **Seguir a pessoa — automático**: aproxima e acompanha quem está em cena, como o reenquadrar do CapCut. O app procura rostos alguns quadros por segundo e, quando não acha (pessoa de costas ou longe), segue o movimento. A câmera só se mexe quando a pessoa sai do centro e anda devagar, sem tremer. Com várias pessoas, segue quem está falando (o app olha a boca de cada rosto junto com o som); quando ninguém fala e as pessoas estão espalhadas, mostra o quadro inteiro com fundo desfocado.
    - **Fundo desfocado**: mostra o quadro inteiro com o próprio vídeo desfocado atrás.
    - **Cortar no centro**: preenche a tela com o meio do vídeo.
 
    Ali também ficam a remoção de pausas e a pausa mínima.
 4. Em **Legenda**, escolha a animação (destaque, só cor, karaokê, uma palavra por vez, grupo com pulo ou sem destaque), fonte, tamanho, cor do texto, cor da palavra falada, altura (em % da tela), quantas palavras aparecem por vez (1 a 4) se ficam em maiúsculas e se ganham uma caixa escura atrás. A prévia ao lado mostra o resultado sobre um quadro do próprio vídeo; arraste a legenda ou o título nela para subir ou descer (a altura do título também tem campo próprio). As escolhas ficam salvas para os próximos cortes.
-5. Em **Acabamento**, escolha quanto tempo o título fica na tela e, se quiser, ligue o zoom nas emendas, os efeitos sonoros (whoosh, pop, impacto, ding e subida; com a opção de usar uma pasta com os seus sons), o zoom na ênfase, a barra de progresso, o volume equilibrado e a cópia da legenda em `.srt`.
+5. Em **Acabamento**, escolha quanto tempo o título fica na tela e, se quiser, ligue o zoom nas emendas, os efeitos sonoros (whoosh, pop, impacto, ding e subida; com a opção de usar uma pasta com os seus sons; o whoosh entra nas emendas e os outros sons só junto do zoom na ênfase), o zoom na ênfase, a barra de progresso, o volume equilibrado e a cópia da legenda em `.srt`.
 Para deixar uma IA de texto escolher os cortes, os títulos e onde entra cada som, cole a linha do plano dela no campo **Plano da IA**, logo abaixo da lista de cortes. Formato e texto pronto para qualquer IA em [PLANO-DA-IA.md](PLANO-DA-IA.md).
 6. Em **Transcrição**, confira o idioma e o modelo Whisper (os mesmos da aba Legendar) e clique em **Criar cortes**.
 
