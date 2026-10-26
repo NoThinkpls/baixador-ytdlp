@@ -3,7 +3,7 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
-## [1.15.0] - 2026-10-25
+## [1.15.0] - 2026-10-26
 
 ### Adicionado
 
@@ -16,6 +16,13 @@ formato Keep a Changelog.
 - Skill `baixador` para o Claude Code (`.claude/skills/baixador/SKILL.md`): pedidos no chat como
   "baixa esse vídeo em 720p" ou "faz um corte de 1:20 a 2:05" viram o comando certo, executado
   no computador da pessoa.
+
+## [1.14.3] - 2026-10-26
+
+### Corrigido
+
+- Plano da IA: colado do celular, do Word ou do chat da IA com aspas curvas (“ ”), o plano era
+  recusado com "Não encontrei o plano". As aspas curvas agora viram retas antes da leitura.
 
 ## [1.14.2] - 2026-10-25
 
