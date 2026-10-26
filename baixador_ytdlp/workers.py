@@ -380,7 +380,7 @@ class ClipWorker(QThread):
             if audio is not None:
                 try:
                     voice = effects.read_wav(audio)
-                except Exception as exc:  # noqa: BLE001 - sem voz, segue o maior rosto
+                except Exception as exc:  # noqa: BLE001 - sem voz, decide pelos rostos
                     report_exception("áudio para achar quem fala", exc)
             track = reframe.analyze(source, offset, length, voice=voice,
                                     progress=lambda share: self._stage("track", share),
@@ -395,7 +395,8 @@ class ClipWorker(QThread):
                 return None
             path = folder / "enquadramento.txt"
             path.write_text(reframe.sendcmd_text(commands), encoding="utf-8")
-            return Tracking(path, commands[0][1])
+            return Tracking(path, commands[0][1],
+                            reframe.output_windows(track.wide, intervals, remap_time))
         except ClipError:
             raise
         except Exception as exc:  # noqa: BLE001 - o rastreamento é opcional

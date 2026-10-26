@@ -579,6 +579,9 @@ class Tracking:
     """Janela que acompanha a pessoa: posições enviadas ao ``crop`` por ``sendcmd``."""
     commands: Path          # arquivo do sendcmd (``tempo crop@track x valor;``)
     first_x: int            # posição no primeiro quadro, antes do primeiro comando
+    # Trechos (no tempo do corte final) em que ninguém fala e as pessoas não cabem na
+    # janela: ali entra o quadro inteiro com fundo desfocado, como no enquadramento "blur".
+    wide: tuple[tuple[float, float], ...] = ()
 
 
 def _framing_graph(framing: str, tracking: Tracking | None = None) -> str:
@@ -586,18 +589,31 @@ def _framing_graph(framing: str, tracking: Tracking | None = None) -> str:
     if framing == "track" and tracking is not None:
         # Altura em 1920 e janela de 1080 que anda na horizontal conforme a análise.
         # yuv444p antes do crop: em 4:2:0 o x só anda de 2 em 2 pixels.
-        return (f"[vc]scale=-2:{HEIGHT},format=yuv444p,"
-                f"sendcmd=f={_escape_filter_path(tracking.commands)},"
-                f"crop@track={WIDTH}:{HEIGHT}:{tracking.first_x}:0,setsar=1[vf]")
+        follow = (f"scale=-2:{HEIGHT},format=yuv444p,"
+                  f"sendcmd=f={_escape_filter_path(tracking.commands)},"
+                  f"crop@track={WIDTH}:{HEIGHT}:{tracking.first_x}:0,setsar=1")
+        if not tracking.wide:
+            return f"[vc]{follow}[vf]"
+        enable = "+".join(f"between(t,{start:.3f},{end - 0.001:.3f})"
+                          for start, end in tracking.wide)
+        return (f"[vc]split=2[vtr][vwi];[vtr]{follow}[vtf];"
+                + _blur_fit("[vwi]", "[vwf]", "w") +
+                f";[vtf][vwf]overlay=0:0:enable='{enable}',setsar=1[vf]")
     if framing in {"crop", "track"}:
         return (f"[vc]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
                 f"crop={WIDTH}:{HEIGHT},setsar=1[vf]")
     # Mesmo visual de "Criar versão vertical" nas Ferramentas.
-    return (f"[vc]split=2[bg][fg];"
-            f"[bg]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT},"
-            "boxblur=luma_radius=24:luma_power=2,eq=brightness=-0.08[bgb];"
-            f"[fg]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease[fgs];"
-            "[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1[vf]")
+    return _blur_fit("[vc]", "[vf]")
+
+
+def _blur_fit(source: str, output: str, tag: str = "") -> str:
+    """Quadro inteiro no meio, com o próprio vídeo ampliado e desfocado atrás."""
+    return (f"{source}split=2[bg{tag}][fg{tag}];"
+            f"[bg{tag}]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+            f"crop={WIDTH}:{HEIGHT},boxblur=luma_radius=24:luma_power=2,eq=brightness=-0.08"
+            f"[bgb{tag}];"
+            f"[fg{tag}]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease[fgs{tag}];"
+            f"[bgb{tag}][fgs{tag}]overlay=(W-w)/2:(H-h)/2,setsar=1{output}")
 
 
 def zoom_windows(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
