@@ -3,6 +3,29 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.14.5] - 2026-10-26
+
+### Corrigido
+
+- Cortes, **Seguir a pessoa**: numa live com várias câmeras, a janela largava quem falava
+  (andando com o microfone) e ia para quem estava parado atrás, ida e volta, ou para o
+  tecladista e nucas detectadas por engano nas cenas da plateia. Agora quem fala é decidido
+  pelo LR-ASD (IJCV 2025, licença MIT, 3,4 MB, na CPU), um modelo treinado para isso que
+  olha a boca de cada rosto junto com o áudio, quadro a quadro. No vídeo de exemplo do
+  TalkNet, quem fala ficou com nota +3,0 e os outros abaixo de -3. As trocas de câmera
+  são detectadas pela cor (como o PySceneDetect) e cada cena é decidida sozinha; rosto
+  que aparece menos de 0,5 s não conta; a troca de pessoa corta no momento em que a outra
+  começa a falar. Cena em que ninguém fala: um rosto é seguido, um grupo que cabe na
+  janela fica junto e pessoas espalhadas aparecem no quadro inteiro com fundo desfocado.
+- Cortes, **Efeitos sonoros**: os sons não combinavam com o vídeo. O impacto tinha um grave
+  quase no volume máximo, acima da própria voz, e a subida era um tom de ficção científica.
+  Agora o volume de cada som (do app ou da sua pasta) é medido e fica de 8 a 14 dB abaixo
+  da voz do corte, o impacto tem corpo audível no celular sem ronco, a subida virou um
+  chiado que cresce (prato ao contrário) e o pop um toque seco. Todo som vem junto de algo
+  na imagem, como num editor: o whoosh só numa emenda e os outros com o zoom rápido; com o
+  zoom na ênfase desligado, só o whoosh fica. Dois sons nunca a menos de 3 s, e o texto
+  pronto do plano da IA pede de 1 a 3 efeitos por corte.
+
 ## [1.14.4] - 2026-10-26
 
 ### Alterado
