@@ -630,11 +630,13 @@ def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: 
                  tracking: Tracking | None = None, *, zoom_cuts: bool = False,
                  progress_colour: str = "", normalize_audio: bool = False,
                  effects: Sequence[Effect] = (), effect_inputs: dict[str, int] | None = None,
-                 punch: Sequence[tuple[float, float]] = ()) -> str:
+                 punch: Sequence[tuple[float, float]] = (),
+                 effect_gains: dict[str, float] | None = None) -> str:
     """Recorta cada trecho com fala, emenda vídeo e áudio juntos, enquadra e grava a legenda.
 
     ``effects`` são os sons automáticos; ``effect_inputs`` diz em qual entrada do
-    FFmpeg está o WAV de cada tipo. ``punch`` são as janelas do zoom rápido na ênfase.
+    FFmpeg está o WAV de cada tipo e ``effect_gains`` o volume de cada um (acertado pela
+    voz em ``sfx.matched_gains``). ``punch`` são as janelas do zoom rápido na ênfase.
     """
     if not intervals:
         raise ClipError("Não sobrou nenhum trecho para montar o corte.")
@@ -656,7 +658,7 @@ def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: 
     parts.append(f"{''.join(pads)}concat=n={len(intervals)}:v=1:a=1[vc]{audio}")
     if effects:
         mixed = "[ac1]" if normalize_audio else "[ac]"
-        parts.append(_effects_graph(effects, inputs, "[ac0]", mixed))
+        parts.append(_effects_graph(effects, inputs, "[ac0]", mixed, effect_gains or {}))
         audio = mixed
     if normalize_audio:
         # -14 LUFS é o alvo do YouTube, TikTok e Reels; uma passada só, sem arquivo extra.
@@ -692,7 +694,7 @@ def filter_graph(intervals: list[tuple[float, float]], framing: str, subtitles: 
 
 
 def _effects_graph(effects: Sequence[Effect], inputs: dict[str, int], speech: str,
-                   output: str) -> str:
+                   output: str, gains: dict[str, float] | None = None) -> str:
     """Cada som entra atrasado até o seu instante e é somado à voz, sem mudar o volume dela."""
     parts, labels = [], []
     for kind, index in sorted(inputs.items()):
@@ -704,7 +706,7 @@ def _effects_graph(effects: Sequence[Effect], inputs: dict[str, int], speech: st
         for name, time in zip(names, times, strict=True):
             delayed = name.replace("[sx", "[sd")
             parts.append(f"{name}adelay=delays={round(time * 1000)}:all=1,"
-                         f"volume={GAIN.get(kind, 0.5)}{delayed}")
+                         f"volume={(gains or {}).get(kind, GAIN.get(kind, 0.3))}{delayed}")
             labels.append(delayed)
     parts.append(f"{speech}{''.join(labels)}amix=inputs={len(labels) + 1}:duration=first:"
                  f"normalize=0{output}")

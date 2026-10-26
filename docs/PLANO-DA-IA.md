@@ -61,8 +61,14 @@ O que o app faz com cada ponto:
 
 - converte o tempo para o vídeo final, já sem as pausas removidas;
 - o **whoosh** perto de uma emenda (até 1,5 s) vai para a emenda, e o pico do som cai
-  em cima dela;
+  em cima dela; sem emenda perto, o whoosh é descartado (não haveria transição na
+  imagem para ele acompanhar);
 - a **subida** termina exatamente no ponto; os outros sons começam nele;
+- todo som que não é whoosh ganha o zoom rápido naquele ponto, para algo acontecer na
+  tela junto com ele; com **Zoom na ênfase** desligado, só o whoosh continua;
+- dois sons ficam a pelo menos 3 s um do outro (a subida que termina num impacto conta
+  como um efeito só); o que vier perto demais é descartado;
+- o volume de cada som é medido e fica alguns dB abaixo da voz do corte;
 - pontos fora do próprio corte, tempos ilegíveis e sons desconhecidos são ignorados
   (um som desconhecido com `zoom` 1 vira só zoom); o resto do plano continua valendo.
 
@@ -79,12 +85,13 @@ quebras de linha e sem comentários, neste formato:
 {"bx":1,"c":[["INÍCIO","FIM","TÍTULO",[["TEMPO","PALAVRA","SOM",ZOOM]]]]}
 - Um item em "c" para cada corte sugerido (máximo 20), com INÍCIO e FIM tirados do SRT
   (mm:ss ou hh:mm:ss) e o título curto do corte.
-- Em cada corte, de 2 a 6 efeitos, só onde reforçam a fala: TEMPO do SRT; PALAVRA
+- Em cada corte, de 1 a 3 efeitos, só onde reforçam a fala: TEMPO do SRT; PALAVRA
   exatamente como foi dita naquele momento; SOM = w (troca de assunto), p (destaque de
   palavra), i (frase forte ou clímax), d (ideia-chave), s (tensão que termina no ponto)
   ou "" (sem som); ZOOM = 1 para aproximar a imagem nesse ponto, 0 para não.
-- Não repita o mesmo som a menos de 4 segundos e não ponha efeito nos 2 primeiros
-  segundos do corte.
+- Deixe pelo menos 4 segundos entre dois sons e não ponha efeito nos 2 primeiros
+  segundos do corte. Use w só numa pausa ou troca de assunto. Prefira poucos efeitos
+  bem colocados a muitos.
 ```
 
 ## Sons próprios
