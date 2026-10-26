@@ -12,7 +12,8 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from baixador_ytdlp.clips import (CaptionStyle, ClipError, ClipOptions, ClipRange, Tracking,
+from baixador_ytdlp.clips import (MAX_TAIL, TAIL_PAD, CaptionStyle, ClipError, ClipOptions,
+                                  ClipRange, Loudness, Tracking,
                                   ass_colour, ass_header, ass_text, build_ass,
                                   caption_groups, clamp_range, clip_filename, display_word,
                                   filter_graph, keep_intervals, make_range, output_length,
@@ -31,12 +32,14 @@ class IntervalosTests(unittest.TestCase):
     def test_pausa_longa_vira_corte_e_curta_fica(self) -> None:
         words = _words(("um", 0.2), ("dois", 0.8), ("três", 3.0), ("quatro", 3.5))
         intervals = keep_intervals(words, 4.0, min_pause=0.6, pad=0.1)
-        # 1,2 s → 3,0 s é silêncio de 1,8 s: sai. 0,6 → 0,8 é curto: fica.
-        self.assertEqual(intervals, [(0.0, 1.3), (2.9, 4.0)])
+        # 1,2 s → 3,0 s é silêncio de 1,8 s: sai. 0,6 → 0,8 é curto: fica. O fim da fala
+        # ganha mais folga que o começo (TAIL_PAD), para a palavra terminar antes do corte.
+        self.assertEqual(intervals, [(0.0, round(1.2 + TAIL_PAD, 3)), (2.9, 4.0)])
 
     def test_silencio_no_comeco_e_no_fim_sai(self) -> None:
         words = _words(("olá", 2.0), ("mundo", 2.5))
-        self.assertEqual(keep_intervals(words, 6.0, min_pause=0.6, pad=0.1), [(1.9, 3.0)])
+        self.assertEqual(keep_intervals(words, 6.0, min_pause=0.6, pad=0.1),
+                         [(1.9, round(2.9 + TAIL_PAD, 3))])
 
     def test_sem_palavras_mantem_o_corte_inteiro(self) -> None:
         self.assertEqual(keep_intervals([], 12.5), [(0.0, 12.5)])
@@ -46,6 +49,48 @@ class IntervalosTests(unittest.TestCase):
         start, end = keep_intervals(words, 10.0)[-1]
         self.assertLessEqual(end, 10.0)
         self.assertGreaterEqual(start, 0.0)
+
+    def test_corte_espera_a_voz_cair(self) -> None:
+        """O Whisper marca o fim da palavra cedo; a emenda só vem depois que a voz cai."""
+        import numpy as np
+
+        rate = 16000
+        samples = np.zeros(rate * 4, dtype=np.float32)
+        rng = np.random.default_rng(1)
+        samples += rng.normal(0, 0.001, samples.size).astype(np.float32)   # ruído da sala
+        # Fala de 0,5 s a 1,55 s (o "s" final vai até 1,55), outra de 3,0 s a 3,6 s.
+        for start, end in ((0.5, 1.55), (3.0, 3.6)):
+            span = slice(int(start * rate), int(end * rate))
+            samples[span] += (0.2 * np.sin(np.arange(span.stop - span.start) * 0.3)).astype(
+                np.float32)
+        loud = Loudness(samples, rate)
+        # Whisper disse que "mundo" acaba em 1,1 s: 0,45 s antes de a voz realmente parar.
+        words = [{"text": "olá", "start": 0.5, "end": 0.9},
+                 {"text": "mundo", "start": 0.95, "end": 1.1},
+                 {"text": "tudo", "start": 3.0, "end": 3.5}]
+        first_end = keep_intervals(words, 4.0, min_pause=0.6, loudness=loud)[0][1]
+        self.assertGreaterEqual(first_end, 1.55)              # o fim da palavra fica
+        self.assertLessEqual(first_end, 1.1 + MAX_TAIL + 0.1)   # e não segura demais
+        without = keep_intervals(words, 4.0, min_pause=0.6)[0][1]
+        self.assertLess(without, first_end)
+
+    def test_folgas_nao_invadem_a_fala_seguinte(self) -> None:
+        words = _words(("um", 0.0), ("dois", 1.05))   # "um" acaba em 0,4: pausa de 0,65 s
+        intervals = keep_intervals(words, 2.0, min_pause=0.6)
+        # Sai só o miolo do silêncio: folga longa depois de "um", curta antes de "dois".
+        self.assertEqual(intervals, [(0.0, round(0.4 + TAIL_PAD, 3)), (0.93, 2.0)])
+        # Som alto atravessando a pausa (música, eco): o fim segura até o meio da pausa e
+        # não passa dele; o começo da fala seguinte não volta antes desse meio.
+        loud = Loudness([0.3] * 28800 + [0.0] * 3200, 16000)
+        first, second = keep_intervals(words, 2.0, min_pause=0.6, loudness=loud)
+        self.assertEqual(first[1], 0.725)
+        self.assertGreaterEqual(second[0], 0.725)
+
+    def test_emendas_tem_rampa_de_volume(self) -> None:
+        graph = filter_graph([(0.0, 1.0), (2.5, 4.0)], "crop", None)
+        self.assertIn("afade=t=in:d=0.025", graph)
+        self.assertIn("afade=t=out:st=0.975:d=0.025", graph)
+        self.assertNotIn("afade", filter_graph([(0.0, 1.0)], "crop", None))   # sem emenda
 
     def test_remapeia_tempos_pela_emenda(self) -> None:
         intervals = [(0.0, 1.0), (3.0, 4.0)]

@@ -15,9 +15,9 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 
 from . import effects, reframe, sfx
-from .clips import (HEIGHT, WIDTH, ClipError, ClipOptions, ClipRange, Tracking, audio_command,
-                    build_ass, build_srt, clamp_range, clip_destination, is_url, keep_intervals,
-                    output_length, remap_time, remap_words, render_command,
+from .clips import (HEIGHT, WIDTH, ClipError, ClipOptions, ClipRange, Loudness, Tracking,
+                    audio_command, build_ass, build_srt, clamp_range, clip_destination, is_url,
+                    keep_intervals, output_length, remap_time, remap_words, render_command,
                     require_video_and_audio, section_offset, stream_kinds,
                     words_from_transcript)
 from .config import Settings
@@ -358,12 +358,31 @@ class ClipWorker(QThread):
             raise ClipError("A transcrição terminou sem gerar o arquivo esperado.")
         return words_from_transcript(output)
 
-    def _track(self, source: Path, offset: float, length: float, intervals,
-               folder: Path) -> Tracking | None:
-        """Analisa onde está a pessoa; qualquer falha vira corte centralizado, nunca erro."""
-        self.progress.emit(self._label("procurando quem está em cena para acompanhar…"))
+    @staticmethod
+    def _loudness(audio: Path) -> Loudness | None:
+        """Volume do trecho para as emendas; sem ele, só as folgas fixas."""
         try:
-            track = reframe.analyze(source, offset, length,
+            samples, rate = effects.read_wav(audio)
+            return Loudness(samples, rate)
+        except Exception as exc:  # noqa: BLE001 - as folgas fixas ainda funcionam
+            report_exception("volume do trecho para as emendas", exc)
+            return None
+
+    def _track(self, source: Path, offset: float, length: float, intervals,
+               folder: Path, audio: Path | None = None) -> Tracking | None:
+        """Analisa onde está a pessoa; qualquer falha vira corte centralizado, nunca erro.
+
+        Com o áudio do trecho, havendo várias pessoas, a câmera segue quem está falando.
+        """
+        self.progress.emit(self._label("procurando quem está falando para acompanhar…"))
+        try:
+            voice = None
+            if audio is not None:
+                try:
+                    voice = effects.read_wav(audio)
+                except Exception as exc:  # noqa: BLE001 - sem voz, segue o maior rosto
+                    report_exception("áudio para achar quem fala", exc)
+            track = reframe.analyze(source, offset, length, voice=voice,
                                     progress=lambda share: self._stage("track", share),
                                     cancelled=self._cancelled.is_set)
             self._check()
@@ -371,7 +390,7 @@ class ClipWorker(QThread):
                 return None
             scaled = track.scaled_width(HEIGHT)
             commands = reframe.crop_commands(track.samples, intervals, scaled, WIDTH, remap_time,
-                                             track.fps)
+                                             track.fps, track.cuts)
             if not commands or scaled <= WIDTH:
                 return None
             path = folder / "enquadramento.txt"
@@ -483,7 +502,8 @@ class ClipWorker(QThread):
             raise ClipError(f"Não foi possível ler o áudio do trecho: {message}")
         words = self._transcribe(audio, folder)
 
-        intervals = (keep_intervals(words, length, self.options.min_pause)
+        intervals = (keep_intervals(words, length, self.options.min_pause,
+                                    loudness=self._loudness(audio))
                      if self.options.remove_pauses else [(0.0, length)])
         total = output_length(intervals)
         subtitles = folder / "legenda.ass"
@@ -491,7 +511,7 @@ class ClipWorker(QThread):
             remap_words(words, intervals), total, title=clip.title,
             title_seconds=self.options.title_seconds,
             style=self.options.style), encoding="utf-8")
-        tracking = (self._track(source, offset, length, intervals, folder)
+        tracking = (self._track(source, offset, length, intervals, folder, audio)
                     if self.options.framing == "track" else None)
         effect_extras, sounds = self._effects(clip, audio, words, intervals, total, folder)
 

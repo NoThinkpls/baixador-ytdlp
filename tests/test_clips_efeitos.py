@@ -223,9 +223,10 @@ class WorkerComEfeitosTests(unittest.TestCase):
         self.assertIn("efeito-impacto.wav", joined)
         self.assertIn("efeito-subida.wav", joined)
         self.assertNotIn("efeito-pop.wav", joined)      # a regra automática não entra
-        # fala21 começa em 10,5 s; com 1,86 s de pausa cortada, cai em 8,64 s.
-        self.assertIn("between(t,8.640,", graph)
-        self.assertIn("adelay=delays=2420:all=1", graph)   # subida termina na emenda (4,02 s)
+        # fala21 começa em 10,5 s; com 1,70 s de pausa cortada, cai em 8,80 s (o fim da
+        # fala antes da pausa ganha a folga maior de TAIL_PAD).
+        self.assertIn("between(t,8.800,", graph)
+        self.assertIn("adelay=delays=2580:all=1", graph)   # subida termina na emenda (4,18 s)
 
 
 if __name__ == "__main__":

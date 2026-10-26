@@ -3,6 +3,28 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.14.4] - 2026-10-26
+
+### Alterado
+
+- Cortes, **Seguir a pessoa**: com mais de uma pessoa em cena, a câmera segue quem está falando,
+  não o maior rosto. Cada rosto é acompanhado entre os quadros e o movimento da boca dele é
+  comparado com o volume da voz; a boca que mexe no ritmo da fala vence. Vale quem mais falou
+  no corte inteiro (a pessoa principal) somado a quem fala nos segundos em volta, então num
+  diálogo a câmera troca de pessoa. A troca é um corte seco (sem panorâmica atravessando o
+  quadro), só acontece quando a outra pessoa vence por 0,8 s e nunca antes de 2 s na atual.
+  Num vídeo de teste com duas pessoas e a maior delas mexendo a boca fora do ritmo, a câmera
+  ficou em quem falava em 93–97% do tempo (antes, 55–59%); num diálogo, 83% (antes, 33%).
+  Continua tudo em CPU e sem modelo novo. O modelo Light-ASD também foi avaliado e, nestes
+  vídeos, errou mais e deixava a análise duas vezes mais lenta.
+
+### Corrigido
+
+- Cortes, **Remover pausas**: o fim da fala era cortado (a última sílaba, o "s", a voz morrendo).
+  O Whisper marca o fim da palavra cedo; agora o trecho só termina depois que o volume realmente
+  cai (até 0,7 s além do fim marcado), com folga mínima de 0,28 s no fim (0,12 s no começo), sem
+  invadir a fala seguinte. Cada emenda ganha uma rampa de volume de 25 ms, sem estalo.
+
 ## [1.14.3] - 2026-10-26
 
 ### Corrigido
