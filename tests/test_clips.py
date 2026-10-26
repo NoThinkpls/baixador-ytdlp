@@ -200,8 +200,11 @@ class ValidacaoTests(unittest.TestCase):
 
     def test_nome_do_arquivo_sem_caracteres_proibidos(self) -> None:
         self.assertEqual(clip_filename("Live: parte 1", 3, 'Por que "isso"? / sim'),
-                         "Live parte 1_corte03_Por_que_isso_sim.mp4")
-        self.assertEqual(clip_filename("video", 1, ""), "video_corte01.mp4")
+                         "Por que isso sim - Live parte 1 - corte03.mp4")
+        self.assertEqual(clip_filename("video", 1, ""), "video - corte01.mp4")
+        # O título vem primeiro: é por ele que se procura o corte na pasta.
+        self.assertEqual(clip_filename("2026-10-25 10-54-15", 1, '"ISSO É MEDO?"'),
+                         "ISSO É MEDO - 2026-10-25 10-54-15 - corte01.mp4")
 
     def test_sobra_do_trecho_baixado(self) -> None:
         self.assertAlmostEqual(section_offset(33.2, 30.0), 3.2)
@@ -301,7 +304,7 @@ class ClipWorkerRealTests(unittest.TestCase):
                 worker.run()
             self.assertNotIn("error", results, results.get("error"))
             output = Path(results["ok"][0])
-            self.assertEqual(output.name, "origem_corte01_Título.mp4")
+            self.assertEqual(output.name, "Título - origem - corte01.mp4")
             probe = subprocess.run(
                 [FFPROBE, "-v", "error", "-show_entries", "stream=width,height:format=duration",
                  "-of", "json", str(output)], capture_output=True, text=True, check=True)

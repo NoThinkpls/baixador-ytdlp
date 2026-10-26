@@ -186,12 +186,20 @@ def format_clock(seconds: float) -> str:
     return f"{hours}:{minutes:02}:{secs:02}" if hours else f"{minutes:02}:{secs:02}"
 
 
+def _file_part(text: str, limit: int) -> str:
+    """Pedaço de nome de arquivo sem o que o Windows recusa (nem ponto ou espaço no fim)."""
+    text = " ".join(re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", text).split())
+    return text[:limit].rstrip(". ")
+
+
 def clip_filename(stem: str, index: int, title: str) -> str:
-    """``video_corte01_titulo.mp4`` sem caracteres que o Windows recusa."""
-    slug = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", title).strip().rstrip(".")
-    slug = re.sub(r"\s+", "_", slug)[:60]
-    base = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", stem).strip().rstrip(".")[:80] or "corte"
-    return f"{base}_corte{index:02d}{'_' + slug if slug else ''}.mp4"
+    """``Título do corte - video - corte01.mp4``: o título primeiro, para achar na pasta.
+
+    Sem título, ``video - corte01.mp4``.
+    """
+    name = _file_part(title, 80)
+    base = _file_part(stem, 80) or "corte"
+    return f"{name + ' - ' if name else ''}{base} - corte{index:02d}.mp4"
 
 
 def clip_destination(output_dir: Path, stem: str, index: int, title: str) -> Path:

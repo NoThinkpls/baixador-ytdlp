@@ -77,7 +77,7 @@ A página **Cortes** transforma trechos de um vídeo em vídeos verticais pronto
 Para deixar uma IA de texto escolher os cortes, os títulos e onde entra cada som, cole a linha do plano dela no campo **Plano da IA**, logo abaixo da lista de cortes. Formato e texto pronto para qualquer IA em [PLANO-DA-IA.md](PLANO-DA-IA.md).
 6. Em **Saída e transcrição**, ligue se quiser a barra de progresso, o volume equilibrado e a cópia da legenda em `.srt`, confira o idioma e o modelo Whisper (os mesmos da aba Legendar) e clique em **Criar cortes**.
 
-Cada corte é salvo como `nome_corte01_titulo.mp4` na pasta escolhida. Os cortes prontos ficam salvos mesmo se você cancelar ou se um corte seguinte falhar. Com o título animado, ele aparece nos 2 primeiros segundos (ou o tempo escolhido), numa caixa da cor de destaque; com o título fixo, fica no cartão do topo do começo ao fim. Título longo diminui sozinho para caber no cartão em até 3 linhas.
+Cada corte é salvo como `Título do corte - nome do vídeo - corte01.mp4` na pasta escolhida: o título vem primeiro, para achar fácil na pasta (sem título, `nome do vídeo - corte01.mp4`). Os cortes prontos ficam salvos mesmo se você cancelar ou se um corte seguinte falhar. Com o título animado, ele aparece nos 2 primeiros segundos (ou o tempo escolhido), numa caixa da cor de destaque; com o título fixo, fica no cartão do topo do começo ao fim. Título longo diminui sozinho para caber no cartão em até 3 linhas.
 
 Cada corte pronto aparece no **Histórico**, com botões para abrir o arquivo, mostrar na pasta, gerar legenda e fazer outros cortes do mesmo vídeo. O que sai da aba **Ferramentas** (converter, extrair áudio, recortar etc.) e os vídeos com legenda incorporada também vão para o Histórico.
 

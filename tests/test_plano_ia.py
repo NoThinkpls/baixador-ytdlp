@@ -10,7 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from baixador_ytdlp.clips import remap_time
 from baixador_ytdlp.effects import (Effect, Marker, find_word, place_markers, schedule,
                                      with_visuals)
-from baixador_ytdlp.plano_ia import PlanError, find_plan, parse_plan
+from baixador_ytdlp.plano_ia import PlanError, find_plan, parse_look, parse_plan
 
 LINHA = ('{"bx":1,"c":[["12:03","12:58.5","A GRAÇA QUE ALCANÇA",'
          '[["12:10","graça","i",1],["12:30","","w",0],["13:40","fora","p",0],["12:20","x","?",1]]],'
@@ -169,6 +169,28 @@ class AspasCurvasTests(unittest.TestCase):
               "[[“10:05”,”medo”,”p”,1],[“10:40”,”Medo”,”i”,1],[“10:58”,”medo”,”s”,0],"
               "[“11:03”,”amor”,”d”,0]]],[“15:33”,”16:48&#34;,”PARE TUDO PORQUE JESUS QUER "
               "FALAR COM VOCÊ”,[[“15:38”,”falar”,”p”,0],[“16:08”,”Mas”,”w”,0]]]]}")
+
+    def test_titulo_entre_aspas_curvas_dentro_do_texto(self) -> None:
+        # Colado pelo Nathan em 26/10/2026 (1.15.0): o título fixo veio entre aspas e as de
+        # dentro, curvas como as outras, viravam retas e fechavam o texto no meio.
+        colado = ("{“bx”:1,”t”:”f”,”l”:”BRUNA · ÚLTIMO CULTO DA SÉRIE ATOS 29&#34;,”c”:"
+                  "[[“10:00”,”11:04&#34;,””ISSO É HUMILDADE OU ISSO É MEDO?””,"
+                  "[[“10:05”,”medo”,”p”,1],[“10:58”,”medo”,”i”,1]]],"
+                  "[“15:17”,”16:47&#34;,”QUANDO VOCÊ AMA DEUS SÓ EM FRAGMENTOS”,"
+                  "[[“16:08”,”Mas”,”w”,0]]],"
+                  "[“45:05”,”45:55&#34;,””O SENHOR NÃO ACORDA MENOS SANTO””,[]]]}")
+        cuts = parse_plan(colado)
+        self.assertEqual([cut.title for cut in cuts],
+                         ['"ISSO É HUMILDADE OU ISSO É MEDO?"',
+                          "QUANDO VOCÊ AMA DEUS SÓ EM FRAGMENTOS",
+                          '"O SENHOR NÃO ACORDA MENOS SANTO"'])
+        self.assertEqual([len(cut.markers) for cut in cuts], [2, 1, 0])
+        self.assertEqual(parse_look(colado).label, "BRUNA · ÚLTIMO CULTO DA SÉRIE ATOS 29")
+
+    def test_aspas_escapadas_e_texto_depois_continuam_valendo(self) -> None:
+        cuts = parse_plan('Pronto! {"bx":1,"c":[["1:00","1:40","\\"FOCO\\" AGORA",[]]]} '
+                          'Qualquer coisa, me chame "aqui".')
+        self.assertEqual(cuts[0].title, '"FOCO" AGORA')
 
     def test_aspas_curvas_do_celular_funcionam(self) -> None:
         cuts = parse_plan(self.COLADO)
