@@ -140,3 +140,19 @@ class PaginaTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AspasCurvasTests(unittest.TestCase):
+    # Colado do celular em 26/10/2026: aspas curvas, e algumas retas no meio.
+    COLADO = ("{“bx”:1,”c”:[[“10:00”,”11:05\",”SERÁ QUE ISSO É HUMILDADE OU É MEDO”,"
+              "[[“10:05”,”medo”,”p”,1],[“10:40”,”Medo”,”i”,1],[“10:58”,”medo”,”s”,0],"
+              "[“11:03”,”amor”,”d”,0]]],[“15:33”,”16:48&#34;,”PARE TUDO PORQUE JESUS QUER "
+              "FALAR COM VOCÊ”,[[“15:38”,”falar”,”p”,0],[“16:08”,”Mas”,”w”,0]]]]}")
+
+    def test_aspas_curvas_do_celular_funcionam(self) -> None:
+        cuts = parse_plan(self.COLADO)
+        self.assertEqual(len(cuts), 2)
+        self.assertEqual((cuts[0].start, cuts[0].end), (600.0, 665.0))
+        self.assertEqual(cuts[0].title, "SERÁ QUE ISSO É HUMILDADE OU É MEDO")
+        self.assertEqual(cuts[0].markers[1], Marker(640.0, "impacto", "Medo", True))
+        self.assertEqual(cuts[1].end, 1008.0)

@@ -3,6 +3,13 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.14.3] - 2026-10-26
+
+### Corrigido
+
+- Plano da IA: colado do celular, do Word ou do chat da IA com aspas curvas (“ ”), o plano era
+  recusado com "Não encontrei o plano". As aspas curvas agora viram retas antes da leitura.
+
 ## [1.14.2] - 2026-10-25
 
 ### Adicionado
