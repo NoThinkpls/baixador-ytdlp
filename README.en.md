@@ -98,6 +98,12 @@ and video tools. Free, open source, and nothing leaves your computer.
 - Audio-only files and videos without sound are refused right away, with the reason, instead of failing after transcription. Phone videos recorded "sideways" with a rotation flag are treated as vertical.
 - Limits: up to 20 clips at a time and 10 minutes per clip. The chosen font must be installed on the computer. "Follow the person" pans horizontally (no variable zoom) and, if the analysis fails, the clip is centered. From a link, the range is downloaded without re-encoding and the app compensates the extra lead-in up to the keyframe; rarely the start may shift by a fraction of a second.
 
+### Command line and Claude Code
+
+- `baixador-ytdlp cli baixar|info|legendar|cortar|ferramenta|preparar|status|historico` does what the window does without opening it, using the app's saved settings. Results come out as JSON, ready for scripts (command names and messages are in Portuguese).
+- With the [`baixador`](.claude/skills/baixador/SKILL.md) skill, **Claude Code** on your computer turns requests like "download this video in 720p" or "make three clips from this video" into the right command. Reference (Portuguese): [command line](docs/LINHA-DE-COMANDO.md).
+- Limitation: work done from the command line does not show up in the window's History yet.
+
 ### Interface
 
 - Light and dark themes, **Portuguese and English** (Settings → Appearance), compact sidebar and custom icons.
