@@ -14,6 +14,10 @@ formato Keep a Changelog.
   diminui sozinho para caber em até 3 linhas; a legenda não sobe para dentro da faixa e os
   zooms mexem só no vídeo. "Seguir a pessoa" mede a janela pela área do vídeo, mais larga
   que 9:16.
+- **Plano da IA**: dois campos opcionais, `t` (tipo de título: `"f"` fixo no topo ou
+  `"a"` animado) e `l` (a linha de cima do título fixo). Ao aplicar um plano com eles, a
+  página troca o tipo de título e preenche a linha; planos antigos continuam iguais. O
+  texto pronto para a IA em docs/PLANO-DA-IA.md explica os dois tamanhos de título.
 
 ### Alterado
 

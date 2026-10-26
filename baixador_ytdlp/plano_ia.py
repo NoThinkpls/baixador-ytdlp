@@ -9,7 +9,10 @@ compacto de propósito, para colar num campo só:
 * cada efeito: ``[tempo, palavra, som, zoom]``. O tempo vem do SRT (vídeo inteiro),
   a palavra é a que está sendo dita (o app procura o tempo exato dela), o som é uma
   letra (``w`` whoosh, ``p`` pop, ``i`` impacto, ``d`` ding, ``s`` subida, ``""`` só
-  zoom) e o zoom é 1 ou 0.
+  zoom) e o zoom é 1 ou 0;
+* opcionais, valendo para todos os cortes: ``t`` é o tipo de título (``"f"`` fixo no
+  topo, ``"a"`` animado) e ``l`` a linha pequena acima do título fixo. Sem eles, a
+  página fica como está.
 
 A linha pode vir no meio da resposta inteira da IA: o app acha o ``{"bx"`` sozinho.
 """
@@ -17,6 +20,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 
 from .clips import (MAX_CLIP_SECONDS, MIN_CLIP_SECONDS, ClipError, ClipRange, format_clock,
                     parse_time)
@@ -25,6 +29,8 @@ from .sfx import SOUNDS
 
 MAX_CUTS = 20
 MAX_EFFECTS = 40            # por corte
+MAX_LABEL = 80
+TITLE_CODES = {"f": "banner", "fixo": "banner", "a": "animated", "animado": "animated"}
 SOUND_CODES = {"w": "whoosh", "p": "pop", "i": "impacto", "d": "ding", "s": "subida"}
 _START = re.compile(r'\{\s*"bx"\s*:')
 # Celular, Word e o próprio chat da IA trocam as aspas retas por curvas ao copiar; o JSON
@@ -108,6 +114,22 @@ def parse_plan(text: str) -> list[ClipRange]:
                 markers.append(Marker(moment, sound, word[:60], zoom))
         ranges.append(ClipRange(start, end, title, tuple(markers)))
     return ranges
+
+
+@dataclass(frozen=True)
+class PlanLook:
+    """Escolhas de visual que o plano pode trazer; vazio/None = a página decide."""
+    title_mode: str = ""            # "banner" (fixo no topo), "animated" ou ""
+    label: str | None = None        # linha de cima do título fixo
+
+
+def parse_look(text: str) -> PlanLook:
+    """Tipo de título (``t``) e linha de cima (``l``) do plano; valores estranhos são ignorados."""
+    plan = find_plan(text)
+    mode = TITLE_CODES.get(str(plan.get("t") or "").strip().casefold(), "")
+    label = plan.get("l")
+    return PlanLook(mode, " ".join(label.split())[:MAX_LABEL] if isinstance(label, str)
+                    else None)
 
 
 def markers_text(markers: tuple[Marker, ...]) -> str:
