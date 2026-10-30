@@ -302,7 +302,7 @@ jobs:
 
   macos:
     name: Compilar no macOS Apple Silicon
-    # macos-14 foi aposentado pelo GitHub em 30/10/2026: o job era cancelado sem máquina.
+    # Desde 30/10/2026 o macos-14 não recebe máquina (job cancelado em 2 s, sem log).
     runs-on: macos-15
     timeout-minutes: 45
     defaults:
