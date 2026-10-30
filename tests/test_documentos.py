@@ -88,14 +88,18 @@ class DocumentosTests(unittest.TestCase):
             self.assertIn(piece, text)
         markdown = (self.root / "saida.md").read_text(encoding="utf-8")
         self.assertIn("# Relatório", markdown)
-        self.assertIn("**forte**", markdown)
+        # O "**" do Markdown vem do QFontInfo (fonte instalada), não do documento: no
+        # Windows da Action, sem variante negrito no modo offscreen, ele não aparece. O
+        # negrito do documento é conferido abaixo, no DOCX, que lê o formato direto.
         # O DOCX gerado abre de novo (ida e volta) e mantém título e negrito.
         again = load_document(self.root / "saida.docx")
         self.assertIn("Texto forte e inclinado", again.toPlainText())
         with zipfile.ZipFile(self.root / "saida.docx") as archive:
             xml = archive.read("word/document.xml").decode("utf-8")
         self.assertIn('w:val="Heading1"', xml)
-        self.assertIn("<w:b/>", xml)
+        self.assertRegex(xml, r"<w:rPr><w:b/></w:rPr><w:t[^>]*>forte</w:t>")
+        self.assertRegex(xml, r"<w:rPr><w:i/></w:rPr><w:t[^>]*> e inclinado</w:t>")
+        self.assertRegex(xml, r"<w:r><w:t[^>]*>Texto </w:t>")   # texto normal sem negrito
 
     def test_markdown_e_texto_com_acentos_do_windows(self) -> None:
         markdown = self.root / "nota.md"
