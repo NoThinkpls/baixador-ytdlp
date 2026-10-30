@@ -25,9 +25,10 @@ from .diagnostics import get_logger, log_event, report_exception
 from .downloader import (DownloadError, DownloadOptions, Progress, Transcoder, is_retryable_error,
                          vp9_mp4_to_mkv)
 from .gpu import GpuInfo, detect, forget_negative_cache
-from .media_tools import (MediaToolError, MediaToolOptions, build_command, media_duration,
-                          operation_duration, preferred_video_encoder, progress_seconds,
-                          resolve_options, uses_gpu)
+from .documents import convert_document, image_to_pdf
+from .media_tools import (MediaToolError, MediaToolOptions, build_command, is_document_job,
+                          media_duration, operation_duration, preferred_video_encoder,
+                          progress_seconds, resolve_options, source_kind, uses_gpu)
 from .parallel_section import create_runner
 from .processes import (CREATE_NO_WINDOW, attach_pid_to_kill_job, popen_isolated, release_job,
                         terminate_process_tree)
@@ -170,6 +171,16 @@ class MediaToolWorker(QThread):
             self.options.destination.parent.mkdir(parents=True, exist_ok=True)
             if self.options.destination.exists():
                 raise MediaToolError("O arquivo de saída já existe. Escolha outro nome.")
+            if is_document_job(self.options):
+                # Documento ou imagem → PDF: Qt no próprio worker, sem processo do FFmpeg.
+                self.progress.emit("Convertendo o documento…")
+                if source_kind(self.options.source) == "document":
+                    convert_document(self.options.source, self.options.destination)
+                else:
+                    image_to_pdf(self.options.source, self.options.destination, self.tc)
+                self.progress_value.emit(100)
+                self.finished_ok.emit(str(self.options.destination))
+                return
             encoder = preferred_video_encoder(self.tc) if uses_gpu(self.options) else ""
             for selected in ([encoder, ""] if encoder else [""]):
                 command = build_command(self.options, self.tc, video_encoder=selected)

@@ -12,7 +12,10 @@ formato Keep a Changelog.
   - vídeo → MP4, MKV e MOV (H.264), WebM (VP9), AVI (Xvid + MP3) ou só o áudio;
   - áudio → MP3, M4A, Opus, OGG, FLAC, WAV ou AIFF;
   - imagem → PNG, JPG, WebP, BMP ou TIFF;
-  - legenda → SRT, ASS ou VTT.
+  - legenda → SRT, ASS ou VTT;
+  - documento (Word DOCX, ODT, TXT, Markdown, HTML) → PDF, DOCX, HTML, TXT ou Markdown, e
+    imagem → PDF, com o Qt que o app já empacota (sem Word, LibreOffice nem internet).
+    Mantém texto, títulos, negrito, itálico, listas e tabelas simples; PDF não é origem.
   GIF animado entra como vídeo. Vídeo sem imagem (WebM só de áudio) ou sem som é recusado
   antes de começar, com uma mensagem que diz o que escolher. Largura ou altura ímpar (GIF,
   imagem de celular) não derruba mais o H.264. A GPU só entra nas saídas H.264 (MP4, MKV,
@@ -25,6 +28,10 @@ formato Keep a Changelog.
 - As entradas só abrem arquivos locais (`-protocol_whitelist file`): uma playlist HLS ou
   um ffconcat disfarçado de vídeo não consegue buscar URLs (rede/SSRF). Teste com servidor
   local confirma que nenhuma conexão sai.
+- Documentos: XML com DTD/entidades é recusado (billion laughs/XXE), o XML de dentro do
+  DOCX/ODT tem teto de 50 MB mesmo que o ZIP minta o tamanho, e HTML/Markdown só carregam
+  imagens da própria pasta (um HTML baixado não copia arquivos do computador para o PDF).
+  A saída nunca sobrescreve um arquivo existente.
 - Imagem com `%` no nome não é lida como sequência (`-pattern_type none`) e a saída usa
   `-update 1`.
 

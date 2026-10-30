@@ -281,10 +281,11 @@ EN: dict[str, str] = {
     "Crie uma cópia do vídeo sem som, sem recodificar a imagem.":
         "Create a copy of the video without sound, without re-encoding the picture.",
     "Converter formato": "Convert format",
-    "Converta vídeo, áudio, imagem ou legenda para outro formato.":
-        "Convert video, audio, images or subtitles to another format.",
+    "Converta vídeo, áudio, imagem, legenda ou documento para outro formato.":
+        "Convert video, audio, images, subtitles or documents to another format.",
     "Converter": "Convert", "Formato de saída": "Output format",
-    "Arquivo de vídeo, áudio, imagem ou legenda": "Video, audio, image or subtitle file",
+    "Arquivo de vídeo, áudio, imagem, legenda ou documento":
+        "Video, audio, image, subtitle or document file",
     "Arquivo de vídeo ou áudio de origem": "Source video or audio file",
     "Vídeo vira outro vídeo ou só o áudio. MP4 abre em qualquer lugar; WebM costuma ficar "
     "menor, mas demora mais.":
@@ -294,8 +295,21 @@ EN: dict[str, str] = {
     "qualidade.":
         "MP3 plays everywhere; M4A and Opus give more per megabyte; FLAC, WAV and AIFF are "
         "lossless.",
-    "PNG não perde qualidade; JPG e WebP ficam bem menores. JPG e BMP não têm transparência.":
-        "PNG is lossless; JPG and WebP are much smaller. JPG and BMP have no transparency.",
+    "PNG não perde qualidade; JPG e WebP ficam bem menores. JPG e BMP não têm transparência. "
+    "PDF gera uma página do tamanho da imagem.":
+        "PNG is lossless; JPG and WebP are much smaller. JPG and BMP have no transparency. "
+        "PDF makes one page the size of the image.",
+    "Word (DOCX), ODT, TXT, Markdown e HTML viram PDF, DOCX, HTML, TXT ou Markdown. Mantém "
+    "texto, títulos, negrito, itálico, listas e tabelas simples; imagens só da pasta do "
+    "documento.":
+        "Word (DOCX), ODT, TXT, Markdown and HTML become PDF, DOCX, HTML, TXT or Markdown. Keeps "
+        "text, headings, bold, italics, lists and simple tables; images only from the "
+        "document's folder.",
+    "PDF — para ler e imprimir": "PDF — to read and print",
+    "DOCX — Word, para editar": "DOCX — Word, to edit",
+    "HTML — página da web": "HTML — web page", "TXT — só o texto": "TXT — text only",
+    "Markdown — texto com marcação": "Markdown — marked-up text",
+    "Convertendo o documento…": "Converting the document…",
     "SRT é o mais aceito; ASS guarda estilo; VTT é o da web. Converter de ASS para SRT ou VTT "
     "perde cores e posições.":
         "SRT is the most widely accepted; ASS keeps styling; VTT is for the web. Converting ASS "

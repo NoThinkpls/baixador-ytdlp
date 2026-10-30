@@ -68,7 +68,8 @@ CHOICES: dict[str, tuple[str, ...]] = {
     "audio": ("mp3", "m4a", "opus", "flac", "wav"),
     # Todos os formatos do conversor; os oferecidos dependem do tipo da origem (CONVERT_FORMATS).
     "convert": ("mp4", "mkv", "webm", "mov", "avi", "mp3", "m4a", "opus", "ogg", "flac", "wav",
-                "aiff", "png", "jpg", "webp", "bmp", "tiff", "srt", "ass", "vtt"),
+                "aiff", "png", "jpg", "webp", "bmp", "tiff", "srt", "ass", "vtt", "pdf", "docx",
+                "html", "txt", "md"),
     "speed": ("0.25", "0.5", "0.75", "1.25", "1.5", "2", "3", "4"),
     "rotate": ("cw", "ccw", "180", "flip_h", "flip_v"),
     "gif": ("480", "640", "800"),
@@ -112,15 +113,19 @@ AUDIO_SOURCES = frozenset({".mp3", ".m4a", ".aac", ".ogg", ".oga", ".opus", ".wa
                            ".wma", ".ac3", ".eac3", ".aif", ".aiff", ".alac", ".mka", ".amr"})
 IMAGE_SOURCES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"})
 SUBTITLE_SOURCES = frozenset({".srt", ".ass", ".ssa", ".vtt"})
+# Documentos e imagem → PDF não passam pelo FFmpeg: ``documents.py`` usa o Qt (no worker).
+DOCUMENT_SOURCES = frozenset({".txt", ".md", ".markdown", ".html", ".htm", ".docx", ".odt"})
 AUDIO_FORMATS = ("mp3", "m4a", "opus", "ogg", "flac", "wav", "aiff")
 CONVERT_FORMATS: dict[str, tuple[str, ...]] = {
     "video": ("mp4", "mkv", "webm", "mov", "avi", *AUDIO_FORMATS),
     "audio": AUDIO_FORMATS,
-    "image": ("png", "jpg", "webp", "bmp", "tiff"),
+    "image": ("png", "jpg", "webp", "bmp", "tiff", "pdf"),
     "subtitle": ("srt", "ass", "vtt"),
+    "document": ("pdf", "docx", "html", "txt", "md"),
 }
 # Extensões equivalentes que a pessoa pode digitar no destino.
-FORMAT_ALIASES = {"jpeg": "jpg", "tif": "tiff", "m4v": "mp4", "aif": "aiff"}
+FORMAT_ALIASES = {"jpeg": "jpg", "tif": "tiff", "m4v": "mp4", "aif": "aiff", "htm": "html",
+                  "markdown": "md"}
 # H.264 e MPEG-4 recusam largura ou altura ímpar em yuv420p (GIF e imagens de celular).
 EVEN_SIZE_FILTER = "scale=trunc(iw/2)*2:trunc(ih/2)*2"
 SUBTITLE_CODECS = {".srt": "srt", ".ass": "ass", ".vtt": "webvtt"}
@@ -144,7 +149,7 @@ def _same_container(source: Path) -> str:
 
 
 def source_kind(source: Path) -> str:
-    """``video``, ``audio``, ``image`` ou ``subtitle``, só pela extensão (seguro na UI)."""
+    """``video``, ``audio``, ``image``, ``subtitle`` ou ``document``, só pela extensão."""
     suffix = source.suffix.casefold()
     if suffix in AUDIO_SOURCES:
         return "audio"
@@ -152,7 +157,15 @@ def source_kind(source: Path) -> str:
         return "image"
     if suffix in SUBTITLE_SOURCES:
         return "subtitle"
+    if suffix in DOCUMENT_SOURCES:
+        return "document"
     return "video"
+
+
+def is_document_job(options: MediaToolOptions) -> bool:
+    """Conversões feitas pelo Qt em ``documents.py``, sem comando do FFmpeg."""
+    return options.operation == "convert" and (
+        source_kind(options.source) == "document" or _format_of(options.destination) == "pdf")
 
 
 def _format_of(path: Path) -> str:
@@ -269,7 +282,7 @@ def media_duration(source: Path, toolchain: Toolchain) -> float:
 def operation_duration(options: MediaToolOptions, toolchain: Toolchain) -> float:
     """Duração da *saída*, que é o que o progresso do FFmpeg mede (0 = indeterminado)."""
     operation = options.operation
-    if operation == "convert" and source_kind(options.source) in {"image", "subtitle"}:
+    if operation == "convert" and source_kind(options.source) in {"image", "subtitle", "document"}:
         return 0.0   # instantâneo; uma imagem "dura" 0,04 s e o progresso só piscaria
     total = media_duration(options.source, toolchain)
     if operation == "speed":
@@ -424,6 +437,8 @@ def _convert_args(source: Path, destination: Path) -> list[str]:
     if target not in formats:
         listed = ", ".join(f".{value}" for value in formats)
         raise MediaToolError(f"Use {listed} como extensão de saída para este arquivo.")
+    if kind == "document" or target == "pdf":
+        raise MediaToolError("Documentos e PDF são convertidos sem o FFmpeg.")
     if target in AUDIO_FORMATS:
         return ["-vn", "-map", "0:a:0", *AUDIO_CODECS[f".{target}"]]
     if kind == "image":

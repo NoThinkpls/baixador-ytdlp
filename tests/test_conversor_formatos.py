@@ -256,6 +256,7 @@ class ConversaoRealTests(unittest.TestCase):
             formats = CONVERT_FORMATS[source_kind(source)]
             if source == self.gif:
                 formats = tuple(value for value in formats if value in {"mp4", "webm", "avi"})
+            formats = tuple(value for value in formats if value != "pdf")   # Qt (test_documentos)
             for target in formats:
                 with self.subTest(source=source.name, target=target):
                     destination = self.convert(source, target)
@@ -343,7 +344,7 @@ class PaginaDoConversorTests(unittest.TestCase):
 
         self.assertEqual(set(CONVERT_LABELS), set(CHOICES["convert"]))
         texts = [*CONVERT_LABELS.values(), *CONVERT_HINTS.values(),
-                 "Arquivo de vídeo, áudio, imagem ou legenda"]
+                 "Arquivo de vídeo, áudio, imagem, legenda ou documento"]
         self.assertEqual([text for text in texts if text not in i18n.EN], [])
 
 

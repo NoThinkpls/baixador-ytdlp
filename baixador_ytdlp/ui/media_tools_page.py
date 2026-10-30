@@ -24,7 +24,8 @@ MEDIA_FILTER = ("Mídia (*.mp4 *.mkv *.webm *.mov *.avi *.m4v *.ts *.mpg *.mpeg 
                 "*.3gp *.mp3 *.m4a *.aac *.ogg *.opus *.wav *.flac);;"
                 "Todos os arquivos (*.*)")
 SUBTITLE_FILTER = "Legendas (*.srt *.vtt *.ass);;Todos os arquivos (*.*)"
-CONVERT_FILTER = ("Vídeo, áudio, imagem ou legenda (*.mp4 *.mkv *.webm *.mov *.avi *.m4v *.ts "
+CONVERT_FILTER = ("Vídeo, áudio, imagem, legenda ou documento (*.txt *.md *.html *.htm *.docx "
+                  "*.odt *.mp4 *.mkv *.webm *.mov *.avi *.m4v *.ts "
                   "*.mpg *.mpeg *.wmv *.flv *.3gp *.gif *.mp3 *.m4a *.aac *.ogg *.opus *.wav "
                   "*.flac *.wma *.aiff *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff *.srt *.ass "
                   "*.ssa *.vtt);;Todos os arquivos (*.*)")
@@ -41,6 +42,8 @@ CONVERT_LABELS = {
     "png": "PNG — sem perda", "jpg": "JPG — leve e compatível", "webp": "WebP — leve e moderno",
     "bmp": "BMP — sem compressão", "tiff": "TIFF — impressão e edição",
     "srt": "SRT — o mais compatível", "ass": "ASS — com estilo", "vtt": "VTT — para a web",
+    "pdf": "PDF — para ler e imprimir", "docx": "DOCX — Word, para editar",
+    "html": "HTML — página da web", "txt": "TXT — só o texto", "md": "Markdown — texto com marcação",
 }
 CONVERT_HINTS = {
     "video": "Vídeo vira outro vídeo ou só o áudio. MP4 abre em qualquer lugar; WebM costuma "
@@ -48,7 +51,10 @@ CONVERT_HINTS = {
     "audio": "MP3 toca em tudo; M4A e Opus rendem mais por megabyte; FLAC, WAV e AIFF não "
              "perdem qualidade.",
     "image": "PNG não perde qualidade; JPG e WebP ficam bem menores. JPG e BMP não têm "
-             "transparência.",
+             "transparência. PDF gera uma página do tamanho da imagem.",
+    "document": "Word (DOCX), ODT, TXT, Markdown e HTML viram PDF, DOCX, HTML, TXT ou "
+                "Markdown. Mantém texto, títulos, negrito, itálico, listas e tabelas simples; "
+                "imagens só da pasta do documento.",
     "subtitle": "SRT é o mais aceito; ASS guarda estilo; VTT é o da web. Converter de ASS "
                 "para SRT ou VTT perde cores e posições.",
 }
@@ -123,8 +129,8 @@ OPERATIONS = {
         "action": "Remover áudio",
     },
     "convert": {
-        "title": "Converter formato", "icon": "convert", "tag": "Vídeo · Áudio · Imagem",
-        "summary": "Converta vídeo, áudio, imagem ou legenda para outro formato.",
+        "title": "Converter formato", "icon": "convert", "tag": "Vídeo · Áudio · Imagem · Doc",
+        "summary": "Converta vídeo, áudio, imagem, legenda ou documento para outro formato.",
         "action": "Converter",
         # As opções mudam com o arquivo escolhido (ver CONVERT_FORMATS e _convert_choice).
         "choice": {"title": "Formato de saída", "hint": CONVERT_HINTS["video"],
@@ -594,7 +600,7 @@ class MediaToolsPage(QWidget):
             self.end_edit.setVisible(timing["end"])
         show(self.fast_trim_row, operation == "trim")
         self.source_edit.setPlaceholderText(tr(
-            "Arquivo de vídeo, áudio, imagem ou legenda" if operation == "convert"
+            "Arquivo de vídeo, áudio, imagem, legenda ou documento" if operation == "convert"
             else "Arquivo de vídeo ou áudio de origem"))
         self._convert_kind = ""
         self._fill_choices(self._choice_spec(operation), operation)
