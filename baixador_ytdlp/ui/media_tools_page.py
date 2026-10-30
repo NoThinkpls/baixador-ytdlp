@@ -9,8 +9,9 @@ from PySide6.QtWidgets import (QAbstractButton, QFileDialog, QGridLayout,
                                QHBoxLayout, QSizePolicy, QStackedWidget, QVBoxLayout,
                                QWidget)
 
-from ..media_tools import (DEFAULT_CHOICE, MediaToolOptions, available_destination,
-                           default_destination)
+from ..media_tools import (CONVERT_FORMATS, DEFAULT_CHOICE, MediaToolOptions,
+                           available_destination, convert_choice, default_destination,
+                           source_kind)
 from ..workers import MediaToolWorker
 from . import icons, theme
 from .components import (BreadcrumbChevron, BreadcrumbCurrent, BreadcrumbLink, Button, Divider,
@@ -23,6 +24,40 @@ MEDIA_FILTER = ("Mídia (*.mp4 *.mkv *.webm *.mov *.avi *.m4v *.ts *.mpg *.mpeg 
                 "*.3gp *.mp3 *.m4a *.aac *.ogg *.opus *.wav *.flac);;"
                 "Todos os arquivos (*.*)")
 SUBTITLE_FILTER = "Legendas (*.srt *.vtt *.ass);;Todos os arquivos (*.*)"
+CONVERT_FILTER = ("Vídeo, áudio, imagem, legenda ou documento (*.txt *.md *.html *.htm *.docx "
+                  "*.odt *.mp4 *.mkv *.webm *.mov *.avi *.m4v *.ts "
+                  "*.mpg *.mpeg *.wmv *.flv *.3gp *.gif *.mp3 *.m4a *.aac *.ogg *.opus *.wav "
+                  "*.flac *.wma *.aiff *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff *.srt *.ass "
+                  "*.ssa *.vtt);;Todos os arquivos (*.*)")
+
+# Conversor: formatos por tipo de origem (``media_tools.CONVERT_FORMATS``) e o que dizer de cada.
+CONVERT_LABELS = {
+    "mp4": "MP4 — H.264, abre em tudo", "mkv": "MKV — H.264, guarda várias faixas",
+    "webm": "WebM — VP9, para sites (mais lento)", "mov": "MOV — H.264, Apple e editores",
+    "avi": "AVI — Xvid e MP3, TVs e players antigos",
+    "mp3": "MP3 — áudio compatível com tudo", "m4a": "M4A (AAC) — celulares e Apple",
+    "opus": "Opus — áudio menor", "ogg": "OGG (Vorbis) — áudio livre",
+    "flac": "FLAC — áudio sem perda", "wav": "WAV — áudio sem compressão",
+    "aiff": "AIFF — sem compressão, Mac",
+    "png": "PNG — sem perda", "jpg": "JPG — leve e compatível", "webp": "WebP — leve e moderno",
+    "bmp": "BMP — sem compressão", "tiff": "TIFF — impressão e edição",
+    "srt": "SRT — o mais compatível", "ass": "ASS — com estilo", "vtt": "VTT — para a web",
+    "pdf": "PDF — para ler e imprimir", "docx": "DOCX — Word, para editar",
+    "html": "HTML — página da web", "txt": "TXT — só o texto", "md": "Markdown — texto com marcação",
+}
+CONVERT_HINTS = {
+    "video": "Vídeo vira outro vídeo ou só o áudio. MP4 abre em qualquer lugar; WebM costuma "
+             "ficar menor, mas demora mais.",
+    "audio": "MP3 toca em tudo; M4A e Opus rendem mais por megabyte; FLAC, WAV e AIFF não "
+             "perdem qualidade.",
+    "image": "PNG não perde qualidade; JPG e WebP ficam bem menores. JPG e BMP não têm "
+             "transparência. PDF gera uma página do tamanho da imagem.",
+    "document": "Word (DOCX), ODT, TXT, Markdown e HTML viram PDF, DOCX, HTML, TXT ou "
+                "Markdown. Mantém texto, títulos, negrito, itálico, listas e tabelas simples; "
+                "imagens só da pasta do documento.",
+    "subtitle": "SRT é o mais aceito; ASS guarda estilo; VTT é o da web. Converter de ASS "
+                "para SRT ou VTT perde cores e posições.",
+}
 
 # Cada ferramenta é só dados: a página monta cartão, ajustes e botão a partir deles.
 #   "time":   linha de início/fim (``end`` False = só um momento);
@@ -94,14 +129,13 @@ OPERATIONS = {
         "action": "Remover áudio",
     },
     "convert": {
-        "title": "Converter formato", "icon": "convert", "tag": "MP4 · WebM",
-        "summary": "Reencode para MP4 (H.264) ou WebM (VP9) e abra em qualquer aparelho.",
+        "title": "Converter formato", "icon": "convert", "tag": "Vídeo · Áudio · Imagem · Doc",
+        "summary": "Converta vídeo, áudio, imagem, legenda ou documento para outro formato.",
         "action": "Converter",
-        "choice": {"title": "Formato de saída",
-                   "hint": "MP4 abre em qualquer lugar; WebM é ideal para sites e costuma "
-                           "ficar menor, mas demora mais.",
-                   "options": [("MP4 — H.264 e AAC", "mp4"),
-                               ("WebM — VP9 e Opus (mais lento)", "webm")]},
+        # As opções mudam com o arquivo escolhido (ver CONVERT_FORMATS e _convert_choice).
+        "choice": {"title": "Formato de saída", "hint": CONVERT_HINTS["video"],
+                   "options": [(CONVERT_LABELS[value], value)
+                               for value in CONVERT_FORMATS["video"]]},
     },
     "remux": {
         "title": "Trocar contêiner", "icon": "media", "tag": "Sem perda",
@@ -310,6 +344,7 @@ class MediaToolsPage(QWidget):
         self.toolchain = None
         self.worker: MediaToolWorker | None = None
         self._operation_key = "trim"
+        self._convert_kind = ""   # tipo da origem que montou a lista do conversor
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -564,7 +599,11 @@ class MediaToolsPage(QWidget):
             self.end_edit.setPlaceholderText(tr(timing["stop"]))
             self.end_edit.setVisible(timing["end"])
         show(self.fast_trim_row, operation == "trim")
-        self._fill_choices(data.get("choice"), operation)
+        self.source_edit.setPlaceholderText(tr(
+            "Arquivo de vídeo, áudio, imagem, legenda ou documento" if operation == "convert"
+            else "Arquivo de vídeo ou áudio de origem"))
+        self._convert_kind = ""
+        self._fill_choices(self._choice_spec(operation), operation)
         show(self.subtitle_row, operation == "burn")
         show(self.target_row, operation == "target_size")
         show(self.blur_row, operation == "shorts")
@@ -575,6 +614,26 @@ class MediaToolsPage(QWidget):
         self.options_group.setVisible(has_options)
         self.run_button.setText(tr(data["action"]))
         self._suggest_destination()
+
+    def _source_path(self) -> Path:
+        return Path(self.source_edit.text().strip())
+
+    def _choice_spec(self, operation: str) -> dict | None:
+        """A escolha da ferramenta; no conversor, os formatos do tipo do arquivo escolhido."""
+        choice = OPERATIONS[operation].get("choice")
+        if operation != "convert":
+            return choice
+        kind = source_kind(self._source_path())
+        self._convert_kind = kind
+        return {"title": choice["title"], "hint": CONVERT_HINTS[kind],
+                "options": [(CONVERT_LABELS[value], value) for value in CONVERT_FORMATS[kind]]}
+
+    def _refresh_convert_choices(self) -> None:
+        """Trocar MP4 por PNG muda a lista de formatos; só pela extensão, sem ler o arquivo."""
+        if self._operation_key != "convert":
+            return
+        if source_kind(self._source_path()) != self._convert_kind:
+            self._fill_choices(self._choice_spec("convert"), "convert")
 
     def _fill_choices(self, choice: dict | None, operation: str) -> None:
         self.options_group.set_row_visible(self.choice_row, bool(choice))
@@ -587,8 +646,9 @@ class MediaToolsPage(QWidget):
             self.choice_combo.clear()
             for label, value in choice["options"]:
                 self.choice_combo.addItem(label, userData=value)
-            self.choice_combo.setCurrentIndex(
-                max(0, self.choice_combo.findData(DEFAULT_CHOICE.get(operation, ""))))
+            default = (convert_choice(self._source_path()) if operation == "convert"
+                       else DEFAULT_CHOICE.get(operation, ""))
+            self.choice_combo.setCurrentIndex(max(0, self.choice_combo.findData(default)))
             # A largura da lista é calculada uma só vez pelo Qt; cada ferramenta tem itens
             # diferentes, então ajustamos ao mais longo (texto + margem + seta).
             metrics = self.choice_combo.fontMetrics()
@@ -608,7 +668,8 @@ class MediaToolsPage(QWidget):
         return str(self.choice_combo.currentData() or "")
 
     def _choose_source(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Selecionar mídia", "", MEDIA_FILTER)
+        media_filter = CONVERT_FILTER if self._operation_key == "convert" else MEDIA_FILTER
+        path, _ = QFileDialog.getOpenFileName(self, "Selecionar mídia", "", media_filter)
         if path:
             self.source_edit.setText(path)
             self._suggest_destination()
@@ -619,7 +680,8 @@ class MediaToolsPage(QWidget):
             self.subtitle_edit.setText(path)
 
     def _suggest_destination(self) -> None:
-        source = Path(self.source_edit.text().strip())
+        self._refresh_convert_choices()
+        source = self._source_path()
         if source.is_file():
             self.destination_edit.setText(str(default_destination(
                 source, self._operation(), choice=self._choice())))

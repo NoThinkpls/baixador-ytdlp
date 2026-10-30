@@ -302,7 +302,8 @@ jobs:
 
   macos:
     name: Compilar no macOS Apple Silicon
-    runs-on: macos-14
+    # Desde 30/10/2026 o macos-14 não recebe máquina (job cancelado em 2 s, sem log).
+    runs-on: macos-15
     timeout-minutes: 45
     defaults:
       run:

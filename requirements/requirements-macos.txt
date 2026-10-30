@@ -23,7 +23,13 @@ pyobjc-framework-libdispatch==12.2.2
 pyobjc-framework-libxpc==12.2.2
 # O PyObjC declara extensões condicionais pelo kernel do macOS. O resolvedor
 # cruzado não as escreve todas no lock; explicitá-las mantém --require-hashes
-# reproduzível no macOS 14 usado pela automação de publicação.
+# reproduzível no macOS 15 usado pela automação de publicação.
+# Extensões que o PyObjC só pede a partir do macOS 15 (kernel 24.x): o runner passou
+# do macos-14 para o macos-15 em 30/10/2026 e o pip exigia estes hashes.
+pyobjc-framework-DeviceDiscoveryExtension==12.2.2
+pyobjc-framework-FSKit==12.2.2
+pyobjc-framework-MediaExtension==12.2.2
+pyobjc-framework-SecurityUI==12.2.2
 pyobjc-framework-Accessibility==12.2.2
 pyobjc-framework-Accounts==12.2.2
 pyobjc-framework-AdServices==12.2.2

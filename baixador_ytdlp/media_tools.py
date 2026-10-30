@@ -53,7 +53,10 @@ def uses_gpu(options: MediaToolOptions) -> bool:
     if options.operation == "trim":
         return not options.fast_trim
     if options.operation == "convert":
-        return options.destination.suffix.casefold() != ".webm"   # VP9 não tem encoder de GPU
+        # Só H.264 tem encoder de GPU: WebM (VP9), AVI (MPEG-4), áudio, imagem e legenda ficam
+        # na CPU. Sem isso o AVI recebia h264_nvenc no lugar do mpeg4.
+        return (source_kind(options.source) == "video"
+                and options.destination.suffix.casefold() in H264_CONTAINERS)
     return True
 
 
@@ -63,7 +66,10 @@ def uses_gpu(options: MediaToolOptions) -> bool:
 # então renomear o destino nunca gera um comando incoerente); nas demais é o parâmetro em si.
 CHOICES: dict[str, tuple[str, ...]] = {
     "audio": ("mp3", "m4a", "opus", "flac", "wav"),
-    "convert": ("mp4", "webm"),
+    # Todos os formatos do conversor; os oferecidos dependem do tipo da origem (CONVERT_FORMATS).
+    "convert": ("mp4", "mkv", "webm", "mov", "avi", "mp3", "m4a", "opus", "ogg", "flac", "wav",
+                "aiff", "png", "jpg", "webp", "bmp", "tiff", "srt", "ass", "vtt", "pdf", "docx",
+                "html", "txt", "md"),
     "speed": ("0.25", "0.5", "0.75", "1.25", "1.5", "2", "3", "4"),
     "rotate": ("cw", "ccw", "180", "flip_h", "flip_v"),
     "gif": ("480", "640", "800"),
@@ -91,12 +97,37 @@ AUDIO_CODECS: dict[str, list[str]] = {
     ".ogg": ["-c:a", "libvorbis", "-q:a", "5"],
     ".flac": ["-c:a", "flac"],
     ".wav": ["-c:a", "pcm_s16le"],
+    ".aiff": ["-c:a", "pcm_s16be"],
 }
 VIDEO_CONTAINERS = frozenset({".mp4", ".m4v", ".mov", ".mkv", ".webm"})
 MP4_FAMILY = frozenset({".mp4", ".m4v", ".mov"})
+H264_CONTAINERS = frozenset({".mp4", ".m4v", ".mov", ".mkv"})
 IMAGE_ARGS: dict[str, list[str]] = {
     ".png": [], ".jpg": ["-q:v", "2"], ".jpeg": ["-q:v", "2"], ".webp": ["-q:v", "90"],
 }
+CONVERT_IMAGE_ARGS = {**IMAGE_ARGS, ".bmp": [], ".tiff": []}
+
+# Conversor: o tipo da origem (pela extensão, sem I/O na UI) decide os formatos oferecidos.
+# Extensão desconhecida conta como vídeo; o ffprobe confirma as faixas no worker.
+AUDIO_SOURCES = frozenset({".mp3", ".m4a", ".aac", ".ogg", ".oga", ".opus", ".wav", ".flac",
+                           ".wma", ".ac3", ".eac3", ".aif", ".aiff", ".alac", ".mka", ".amr"})
+IMAGE_SOURCES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"})
+SUBTITLE_SOURCES = frozenset({".srt", ".ass", ".ssa", ".vtt"})
+# Documentos e imagem → PDF não passam pelo FFmpeg: ``documents.py`` usa o Qt (no worker).
+DOCUMENT_SOURCES = frozenset({".txt", ".md", ".markdown", ".html", ".htm", ".docx", ".odt"})
+AUDIO_FORMATS = ("mp3", "m4a", "opus", "ogg", "flac", "wav", "aiff")
+CONVERT_FORMATS: dict[str, tuple[str, ...]] = {
+    "video": ("mp4", "mkv", "webm", "mov", "avi", *AUDIO_FORMATS),
+    "audio": AUDIO_FORMATS,
+    "image": ("png", "jpg", "webp", "bmp", "tiff", "pdf"),
+    "subtitle": ("srt", "ass", "vtt"),
+    "document": ("pdf", "docx", "html", "txt", "md"),
+}
+# Extensões equivalentes que a pessoa pode digitar no destino.
+FORMAT_ALIASES = {"jpeg": "jpg", "tif": "tiff", "m4v": "mp4", "aif": "aiff", "htm": "html",
+                  "markdown": "md"}
+# H.264 e MPEG-4 recusam largura ou altura ímpar em yuv420p (GIF e imagens de celular).
+EVEN_SIZE_FILTER = "scale=trunc(iw/2)*2:trunc(ih/2)*2"
 SUBTITLE_CODECS = {".srt": "srt", ".ass": "ass", ".vtt": "webvtt"}
 # Legendas em texto (as únicas que viram .srt/.ass/.vtt); PGS, DVD e DVB são imagens.
 TEXT_SUBTITLE_CODECS = frozenset({"subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "text",
@@ -117,6 +148,46 @@ def _same_container(source: Path) -> str:
     return suffix if suffix in VIDEO_CONTAINERS else ".mkv"
 
 
+def source_kind(source: Path) -> str:
+    """``video``, ``audio``, ``image``, ``subtitle`` ou ``document``, só pela extensão."""
+    suffix = source.suffix.casefold()
+    if suffix in AUDIO_SOURCES:
+        return "audio"
+    if suffix in IMAGE_SOURCES:
+        return "image"
+    if suffix in SUBTITLE_SOURCES:
+        return "subtitle"
+    if suffix in DOCUMENT_SOURCES:
+        return "document"
+    return "video"
+
+
+def is_document_job(options: MediaToolOptions) -> bool:
+    """Conversões feitas pelo Qt em ``documents.py``, sem comando do FFmpeg."""
+    return options.operation == "convert" and (
+        source_kind(options.source) == "document" or _format_of(options.destination) == "pdf")
+
+
+def _format_of(path: Path) -> str:
+    suffix = path.suffix.casefold().lstrip(".")
+    return FORMAT_ALIASES.get(suffix, suffix)
+
+
+def convert_choice(source: Path, choice: str = "") -> str:
+    """Formato válido para converter ``source``: o pedido, se servir, senão o padrão.
+
+    Vídeo sugere sempre MP4 (reencodar um MP4 estranho para H.264 é o uso mais comum);
+    os demais sugerem o primeiro que muda alguma coisa (PNG sugere JPG, MP3 sugere M4A)."""
+    kind = source_kind(source)
+    formats = CONVERT_FORMATS[kind]
+    if choice in formats:
+        return choice
+    if kind == "video":
+        return formats[0]
+    current = _format_of(source)
+    return next((value for value in formats if value != current), formats[0])
+
+
 def _normalized_extension(source: Path) -> str:
     suffix = source.suffix.casefold()
     if suffix in AUDIO_CODECS:
@@ -132,7 +203,7 @@ def default_destination(source: Path, operation: str, subtitles: Path | None = N
         extension = ".mp4" if (source.suffix.casefold() in {".mp4", ".m4v", ".mov"}
                                and not ass) else ".mkv"
         return available_destination(source.with_name(f"{source.stem}_legendado{extension}"))
-    choice = choice_of(operation, choice)
+    choice = convert_choice(source, choice) if operation == "convert" else choice_of(operation, choice)
     if operation == "extract_subs":
         # Nome de legenda "ao lado": o player a encontra sozinho.
         return available_destination(source.with_name(f"{source.stem}.{choice}"))
@@ -194,8 +265,9 @@ def media_duration(source: Path, toolchain: Toolchain) -> float:
     """Lê a duração fora da UI; falha apenas torna o progresso indeterminado."""
     try:
         result = subprocess.run(
-            [str(toolchain.ffprobe), "-v", "error", "-show_entries", "format=duration",
-             "-of", "default=nokey=1:noprint_wrappers=1", str(source)],
+            [str(toolchain.ffprobe), "-v", "error", *INPUT_PROTOCOLS,
+             "-show_entries", "format=duration",
+             "-of", "default=nokey=1:noprint_wrappers=1", _ffmpeg_path(source)],
             capture_output=True,
             text=True,
             timeout=30,
@@ -209,8 +281,10 @@ def media_duration(source: Path, toolchain: Toolchain) -> float:
 
 def operation_duration(options: MediaToolOptions, toolchain: Toolchain) -> float:
     """Duração da *saída*, que é o que o progresso do FFmpeg mede (0 = indeterminado)."""
-    total = media_duration(options.source, toolchain)
     operation = options.operation
+    if operation == "convert" and source_kind(options.source) in {"image", "subtitle", "document"}:
+        return 0.0   # instantâneo; uma imagem "dura" 0,04 s e o progresso só piscaria
+    total = media_duration(options.source, toolchain)
     if operation == "speed":
         return total / float(choice_of("speed", options.choice))
     if operation == "frame":
@@ -240,9 +314,9 @@ def subtitle_streams(source: Path, toolchain: Toolchain) -> list[dict]:
     """Faixas de legenda do arquivo: ``[{"index": 2, "codec_name": "subrip", ...}]``."""
     try:
         result = subprocess.run(
-            [str(toolchain.ffprobe), "-v", "error", "-select_streams", "s",
+            [str(toolchain.ffprobe), "-v", "error", *INPUT_PROTOCOLS, "-select_streams", "s",
              "-show_entries", "stream=index,codec_name:stream_tags=language,title",
-             "-of", "json", str(source)],
+             "-of", "json", _ffmpeg_path(source)],
             capture_output=True, text=True, timeout=30, check=False,
             creationflags=CREATE_NO_WINDOW,
         )
@@ -252,8 +326,48 @@ def subtitle_streams(source: Path, toolchain: Toolchain) -> list[dict]:
     return [item for item in streams if isinstance(item, dict) and isinstance(item.get("index"), int)]
 
 
+def stream_types(source: Path, toolchain: Toolchain) -> set[str] | None:
+    """Tipos de faixa do arquivo (``video``, ``audio``…); ``None`` se o ffprobe falhar.
+
+    Capas embutidas (MP3/M4A com imagem) aparecem como vídeo ``attached_pic`` e não contam."""
+    try:
+        result = subprocess.run(
+            [str(toolchain.ffprobe), "-v", "error", *INPUT_PROTOCOLS,
+             "-show_entries", "stream=codec_type:stream_disposition=attached_pic",
+             "-of", "json", _ffmpeg_path(source)],
+            capture_output=True, text=True, timeout=30, check=False,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        if result.returncode != 0:
+            return None
+        streams = json.loads(result.stdout or "{}").get("streams", [])
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    return {str(item.get("codec_type", "")) for item in streams if isinstance(item, dict)
+            and not (item.get("disposition") or {}).get("attached_pic")}
+
+
+def _resolve_convert(options: MediaToolOptions, toolchain: Toolchain) -> MediaToolOptions:
+    """Recusa cedo, com mensagem clara, o vídeo sem imagem ou sem som (WebM só de áudio…)."""
+    if source_kind(options.source) != "video":
+        return options
+    target = _format_of(options.destination)
+    types = stream_types(options.source, toolchain)
+    if types is None:
+        return options   # o FFmpeg dá a palavra final
+    if target in AUDIO_FORMATS:
+        if "audio" not in types:
+            raise MediaToolError("Este arquivo não tem áudio para converter.")
+    elif "video" not in types:
+        raise MediaToolError("Este arquivo só tem áudio; escolha um formato de áudio "
+                             "(MP3, M4A, Opus…).")
+    return options
+
+
 def resolve_options(options: MediaToolOptions, toolchain: Toolchain) -> MediaToolOptions:
     """Completa o que só o ffprobe sabe (fora da UI) e recusa cedo o que não tem como dar certo."""
+    if options.operation == "convert":
+        return _resolve_convert(options, toolchain)
     if options.operation != "extract_subs":
         return options
     streams = subtitle_streams(options.source, toolchain)
@@ -315,18 +429,37 @@ def _audio_args(destination: Path) -> list[str]:
     return list(args)
 
 
-def _convert_args(destination: Path) -> list[str]:
-    suffix = destination.suffix.casefold()
-    if suffix == ".webm":
-        return ["-map", "0:v:0", "-map", "0:a?", "-pix_fmt", "yuv420p",
-                "-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-row-mt", "1",
+def _convert_args(source: Path, destination: Path) -> list[str]:
+    """Conversor geral: o tipo da origem limita os formatos e a extensão final escolhe o codec."""
+    kind = source_kind(source)
+    target = _format_of(destination)
+    formats = CONVERT_FORMATS[kind]
+    if target not in formats:
+        listed = ", ".join(f".{value}" for value in formats)
+        raise MediaToolError(f"Use {listed} como extensão de saída para este arquivo.")
+    if kind == "document" or target == "pdf":
+        raise MediaToolError("Documentos e PDF são convertidos sem o FFmpeg.")
+    if target in AUDIO_FORMATS:
+        return ["-vn", "-map", "0:a:0", *AUDIO_CODECS[f".{target}"]]
+    if kind == "image":
+        # -update 1: o nome de saída nunca vira padrão de sequência (foto%03d.png).
+        return ["-map", "0:v:0", "-frames:v", "1", "-update", "1", *CONVERT_IMAGE_ARGS[f".{target}"]]
+    if kind == "subtitle":
+        return ["-map", "0:s:0", "-c:s", SUBTITLE_CODECS[f".{target}"]]
+    video = ["-map", "0:v:0", "-map", "0:a?", "-vf", EVEN_SIZE_FILTER, "-pix_fmt", "yuv420p"]
+    if target == "webm":
+        return [*video, "-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-row-mt", "1",
                 "-deadline", "good", "-cpu-used", "3",
                 "-c:a", "libopus", "-b:a", "128k"]
-    if suffix in VIDEO_CONTAINERS:
-        return ["-map", "0:v:0", "-map", "0:a?", "-pix_fmt", "yuv420p",
-                "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-                "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
-    raise MediaToolError("Use .mp4, .mkv ou .webm como extensão de saída.")
+    if target == "avi":
+        # MPEG-4 Part 2 (Xvid) + MP3: o que TVs, DVDs e players antigos esperam de um AVI.
+        return [*video, "-c:v", "mpeg4", "-q:v", "3", "-tag:v", "XVID",
+                "-c:a", "libmp3lame", "-q:a", "2"]
+    args = [*video, "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+            "-c:a", "aac", "-b:a", "192k"]
+    if destination.suffix.casefold() in MP4_FAMILY:
+        args += ["-movflags", "+faststart"]
+    return args
 
 
 def _atempo_chain(factor: float) -> str:
@@ -431,7 +564,10 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain, *, video_enco
     command = [str(toolchain.ffmpeg), "-hide_banner", "-n"]
     if options.operation in TIMED_OPERATIONS | {"frame"} and options.start:
         command += ["-ss", options.start]
-    command += ["-i", str(options.source)]
+    if options.operation == "convert" and source_kind(options.source) == "image":
+        # O demuxer de imagens trata "%d" no nome como sequência (foto%d.png não abria).
+        command += ["-f", "image2", "-pattern_type", "none"]
+    command += [*INPUT_PROTOCOLS, "-i", _ffmpeg_path(options.source)]
 
     # Buscar antes da entrada é rápido; ao reencodar, o FFmpeg decodifica
     # desde o quadro-chave anterior e descarta os quadros antes de -ss.
@@ -490,7 +626,7 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain, *, video_enco
         # A legenda nova entra como PRIMEIRA faixa de legenda (s:0), para que o
         # idioma e a marcação "padrão" apontem para ela e não para uma antiga.
         mp4 = options.destination.suffix.casefold() in {".mp4", ".m4v", ".mov"}
-        command += ["-i", str(options.subtitles),
+        command += [*INPUT_PROTOCOLS, "-i", _ffmpeg_path(options.subtitles),
                     "-map", "0:v?", "-map", "0:a?", "-map", "1:0", "-map", "0:s?"]
         if not mp4:
             command += ["-map", "0:t?"]  # fontes/capas anexadas só existem em MKV
@@ -510,7 +646,7 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain, *, video_enco
     elif options.operation == "target_size":
         command += _target_size_args(options, toolchain)
     elif options.operation == "convert":
-        command += _convert_args(options.destination)
+        command += _convert_args(options.source, options.destination)
     elif options.operation == "speed":
         command += _speed_args(float(choice_of("speed", options.choice)))
     elif options.operation == "rotate":
@@ -565,8 +701,22 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain, *, video_enco
 
 
 def _finish(command: list[str], options: MediaToolOptions) -> list[str]:
-    command += ["-progress", "pipe:1", "-nostats", str(options.destination)]
+    command += ["-progress", "pipe:1", "-nostats", _ffmpeg_path(options.destination)]
     return command
+
+
+# Entradas só podem abrir arquivos locais: um "vídeo" que na verdade é uma playlist HLS,
+# um ffconcat ou um SDP não consegue buscar URLs (rede/SSRF) nem outros protocolos.
+INPUT_PROTOCOLS = ("-protocol_whitelist", "file")
+
+
+def _ffmpeg_path(path: Path | None) -> str:
+    """Caminho absoluto para o FFmpeg/ffprobe.
+
+    Relativo, um nome digitado como ``-y.mp4`` virava opção e ``pipe:1``/``http:x`` viravam
+    protocolo. Absoluto sempre começa com ``/`` ou com a unidade (``C:``), que o FFmpeg trata
+    como arquivo."""
+    return str(Path(path).absolute()) if path is not None else ""
 
 
 def preferred_video_encoder(toolchain: Toolchain) -> str:

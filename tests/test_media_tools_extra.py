@@ -142,7 +142,7 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(mp4[mp4.index("-c:v") + 1], "libx264")
         self.assertIn("yuv420p", mp4)
         with self.assertRaisesRegex(MediaToolError, r"\.mp4"):
-            self.command("convert", "o.avi")
+            self.command("convert", "o.xyz")
 
     def test_gpu_so_onde_existe_encoder(self) -> None:
         def gpu(operation: str, destination: str) -> bool:

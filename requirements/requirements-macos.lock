@@ -1396,6 +1396,10 @@ pyobjc-framework-devicecheck==12.2.2 \
     --hash=sha256:6055f80fbb8f0eabbce29dcb5d170ee68c41318f409624ba8480ddc02703e86c \
     --hash=sha256:6ffcff3a171b1a27bdbad47fb279a92e872f9c9ccff1e5458f57841d61089fb5
     # via -r requirements-macos.txt
+pyobjc-framework-devicediscoveryextension==12.2.2 \
+    --hash=sha256:23f17405f1460baa078d692648819896367c89b2b27fae76907d1c51fc7c84d4 \
+    --hash=sha256:5122a256914111644a9d3bcec60b98fed221455f5787d2f5f654e9bd6c006004
+    # via -r requirements-macos.txt
 pyobjc-framework-dictionaryservices==12.2.2 \
     --hash=sha256:e24684ba02108f33dc764b480df52211ff91d37a6c438f9e95353ecdded14839 \
     --hash=sha256:f247a30085e95aba5a2fab4fe6b5d6ed159d6730c75e84da54df4c5191e91156
@@ -1496,6 +1500,18 @@ pyobjc-framework-fsevents==12.2.2 \
     --hash=sha256:efdb4bb1425273e44acae13c376a8ad6ddbb10c47b62fcd7977161c01639049f \
     --hash=sha256:ff6d30dae070b0f3908912eab573b13d8a1612523eaf4216736df0201c75f4ff
     # via pyobjc-framework-coreservices
+pyobjc-framework-fskit==12.2.2 \
+    --hash=sha256:05cf7546a5f5e7defbded7a1f14c6c48aba238736934e44e4d651a27a5c8796e \
+    --hash=sha256:1d8be456f6fb3c956137640de0b9ccfcefee02b27480d7d67679e092a5ebd17b \
+    --hash=sha256:1ea0a7ded7a2f14a54b9e3e915c3425ad58c10982903b1d48e0c5c9915122400 \
+    --hash=sha256:24b87e8cbfa85330f46d3593ab35509cbe977910e3a902455400689177a4d722 \
+    --hash=sha256:3ea50165b8d40f75ec69193d7a96498c2ecf6c4cc04d2af0bd83bdcbd6834629 \
+    --hash=sha256:4b1a962424d3da5bb169c74765381328828468fddeb2ce469d886b4f36b7c2e2 \
+    --hash=sha256:67f43d7d29fdd0f48b4b71d9364a1024284e697444d9dfc98a67976a416edb42 \
+    --hash=sha256:8d9bea45f63f0bbdae7d0ed78c6f79029547a0aee221e320863e40ba30aaeabc \
+    --hash=sha256:c674167a128fecdf97e20f53a1bdac99bf6dd55552c48d26afb1fb25cd0d447b \
+    --hash=sha256:ebc83677068a73e4e3a26d218013b7f6c3a0b5a43b3499109acf4346db240070
+    # via -r requirements-macos.txt
 pyobjc-framework-gamecenter==12.2.2 \
     --hash=sha256:2edf18ecf6b65d44c65515e48c1bd8270daea73d813b157a8c2360127a267d22 \
     --hash=sha256:5110d03fd84576135a33d2363c53cefc48f8e47ba67ef51e7c452581de39a3c4 \
@@ -1717,6 +1733,18 @@ pyobjc-framework-mapkit==12.2.2 \
 pyobjc-framework-mediaaccessibility==12.2.2 \
     --hash=sha256:5a424937103fe48b8dbcaff1ade0354c494dc32af41010f2981eca62bbba280a \
     --hash=sha256:a89d39e138351e508dfc4a1fc50e54013073f4705f08fdfcdf1cdcbe9f0bb570
+    # via -r requirements-macos.txt
+pyobjc-framework-mediaextension==12.2.2 \
+    --hash=sha256:16202c5098223f2b1cf542ef3833f7b1a9b0da9550f9d835018fd2401ca5820f \
+    --hash=sha256:27421cd4f92991b566309e08753b957d57098d5e72bee2428621cf87d973cb7b \
+    --hash=sha256:3c0db2bf76b39e0e2ee10ceab01df87864a4d3b7507d296d4da188ffb9705494 \
+    --hash=sha256:4740dd34cc93562113653af7af83fc496025d4b61c6678ef1d4905c3d89278db \
+    --hash=sha256:6b1d9ca9da8c07f250f0e1de9dcd8c15cfc368f205aae178178da8fd3a52cadb \
+    --hash=sha256:76c2c6e3fa7803e411c9927336d8946af1e3b4fb1c578ea75b66308f7c2c9da6 \
+    --hash=sha256:7adf7caa19a4a0086475c93bb3dcf94313cf3df42c1bc202c904111111462166 \
+    --hash=sha256:b4e2c6df795c45cde7ef7b4862cb49396766f09cf76235756cbc8695855c3d35 \
+    --hash=sha256:d846b52871bac210061c34c567e64451c5f4e9048fa83864bc287bd5b5f0f703 \
+    --hash=sha256:edad3569998c0fffc2604810a7a517a8bb403ab7d8b17f314bb4c7f9b71e94f2
     # via -r requirements-macos.txt
 pyobjc-framework-medialibrary==12.2.2 \
     --hash=sha256:0db2ddd533edc63d7d28816c8c392b8d3095c3cf06a56652fff937c20cac117e \
@@ -2126,6 +2154,10 @@ pyobjc-framework-securityinterface==12.2.2 \
     --hash=sha256:c0415292f5f226b3dc7e3e43d59a4d602a294809df89e208805e8dfaee113599 \
     --hash=sha256:d93cfd0caf22143e85eb62781cbcf38b4c149599eb3677663dab90009740929a
     # via pyobjc
+pyobjc-framework-securityui==12.2.2 \
+    --hash=sha256:3409af0782023757564d9a71781e4da6a483de159385c2c741e54b895ba35976 \
+    --hash=sha256:656475666560782130cd052f449ba1d011b04ea86b96914487a10da2a5314cb2
+    # via -r requirements-macos.txt
 pyobjc-framework-sensitivecontentanalysis==12.2.2 \
     --hash=sha256:31bb9c2d8d039e91a408db5943f72b01776b0ba87090f587441971fad03c487e \
     --hash=sha256:561d8b54012b3ea57ab556ff0f5e35139bbecf0e3dceb1335458bf5c7c7218aa

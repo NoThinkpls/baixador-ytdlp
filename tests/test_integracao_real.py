@@ -17,7 +17,7 @@ from pathlib import Path
 from baixador_ytdlp.config import Settings
 from baixador_ytdlp.downloader import DownloadOptions, build_args
 from baixador_ytdlp.media_tools import (
-    CHOICES, MediaToolOptions, build_command, operation_duration, resolve_options,
+    CHOICES, CONVERT_FORMATS, MediaToolOptions, build_command, operation_duration, resolve_options,
 )
 from baixador_ytdlp.tools import Toolchain
 
@@ -163,6 +163,8 @@ class FerramentasDeMidiaComFfmpegRealTests(unittest.TestCase):
             for valor in valores:
                 if operacao == "extract_subs":
                     continue   # o clipe de teste não tem legenda embutida (coberto à parte)
+                if operacao == "convert" and valor not in CONVERT_FORMATS["video"]:
+                    continue   # imagem e legenda pedem outra origem (test_conversor_formatos)
                 with self.subTest(operacao=operacao, valor=valor):
                     if operacao in extensao:
                         nome = f"{operacao}_{valor}.{valor}"
