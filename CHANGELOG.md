@@ -3,6 +3,31 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.16.0] - 2026-10-30
+
+### Adicionado
+
+- **Converter formato** virou um conversor geral, com o FFmpeg que o app já baixa. A lista de
+  formatos acompanha o arquivo escolhido (só pela extensão, sem travar a tela):
+  - vídeo → MP4, MKV e MOV (H.264), WebM (VP9), AVI (Xvid + MP3) ou só o áudio;
+  - áudio → MP3, M4A, Opus, OGG, FLAC, WAV ou AIFF;
+  - imagem → PNG, JPG, WebP, BMP ou TIFF;
+  - legenda → SRT, ASS ou VTT.
+  GIF animado entra como vídeo. Vídeo sem imagem (WebM só de áudio) ou sem som é recusado
+  antes de começar, com uma mensagem que diz o que escolher. Largura ou altura ímpar (GIF,
+  imagem de celular) não derruba mais o H.264. A GPU só entra nas saídas H.264 (MP4, MKV,
+  MOV); WebM, AVI, áudio, imagem e legenda ficam na CPU.
+
+### Segurança
+
+- Todas as ferramentas passam ao FFmpeg/ffprobe caminhos absolutos: um nome relativo como
+  `-y.mp4` virava opção e `pipe:`/`http:` viravam protocolo.
+- As entradas só abrem arquivos locais (`-protocol_whitelist file`): uma playlist HLS ou
+  um ffconcat disfarçado de vídeo não consegue buscar URLs (rede/SSRF). Teste com servidor
+  local confirma que nenhuma conexão sai.
+- Imagem com `%` no nome não é lida como sequência (`-pattern_type none`) e a saída usa
+  `-update 1`.
+
 ## [1.15.1] - 2026-10-26
 
 ### Corrigido

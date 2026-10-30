@@ -78,7 +78,9 @@ and video tools. Free, open source, and nothing leaves your computer.
 
 ### Video tools
 
-- 16 tools in five groups: trim, **change speed**, rotate/flip and vertical video (Shorts/Reels); extract audio (MP3, M4A, Opus, FLAC, WAV), **normalize volume** and remove audio; **convert to MP4 or WebM**, remux without loss, shrink and **fit under a size limit** (Discord, WhatsApp, email); **make GIFs** and **capture a frame**; add and **extract subtitles** and **strip metadata** (GPS, title, camera).
+- 16 tools in five groups: trim, **change speed**, rotate/flip and vertical video (Shorts/Reels); extract audio (MP3, M4A, Opus, FLAC, WAV), **normalize volume** and remove audio; **convert format**, remux without loss, shrink and **fit under a size limit** (Discord, WhatsApp, email); **make GIFs** and **capture a frame**; add and **extract subtitles** and **strip metadata** (GPS, title, camera).
+- **Convert format** takes video, audio, images and subtitles and only offers what makes sense for the chosen file: video becomes MP4, MKV, MOV (H.264), WebM (VP9), AVI (Xvid) or just the audio; audio becomes MP3, M4A, Opus, OGG, FLAC, WAV or AIFF; images become PNG, JPG, WebP, BMP or TIFF; subtitles become SRT, ASS or VTT. Limits: animated GIF/WebP are not read as images (convert the GIF as a video), JPG and BMP drop transparency, and ASS to SRT/VTT loses colors and positions.
+- Security: FFmpeg always gets absolute paths (a name like `-y.mp4` never becomes an option) and inputs may only open local files (`-protocol_whitelist file`), so a malicious playlist or file cannot reach out to the network.
 - Conversion through **NVENC, AMF or VideoToolbox** when available, falling back to the CPU if the GPU fails. The original file is never modified.
 
 <div align="center">

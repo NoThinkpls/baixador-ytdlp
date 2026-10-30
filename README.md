@@ -81,7 +81,9 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 
 ### Ferramentas de vídeo
 
-- 16 ferramentas em cinco grupos: recortar, **ajustar velocidade**, girar/espelhar e criar versão vertical (Shorts/Reels); extrair áudio (MP3, M4A, Opus, FLAC, WAV), **nivelar volume** e remover áudio; **converter para MP4 ou WebM**, trocar contêiner sem perda, reduzir tamanho e **caber num limite** (Discord, WhatsApp, e-mail); **criar GIF** e **capturar imagem**; adicionar e **extrair legendas** e **limpar metadados** (GPS, título, câmera).
+- 16 ferramentas em cinco grupos: recortar, **ajustar velocidade**, girar/espelhar e criar versão vertical (Shorts/Reels); extrair áudio (MP3, M4A, Opus, FLAC, WAV), **nivelar volume** e remover áudio; **converter formato**, trocar contêiner sem perda, reduzir tamanho e **caber num limite** (Discord, WhatsApp, e-mail); **criar GIF** e **capturar imagem**; adicionar e **extrair legendas** e **limpar metadados** (GPS, título, câmera).
+- **Converter formato** aceita vídeo, áudio, imagem e legenda e só oferece o que faz sentido para o arquivo escolhido: vídeo vira MP4, MKV, MOV (H.264), WebM (VP9), AVI (Xvid) ou só o áudio; áudio vira MP3, M4A, Opus, OGG, FLAC, WAV ou AIFF; imagem vira PNG, JPG, WebP, BMP ou TIFF; legenda vira SRT, ASS ou VTT. Limitações: GIF animado e WebP animado não entram como imagem (use o GIF como vídeo), JPG e BMP perdem a transparência, e ASS para SRT/VTT perde cores e posições.
+- Segurança: o FFmpeg recebe sempre caminhos absolutos (um nome como `-y.mp4` nunca vira opção) e as entradas só podem abrir arquivos locais (`-protocol_whitelist file`), então uma playlist ou arquivo malicioso não consegue buscar endereços na rede.
 - Conversão por **NVENC, AMF ou VideoToolbox** quando disponível, com retorno para a CPU se a GPU falhar. O arquivo original nunca é alterado.
 
 <div align="center">

@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QApplication
 from unittest.mock import patch
 
 from baixador_ytdlp.config import Settings
-from baixador_ytdlp.media_tools import CHOICES, DEFAULT_CHOICE
+from baixador_ytdlp.media_tools import CHOICES, CONVERT_FORMATS, DEFAULT_CHOICE
 from baixador_ytdlp.ui import i18n
 from baixador_ytdlp.ui.media_tools_page import GROUPS, OPERATIONS, MediaToolsPage
 
@@ -97,7 +97,11 @@ class MediaToolsLayoutTests(unittest.TestCase):
         for operation, data in OPERATIONS.items():
             choice = data.get("choice")
             self.assertEqual(bool(choice), operation in CHOICES, operation)
-            if choice:
+            if choice and operation == "convert":
+                # O conversor troca a lista conforme o arquivo; juntas, cobrem CHOICES.
+                every = {value for values in CONVERT_FORMATS.values() for value in values}
+                self.assertEqual(every, set(CHOICES["convert"]))
+            elif choice:
                 values = tuple(value for _label, value in choice["options"])
                 self.assertEqual(values, CHOICES[operation], operation)
                 self.assertIn(DEFAULT_CHOICE[operation], values, operation)

@@ -281,12 +281,36 @@ EN: dict[str, str] = {
     "Crie uma cópia do vídeo sem som, sem recodificar a imagem.":
         "Create a copy of the video without sound, without re-encoding the picture.",
     "Converter formato": "Convert format",
-    "Reencode para MP4 (H.264) ou WebM (VP9) e abra em qualquer aparelho.":
-        "Re-encode to MP4 (H.264) or WebM (VP9) and play it on any device.",
+    "Converta vídeo, áudio, imagem ou legenda para outro formato.":
+        "Convert video, audio, images or subtitles to another format.",
     "Converter": "Convert", "Formato de saída": "Output format",
-    "MP4 abre em qualquer lugar; WebM é ideal para sites e costuma ficar menor, mas demora mais.":
-        "MP4 opens anywhere; WebM suits websites and is often smaller, but takes longer.",
-    "MP4 — H.264 e AAC": "MP4 — H.264 and AAC", "WebM — VP9 e Opus (mais lento)": "WebM — VP9 and Opus (slower)",
+    "Arquivo de vídeo, áudio, imagem ou legenda": "Video, audio, image or subtitle file",
+    "Arquivo de vídeo ou áudio de origem": "Source video or audio file",
+    "Vídeo vira outro vídeo ou só o áudio. MP4 abre em qualquer lugar; WebM costuma ficar "
+    "menor, mas demora mais.":
+        "Video becomes another video or just the audio. MP4 opens anywhere; WebM is often "
+        "smaller, but takes longer.",
+    "MP3 toca em tudo; M4A e Opus rendem mais por megabyte; FLAC, WAV e AIFF não perdem "
+    "qualidade.":
+        "MP3 plays everywhere; M4A and Opus give more per megabyte; FLAC, WAV and AIFF are "
+        "lossless.",
+    "PNG não perde qualidade; JPG e WebP ficam bem menores. JPG e BMP não têm transparência.":
+        "PNG is lossless; JPG and WebP are much smaller. JPG and BMP have no transparency.",
+    "SRT é o mais aceito; ASS guarda estilo; VTT é o da web. Converter de ASS para SRT ou VTT "
+    "perde cores e posições.":
+        "SRT is the most widely accepted; ASS keeps styling; VTT is for the web. Converting ASS "
+        "to SRT or VTT loses colors and positions.",
+    "MP4 — H.264, abre em tudo": "MP4 — H.264, opens anywhere",
+    "MKV — H.264, guarda várias faixas": "MKV — H.264, keeps several tracks",
+    "WebM — VP9, para sites (mais lento)": "WebM — VP9, for websites (slower)",
+    "MOV — H.264, Apple e editores": "MOV — H.264, Apple and editors",
+    "AVI — Xvid e MP3, TVs e players antigos": "AVI — Xvid and MP3, TVs and older players",
+    "MP3 — áudio compatível com tudo": "MP3 — audio that plays everywhere",
+    "Opus — áudio menor": "Opus — smaller audio", "OGG (Vorbis) — áudio livre": "OGG (Vorbis) — open audio",
+    "FLAC — áudio sem perda": "FLAC — lossless audio", "WAV — áudio sem compressão": "WAV — uncompressed audio",
+    "AIFF — sem compressão, Mac": "AIFF — uncompressed, Mac",
+    "BMP — sem compressão": "BMP — uncompressed", "TIFF — impressão e edição": "TIFF — print and editing",
+    "ASS — com estilo": "ASS — with styling",
     "Converta para MKV sem mexer em imagem ou som.": "Convert to MKV without touching picture or sound.",
     "Crie um MP4 menor, equilibrando tamanho e qualidade.": "Create a smaller MP4, balancing size and quality.",
     "Comprima para caber no limite do Discord, WhatsApp ou e-mail.":
