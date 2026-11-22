@@ -26,8 +26,8 @@ from .downloader import (DownloadError, DownloadOptions, Progress, Transcoder, i
                          vp9_mp4_to_mkv)
 from .gpu import GpuInfo, detect, forget_negative_cache
 from .documents import convert_document, image_to_pdf
-from .media_tools import (MediaToolError, MediaToolOptions, build_command, is_document_job,
-                          media_duration, operation_duration, preferred_video_encoder,
+from .media_tools import (MediaToolError, MediaToolOptions, build_command, compress_gpu_encoder,
+                          is_document_job, media_duration, operation_duration, preferred_video_encoder,
                           progress_seconds, resolve_options, source_kind, uses_gpu)
 from .parallel_section import create_runner
 from .processes import (CREATE_NO_WINDOW, attach_pid_to_kill_job, popen_isolated, release_job,
@@ -181,7 +181,11 @@ class MediaToolWorker(QThread):
                 self.progress_value.emit(100)
                 self.finished_ok.emit(str(self.options.destination))
                 return
-            encoder = preferred_video_encoder(self.tc) if uses_gpu(self.options) else ""
+            if self.options.operation == "compress":
+                # Reduzir tamanho: GPU do codec escolhido (H.265, AV1…), se houver.
+                encoder = compress_gpu_encoder(self.options, self.tc)
+            else:
+                encoder = preferred_video_encoder(self.tc) if uses_gpu(self.options) else ""
             for selected in ([encoder, ""] if encoder else [""]):
                 command = build_command(self.options, self.tc, video_encoder=selected)
                 label = "GPU" if selected else "CPU"

@@ -327,6 +327,48 @@ EN: dict[str, str] = {
     "ASS — com estilo": "ASS — with styling",
     "Converta para MKV sem mexer em imagem ou som.": "Convert to MKV without touching picture or sound.",
     "Crie um MP4 menor, equilibrando tamanho e qualidade.": "Create a smaller MP4, balancing size and quality.",
+    "Crie um vídeo menor escolhendo o codec, o tamanho e o formato final.":
+        "Create a smaller video by choosing the codec, size and output format.",
+    "Formato final": "Output format",
+    "MP4 — abre em qualquer lugar": "MP4 — plays anywhere",
+    "MKV — aceita todos os codecs": "MKV — accepts every codec",
+    "WebM — VP9 ou AV1, para a web": "WebM — VP9 or AV1, for the web",
+    "MOV — Apple e editores": "MOV — Apple and editors",
+    "MP3 — só o áudio": "MP3 — audio only", "M4A (AAC) — só o áudio": "M4A (AAC) — audio only",
+    "Opus — só o áudio, o menor": "Opus — audio only, the smallest",
+    "WebM aceita só VP9 ou AV1; MOV não aceita AV1. MP3, M4A e Opus guardam apenas o som.":
+        "WebM accepts only VP9 or AV1; MOV does not accept AV1. MP3, M4A and Opus keep only "
+        "the sound.",
+    "H.264 — CPU": "H.264 — CPU", "H.264 — GPU": "H.264 — GPU", "H.265 — CPU": "H.265 — CPU",
+    "H.265 — GPU": "H.265 — GPU", "AV1 — GPU": "AV1 — GPU", "VP9 — CPU (WebM)": "VP9 — CPU (WebM)",
+    " (detectando a GPU…)": " (detecting the GPU…)", " (sem GPU compatível)": " (no compatible GPU)",
+    "Codec de vídeo": "Video codec",
+    "H.265 e AV1 deixam o arquivo de 20 a 50% menor que o H.264 na mesma qualidade, "
+    "principalmente em alta resolução. GPU é bem mais rápida; CPU comprime melhor.":
+        "H.265 and AV1 make the file 20 to 50% smaller than H.264 at the same quality, "
+        "especially at high resolution. GPU is much faster; CPU compresses better.",
+    "Método de compressão": "Compression method",
+    "Definir um tamanho de arquivo (porcentagem)": "Set a file size (percentage)",
+    "Definir uma qualidade de vídeo": "Set a video quality",
+    "Tamanho de arquivo mira um tamanho final previsível. Qualidade mantém a aparência e "
+    "deixa o tamanho variar.":
+        "File size aims for a predictable final size. Quality keeps the look and lets the "
+        "size vary.",
+    "Tamanho alvo": "Target size", "Tamanho alvo em porcentagem": "Target size as a percentage",
+    "Porcentagem do arquivo original. Menos compacta mais: com 25%, um arquivo de 100 MB "
+    "fica com cerca de 25 MB.":
+        "Percentage of the original file. Lower compresses more: at 25%, a 100 MB file ends "
+        "up around 25 MB.",
+    "Alta — arquivo maior": "High — larger file",
+    "Equilibrada — recomendada": "Balanced — recommended",
+    "Menor arquivo — perde detalhes": "Smallest file — loses detail",
+    "Qualidade do vídeo": "Video quality", "Qualidade do áudio": "Audio quality",
+    "Quanto maior a qualidade, maior o arquivo final.": "The higher the quality, the larger the file.",
+    "Compatível com aparelhos antigos": "Compatible with older devices",
+    "Usa H.264 com perfil Main, até 1080p e som estéreo, o que celulares, TVs e players "
+    "antigos aceitam. Comprime menos; ligue só se o aparelho for antigo.":
+        "Uses H.264 Main profile, up to 1080p and stereo sound, which older phones, TVs and "
+        "players accept. Compresses less; turn it on only for old devices.",
     "Comprima para caber no limite do Discord, WhatsApp ou e-mail.":
         "Compress to fit the Discord, WhatsApp or email limit.",
     "Criar GIF animado": "Create animated GIF", "Criar GIF": "Create GIF",

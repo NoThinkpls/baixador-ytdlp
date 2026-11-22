@@ -3,6 +3,24 @@
 Todas as mudanças relevantes deste projeto serão registradas aqui, seguindo o
 formato Keep a Changelog.
 
+## [1.17.0] - 2026-11-22
+
+### Adicionado
+
+- **Reduzir tamanho** ganhou as opções de um compressor completo:
+  - **Codec de vídeo**: H.264 ou H.265 na CPU ou na GPU, AV1 na GPU e VP9 na CPU. A GPU
+    usa o encoder que a máquina tiver (NVENC, AMF, Quick Sync, VAAPI, VideoToolbox) e só
+    fica ativa depois que a detecção confirma um compatível; se ela recusar a mídia, a
+    compressão continua na CPU (AV1 cai no SVT-AV1). H.265 em MP4/MOV sai marcado `hvc1`
+    para abrir no QuickTime e no iPhone.
+  - **Método de compressão**: tamanho final em porcentagem do original (1 a 100%, controle
+    deslizante e campo) ou qualidade (alta, equilibrada, menor arquivo).
+  - **Compatível com aparelhos antigos**: H.264 perfil Main nível 4.1, até 1080p, 4:2:0 de
+    8 bits e som estéreo.
+  - **Formato final**: MP4, MKV, WebM, MOV ou só o áudio (MP3, M4A, Opus). Codecs que o
+    formato não aceita ficam desligados (WebM só VP9/AV1 com Opus; MOV sem AV1), e o
+    worker recusa a combinação antes de abrir o FFmpeg.
+
 ## [1.16.0] - 2026-10-30
 
 ### Adicionado
