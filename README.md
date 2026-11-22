@@ -104,6 +104,10 @@ e ferramentas de vídeo. Grátis, de código aberto e sem enviar nada para a nuv
 - Arquivos só de áudio e vídeos sem som são recusados logo no início, com o motivo, em vez de falhar depois da transcrição. Vídeos de celular gravados "deitados" com marca de rotação são tratados como verticais.
 - Limitações: até 20 cortes por vez e 10 minutos por corte. A fonte escolhida precisa estar instalada no computador. O "seguir a pessoa" acompanha na horizontal (não faz zoom variável) e, se a análise falhar, o corte sai centralizado. Para saber quem fala, a boca precisa aparecer: com microfone na frente da boca, rosto de perfil ou muito pequeno (menos de ~25 px), a cena é tratada como "ninguém falando"; duas pessoas falando ao mesmo tempo podem confundir o modelo, que olha mais a boca do que o som. Em conversas muito rápidas a câmera fica pelo menos 2 s em cada pessoa. Num link, o trecho é baixado sem recodificar e o app compensa a sobra até o quadro-chave pela duração; em raros casos o início pode variar uma fração de segundo.
 
+<div align="center">
+<img src="docs/images/cortes-dark.png" alt="Página Cortes" width="720">
+</div>
+
 ### Interface
 
 - Tema claro e escuro, **português e inglês**, barra lateral compacta e ícones próprios.

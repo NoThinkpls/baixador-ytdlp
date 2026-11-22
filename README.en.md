@@ -101,6 +101,10 @@ and video tools. Free, open source, and nothing leaves your computer.
 - Audio-only files and videos without sound are refused right away, with the reason, instead of failing after transcription. Phone videos recorded "sideways" with a rotation flag are treated as vertical.
 - Limits: up to 20 clips at a time and 10 minutes per clip. The chosen font must be installed on the computer. "Follow the person" pans horizontally (no variable zoom) and, if the analysis fails, the clip is centered. From a link, the range is downloaded without re-encoding and the app compensates the extra lead-in up to the keyframe; rarely the start may shift by a fraction of a second.
 
+<div align="center">
+<img src="docs/images/cortes-dark.png" alt="Clips page" width="720">
+</div>
+
 ### Interface
 
 - Light and dark themes, **Portuguese and English** (Settings → Appearance), compact sidebar and custom icons.
