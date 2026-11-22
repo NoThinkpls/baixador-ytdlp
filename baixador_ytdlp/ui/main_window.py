@@ -415,6 +415,7 @@ class MainWindow(AppShell):
             lambda path: self._tray_message("Processamento concluído", Path(path).name)
         )
         self.media_tools.tool_finished.connect(self._on_tool_finished)
+        self.media_tools.gpu_detection_requested.connect(self._media_tools_gpu)
         self.clips.clip_finished.connect(self._on_clip_finished)
         self.clips.taskbar_progress.connect(self._on_clips_progress)
         self.clips.operation_finished.connect(
@@ -741,9 +742,17 @@ class MainWindow(AppShell):
         worker = GpuWorker(self.toolchain.ffmpeg, self)
         self._gpu_worker = worker
         worker.finished_ok.connect(self.settings.set_gpu)
+        worker.finished_ok.connect(self.media_tools.set_gpu)
         worker.finished.connect(worker.deleteLater)
         worker.finished.connect(lambda w=worker: self._clear_gpu_worker(w))
         worker.start()
+
+    def _media_tools_gpu(self) -> None:
+        """Reduzir tamanho quer saber se há GPU: usa a detecção já feita ou agenda uma."""
+        if self.settings._gpu_detected:
+            self.media_tools.set_gpu(self.settings.gpu)
+        else:
+            self.settings.request_gpu_detection()
 
     def _clear_gpu_worker(self, worker: GpuWorker) -> None:
         if self._gpu_worker is worker:

@@ -151,4 +151,4 @@ class FastTrimTests(unittest.TestCase):
         from baixador_ytdlp.media_tools import MediaToolOptions, uses_gpu
 
         self.assertFalse(uses_gpu(MediaToolOptions(Path("a"), Path("b"), "target_size")))
-        self.assertTrue(uses_gpu(MediaToolOptions(Path("a"), Path("b"), "compress")))
+        self.assertTrue(uses_gpu(MediaToolOptions(Path("a"), Path("b.mp4"), "compress")))

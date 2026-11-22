@@ -1,23 +1,25 @@
 """Fluxo guiado para edições locais de mídia com o FFmpeg do aplicativo."""
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QFontMetrics, QPainter, QPen
+from PySide6.QtGui import QFontMetrics, QPainter, QPen, QStandardItemModel
 from PySide6.QtWidgets import (QAbstractButton, QFileDialog, QGridLayout,
-                               QHBoxLayout, QSizePolicy, QStackedWidget, QVBoxLayout,
+                               QHBoxLayout, QSizePolicy, QSlider, QStackedWidget, QVBoxLayout,
                                QWidget)
 
-from ..media_tools import (CONVERT_FORMATS, DEFAULT_CHOICE, MediaToolOptions,
-                           available_destination, convert_choice, default_destination,
-                           source_kind)
+from ..media_tools import (COMPRESS_AUDIO_FORMATS, COMPRESS_PERCENT_RANGE, CONVERT_FORMATS,
+                           DEFAULT_CHOICE, MediaToolOptions, available_destination,
+                           compress_codec_allowed, convert_choice, default_destination,
+                           gpu_encoder_for, source_kind)
 from ..workers import MediaToolWorker
 from . import icons, theme
 from .components import (BreadcrumbChevron, BreadcrumbCurrent, BreadcrumbLink, Button, Divider,
                          Headline, Hint, InsetGroup, Muted, PageHeader, PrimaryButton, ProgressBar,
-                         ScrollColumn, SectionLabel, Select, SettingRow, Switch, TextField,
-                         Toast)
+                         ScrollColumn, SectionLabel, Select, SettingRow, Stepper, Switch,
+                         TextField, Toast)
 from .i18n import tr
 
 MEDIA_FILTER = ("Mídia (*.mp4 *.mkv *.webm *.mov *.avi *.m4v *.ts *.mpg *.mpeg *.wmv *.flv "
@@ -58,6 +60,23 @@ CONVERT_HINTS = {
     "subtitle": "SRT é o mais aceito; ASS guarda estilo; VTT é o da web. Converter de ASS "
                 "para SRT ou VTT perde cores e posições.",
 }
+
+# Reduzir tamanho: codec de vídeo (chave "codec_dispositivo") e o que dizer de cada um.
+# GPU usa NVENC, AMD AMF, Intel Quick Sync, VAAPI ou VideoToolbox, o que a máquina tiver;
+# sem GPU compatível a opção fica desligada, e uma falha no meio cai na CPU.
+COMPRESS_CODECS = (
+    ("h264_cpu", "H.264 — CPU"), ("h264_gpu", "H.264 — GPU"),
+    ("hevc_cpu", "H.265 — CPU"), ("hevc_gpu", "H.265 — GPU"),
+    ("av1_gpu", "AV1 — GPU"), ("vp9_cpu", "VP9 — CPU (WebM)"),
+)
+COMPRESS_FORMAT_OPTIONS = [
+    ("MP4 — abre em qualquer lugar", "mp4"), ("MKV — aceita todos os codecs", "mkv"),
+    ("WebM — VP9 ou AV1, para a web", "webm"), ("MOV — Apple e editores", "mov"),
+    ("MP3 — só o áudio", "mp3"), ("M4A (AAC) — só o áudio", "m4a"),
+    ("Opus — só o áudio, o menor", "opus"),
+]
+COMPRESS_FORMAT_HINT = ("WebM aceita só VP9 ou AV1; MOV não aceita AV1. MP3, M4A e Opus "
+                        "guardam apenas o som.")
 
 # Cada ferramenta é só dados: a página monta cartão, ajustes e botão a partir deles.
 #   "time":   linha de início/fim (``end`` False = só um momento);
@@ -143,9 +162,11 @@ OPERATIONS = {
         "action": "Criar MKV",
     },
     "compress": {
-        "title": "Reduzir tamanho", "icon": "compress", "tag": "H.264",
-        "summary": "Crie um MP4 menor, equilibrando tamanho e qualidade.",
+        "title": "Reduzir tamanho", "icon": "compress", "tag": "H.264 · H.265 · AV1",
+        "summary": "Crie um vídeo menor escolhendo o codec, o tamanho e o formato final.",
         "action": "Comprimir",
+        "choice": {"title": "Formato final", "hint": COMPRESS_FORMAT_HINT,
+                   "options": COMPRESS_FORMAT_OPTIONS},
     },
     "target_size": {
         "title": "Caber em um limite", "icon": "limit", "tag": "MB",
@@ -334,6 +355,8 @@ class MediaToolsPage(QWidget):
 
     taskbar_progress = Signal(float)
     operation_finished = Signal(str)
+    # Reduzir tamanho precisa saber se há GPU; a janela reaproveita a detecção de Configurações.
+    gpu_detection_requested = Signal()
     # Para o histórico: arquivo gerado, mídia de origem e nome da ferramenta.
     tool_finished = Signal(str, str, str)
 
@@ -345,6 +368,8 @@ class MediaToolsPage(QWidget):
         self.worker: MediaToolWorker | None = None
         self._operation_key = "trim"
         self._convert_kind = ""   # tipo da origem que montou a lista do conversor
+        self._gpu_encoders: list[str] = []   # encoders confirmados (gpu.detect)
+        self._gpu_known = False
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -492,6 +517,8 @@ class MediaToolsPage(QWidget):
             self.target_combo, group)
         group.add_row(self.target_row)
 
+        self._compress_rows(group)
+
         self.blur_switch = Switch(group)
         self.blur_switch.setChecked(True)
         self.blur_row = SettingRow(
@@ -499,6 +526,134 @@ class MediaToolsPage(QWidget):
             "em vez de barras pretas.", self.blur_switch, group)
         group.add_row(self.blur_row)
         return group
+
+    def _compress_rows(self, group: InsetGroup) -> None:
+        """Reduzir tamanho: codec, método, tamanho alvo ou qualidade e aparelhos antigos."""
+        self.codec_combo = Select(group)
+        for key, label in COMPRESS_CODECS:
+            self.codec_combo.addItem(label, userData=key)
+        self.codec_combo.currentIndexChanged.connect(self._compress_changed)
+        self.codec_row = SettingRow(
+            "Codec de vídeo",
+            "H.265 e AV1 deixam o arquivo de 20 a 50% menor que o H.264 na mesma qualidade, "
+            "principalmente em alta resolução. GPU é bem mais rápida; CPU comprime melhor.",
+            self.codec_combo, group)
+        group.add_row(self.codec_row)
+
+        self.method_combo = Select(group)
+        self.method_combo.addItem("Definir um tamanho de arquivo (porcentagem)", userData="percent")
+        self.method_combo.addItem("Definir uma qualidade de vídeo", userData="quality")
+        self.method_combo.currentIndexChanged.connect(self._compress_changed)
+        self.method_row = SettingRow(
+            "Método de compressão",
+            "Tamanho de arquivo mira um tamanho final previsível. Qualidade mantém a "
+            "aparência e deixa o tamanho variar.", self.method_combo, group)
+        group.add_row(self.method_row)
+
+        low, high = COMPRESS_PERCENT_RANGE
+        percent = QWidget(group)
+        percent_line = QHBoxLayout(percent)
+        percent_line.setContentsMargins(0, 0, 0, 0)
+        percent_line.setSpacing(10)
+        self.percent_slider = QSlider(Qt.Orientation.Horizontal, percent)
+        self.percent_slider.setRange(low, high)
+        self.percent_slider.setMinimumWidth(180)
+        self.percent_slider.setAccessibleName(tr("Tamanho alvo em porcentagem"))
+        self.percent_stepper = Stepper(percent)
+        self.percent_stepper.setRange(low, high)
+        self.percent_stepper.spin.setSuffix("%")
+        self.percent_slider.valueChanged.connect(self.percent_stepper.setValue)
+        self.percent_stepper.valueChanged.connect(self.percent_slider.setValue)
+        self.percent_slider.setValue(60)
+        self.percent_stepper.setValue(60)
+        percent_line.addWidget(self.percent_slider, 1)
+        percent_line.addWidget(self.percent_stepper)
+        self.percent_row = SettingRow(
+            "Tamanho alvo",
+            "Porcentagem do arquivo original. Menos compacta mais: com 25%, um arquivo de "
+            "100 MB fica com cerca de 25 MB.", percent, group)
+        group.add_row(self.percent_row)
+
+        self.quality_combo = Select(group)
+        for label, value in (("Alta — arquivo maior", "high"),
+                             ("Equilibrada — recomendada", "balanced"),
+                             ("Menor arquivo — perde detalhes", "small")):
+            self.quality_combo.addItem(label, userData=value)
+        self.quality_combo.setCurrentIndex(1)
+        self.quality_row = SettingRow(
+            "Qualidade do vídeo", "Quanto maior a qualidade, maior o arquivo final.",
+            self.quality_combo, group)
+        group.add_row(self.quality_row)
+
+        self.legacy_switch = Switch(group)
+        self.legacy_switch.toggled.connect(self._compress_changed)
+        self.legacy_row = SettingRow(
+            "Compatível com aparelhos antigos",
+            "Usa H.264 com perfil Main, até 1080p e som estéreo, o que celulares, TVs e "
+            "players antigos aceitam. Comprime menos; ligue só se o aparelho for antigo.",
+            self.legacy_switch, group)
+        group.add_row(self.legacy_row)
+
+    def set_gpu(self, gpu) -> None:
+        """Resultado da detecção (Configurações): libera as opções de GPU que existem."""
+        self._gpu_encoders = list(gpu.encoders)
+        self._gpu_known = True
+        self._compress_changed()
+
+    def _compress_codec(self) -> tuple[str, bool]:
+        """``("hevc", True)`` para "H.265 — GPU"."""
+        key = str(self.codec_combo.currentData() or "h264_cpu")
+        codec, _, device = key.partition("_")
+        return codec, device == "gpu"
+
+    def _compress_changed(self, *_args) -> None:
+        """Mostra só os ajustes que valem para o formato e desliga codecs incompatíveis."""
+        if self._operation_key != "compress":
+            return
+        show = self.options_group.set_row_visible
+        fmt = self._choice() or "mp4"
+        audio_only = fmt in COMPRESS_AUDIO_FORMATS
+        legacy_possible = fmt in {"mp4", "mov", "mkv"}
+        legacy = legacy_possible and self.legacy_switch.isChecked()
+        show(self.codec_row, not audio_only)
+        show(self.legacy_row, legacy_possible)
+        percent = self.method_combo.currentData() == "percent"
+        show(self.percent_row, percent)
+        show(self.quality_row, not percent)
+        self.quality_row.title.setText(tr("Qualidade do áudio" if audio_only
+                                          else "Qualidade do vídeo"))
+
+        model = self.codec_combo.model()
+        assert isinstance(model, QStandardItemModel)   # modelo padrão do QComboBox
+        self.codec_combo.blockSignals(True)
+        try:
+            for index, (key, label) in enumerate(COMPRESS_CODECS):
+                codec, _, device = key.partition("_")
+                allowed = compress_codec_allowed(fmt, codec) and (not legacy or codec == "h264")
+                text = tr(label)
+                if device == "gpu" and not gpu_encoder_for(codec, self._gpu_encoders):
+                    allowed = False
+                    text += tr(" (detectando a GPU…)" if not self._gpu_known
+                               else " (sem GPU compatível)")
+                item = model.item(index)
+                if item is not None:
+                    item.setEnabled(allowed)
+                self.codec_combo.setItemText(index, text)
+            current = self.codec_combo.currentIndex()
+            item = model.item(current)
+            if item is None or not item.isEnabled():
+                # Troca pelo primeiro codec aceito (WebM → VP9, antigo → H.264).
+                for index in range(self.codec_combo.count()):
+                    candidate = model.item(index)
+                    if candidate is not None and candidate.isEnabled():
+                        self.codec_combo.setCurrentIndex(index)
+                        break
+            metrics = self.codec_combo.fontMetrics()
+            widest = max(metrics.horizontalAdvance(self.codec_combo.itemText(index))
+                         for index in range(self.codec_combo.count()))
+            self.codec_combo.setMinimumWidth(widest + 60)
+        finally:
+            self.codec_combo.blockSignals(False)
 
     def _destination_group(self) -> InsetGroup:
         group = InsetGroup(self)
@@ -607,13 +762,23 @@ class MediaToolsPage(QWidget):
         show(self.subtitle_row, operation == "burn")
         show(self.target_row, operation == "target_size")
         show(self.blur_row, operation == "shorts")
+        for row in self._compress_row_list():
+            show(row, operation == "compress")
+        if operation == "compress":
+            self._compress_changed()
+            if not self._gpu_known:
+                self.gpu_detection_requested.emit()
         rows = (self.time_row, self.fast_trim_row, self.choice_row, self.subtitle_row,
-                self.target_row, self.blur_row)
+                self.target_row, self.blur_row, *self._compress_row_list())
         has_options = any(row.isVisibleTo(self.options_group) for row in rows)
         self.options_label.setVisible(has_options)   # mudo, limpar metadados etc. não têm ajustes
         self.options_group.setVisible(has_options)
         self.run_button.setText(tr(data["action"]))
         self._suggest_destination()
+
+    def _compress_row_list(self) -> tuple:
+        return (self.codec_row, self.method_row, self.percent_row, self.quality_row,
+                self.legacy_row)
 
     def _source_path(self) -> Path:
         return Path(self.source_edit.text().strip())
@@ -660,6 +825,7 @@ class MediaToolsPage(QWidget):
 
     def _choice_changed(self, *_args) -> None:
         # A escolha muda a extensão sugerida (MP3 → FLAC, PNG → JPG…).
+        self._compress_changed()
         self._suggest_destination()
 
     def _choice(self) -> str:
@@ -724,6 +890,14 @@ class MediaToolsPage(QWidget):
             fast_trim=self.fast_trim_switch.isChecked(),
             choice=self._choice(),
         )
+        if options.operation == "compress":
+            codec, gpu = self._compress_codec()
+            options = replace(
+                options, video_codec=codec, use_gpu=gpu,
+                compress_mode=str(self.method_combo.currentData() or "percent"),
+                target_percent=self.percent_stepper.value(),
+                quality_level=str(self.quality_combo.currentData() or "balanced"),
+                legacy=self.legacy_row.isVisibleTo(self) and self.legacy_switch.isChecked())
         worker = MediaToolWorker(options, self.toolchain, self)
         self.worker = worker
         self._running = (str(source), OPERATIONS[options.operation]["title"])

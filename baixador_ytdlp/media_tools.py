@@ -8,7 +8,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .processes import CREATE_NO_WINDOW
-from .gpu import UPLOAD_FILTER, backend_of, device_args, quality_args, select_section_encoder
+from .gpu import (UPLOAD_FILTER, backend_of, detect, device_args, quality_args,
+                  select_section_encoder)
 from .tools import Toolchain
 
 TIME_RE = re.compile(r"^(?:\d{1,2}:)?(?:[0-5]?\d:)?[0-5]?\d(?:\.\d+)?$")
@@ -34,6 +35,13 @@ class MediaToolOptions:
     fast_trim: bool = False       # "trim": cópia direta, sem reencodar (corta no quadro-chave)
     choice: str = ""              # escolha única da ferramenta (ver CHOICES); vazio = padrão
     stream_index: int = -1        # "extract_subs": faixa resolvida pelo ffprobe (-1 = a primeira)
+    # "compress" (Reduzir tamanho): o formato final vem da extensão do destino (ver CHOICES).
+    video_codec: str = "h264"     # h264 | hevc | av1 | vp9 (ver COMPRESS_CONTAINER_CODECS)
+    use_gpu: bool = True          # tenta a GPU do codec escolhido; a CPU fica de reserva
+    compress_mode: str = "quality"  # "quality" (CRF/CQ) ou "percent" (tamanho do original)
+    target_percent: int = 60      # "percent": tamanho final em % do arquivo de origem
+    quality_level: str = "balanced"  # high | balanced | small
+    legacy: bool = False          # perfil H.264 conservador para aparelhos antigos
 
 
 # Operações que podem usar encoder de GPU. "Caber em um limite" fica na CPU: o
@@ -52,6 +60,10 @@ def uses_gpu(options: MediaToolOptions) -> bool:
         return False
     if options.operation == "trim":
         return not options.fast_trim
+    if options.operation == "compress":
+        # VP9 não tem encoder de GPU no app; áudio não tem vídeo para acelerar.
+        return (options.use_gpu and options.video_codec in GPU_COMPRESS_CODECS
+                and _format_of(options.destination) in COMPRESS_CONTAINER_CODECS)
     if options.operation == "convert":
         # Só H.264 tem encoder de GPU: WebM (VP9), AVI (MPEG-4), áudio, imagem e legenda ficam
         # na CPU. Sem isso o AVI recebia h264_nvenc no lugar do mpeg4.
@@ -76,8 +88,10 @@ CHOICES: dict[str, tuple[str, ...]] = {
     "normalize": ("-16", "-14", "-23"),
     "frame": ("png", "jpg", "webp"),
     "extract_subs": ("srt", "ass", "vtt"),
+    # Reduzir tamanho: formato final. Os de áudio guardam só o som, comprimido.
+    "compress": ("mp4", "mkv", "webm", "mov", "mp3", "m4a", "opus"),
 }
-DEFAULT_CHOICE = {"audio": "mp3", "convert": "mp4", "speed": "2", "rotate": "cw", "gif": "640",
+DEFAULT_CHOICE = {"audio": "mp3", "convert": "mp4", "compress": "mp4", "speed": "2", "rotate": "cw", "gif": "640",
                   "normalize": "-16", "frame": "png", "extract_subs": "srt"}
 
 
@@ -219,7 +233,7 @@ def default_destination(source: Path, operation: str, subtitles: Path | None = N
         "frame": ("_quadro", f".{choice}"),
         "strip": ("_limpo", _same_container(source)),
         "remux": ("_remux", ".mkv"),
-        "compress": ("_compactado", ".mp4"),
+        "compress": ("_compactado", f".{choice}"),
         "shorts": ("_shorts", ".mp4"),
         "burn": ("_com_legendas", ".mp4"),
         "target_size": ("_tamanho_alvo", ".mp4"),
@@ -347,6 +361,24 @@ def stream_types(source: Path, toolchain: Toolchain) -> set[str] | None:
             and not (item.get("disposition") or {}).get("attached_pic")}
 
 
+def _resolve_compress(options: MediaToolOptions, toolchain: Toolchain) -> MediaToolOptions:
+    """Vídeo sem imagem só pode virar áudio; arquivo sem som não pode virar MP3."""
+    target = _format_of(options.destination)
+    audio_only = target in COMPRESS_AUDIO_FORMATS
+    if not audio_only and source_kind(options.source) == "audio":
+        raise MediaToolError("Este arquivo só tem áudio; escolha MP3, M4A ou Opus como formato "
+                             "final.")
+    types = stream_types(options.source, toolchain)
+    if types is None:
+        return options
+    if audio_only and "audio" not in types:
+        raise MediaToolError("Este arquivo não tem áudio para comprimir.")
+    if not audio_only and "video" not in types:
+        raise MediaToolError("Este arquivo só tem áudio; escolha MP3, M4A ou Opus como formato "
+                             "final.")
+    return options
+
+
 def _resolve_convert(options: MediaToolOptions, toolchain: Toolchain) -> MediaToolOptions:
     """Recusa cedo, com mensagem clara, o vídeo sem imagem ou sem som (WebM só de áudio…)."""
     if source_kind(options.source) != "video":
@@ -368,6 +400,9 @@ def resolve_options(options: MediaToolOptions, toolchain: Toolchain) -> MediaToo
     """Completa o que só o ffprobe sabe (fora da UI) e recusa cedo o que não tem como dar certo."""
     if options.operation == "convert":
         return _resolve_convert(options, toolchain)
+    if options.operation == "compress":
+        validate_compress(options)
+        return _resolve_compress(options, toolchain)
     if options.operation != "extract_subs":
         return options
     streams = subtitle_streams(options.source, toolchain)
@@ -420,6 +455,161 @@ def _target_size_args(options: MediaToolOptions, toolchain: Toolchain) -> list[s
         "-b:v", f"{video}k", "-maxrate", f"{video}k", "-bufsize", f"{video * 2}k",
         "-c:a", "aac", "-b:a", f"{TARGET_AUDIO_KBPS}k", "-movflags", "+faststart",
     ]
+
+
+# --- Reduzir tamanho -------------------------------------------------------------------
+# Que codec de vídeo cada formato final aceita. WebM só leva VP9/AV1 (com Opus); MOV não
+# guarda AV1 no FFmpeg; MKV guarda tudo.
+COMPRESS_CONTAINER_CODECS: dict[str, tuple[str, ...]] = {
+    "mp4": ("h264", "hevc", "av1"),
+    "mov": ("h264", "hevc"),
+    "mkv": ("h264", "hevc", "av1", "vp9"),
+    "webm": ("vp9", "av1"),
+}
+COMPRESS_AUDIO_FORMATS = ("mp3", "m4a", "opus")
+GPU_COMPRESS_CODECS = frozenset({"h264", "hevc", "av1"})
+# Ordem de preferência quando a máquina tem mais de um backend para o mesmo codec.
+GPU_BACKEND_ORDER = ("nvenc", "amf", "qsv", "vaapi", "videotoolbox")
+COMPRESS_QUALITY_LEVELS = ("high", "balanced", "small")
+# CRF (CPU) por codec e nível; na GPU o mesmo número vira CQ/QP (gpu.quality_args).
+COMPRESS_CRF = {
+    "h264": {"high": 20, "balanced": 23, "small": 28},
+    "hevc": {"high": 22, "balanced": 26, "small": 30},
+    "av1": {"high": 28, "balanced": 34, "small": 40},
+    "vp9": {"high": 30, "balanced": 34, "small": 40},
+}
+COMPRESS_AUDIO_KBPS = {"high": 192, "balanced": 160, "small": 96}
+COMPRESS_OPUS_KBPS = {"high": 128, "balanced": 96, "small": 64}
+COMPRESS_AUDIO_ONLY_KBPS = {"high": 192, "balanced": 128, "small": 96}   # MP3/M4A sem vídeo
+COMPRESS_MIN_VIDEO_KBPS = 80
+COMPRESS_PERCENT_RANGE = (1, 100)
+
+
+def compress_codec_allowed(fmt: str, codec: str) -> bool:
+    return codec in COMPRESS_CONTAINER_CODECS.get(fmt, ())
+
+
+def validate_compress(options: MediaToolOptions) -> None:
+    """Recusa combinações que o FFmpeg aceitaria só para falhar no meio (H.264 em WebM…)."""
+    fmt = _format_of(options.destination)
+    if fmt not in COMPRESS_CONTAINER_CODECS and fmt not in COMPRESS_AUDIO_FORMATS:
+        listed = ", ".join(f".{value}" for value in CHOICES["compress"])
+        raise MediaToolError(f"Use {listed} como extensão de saída.")
+    if options.compress_mode not in {"quality", "percent"}:
+        raise MediaToolError("Método de compressão desconhecido.")
+    low, high = COMPRESS_PERCENT_RANGE
+    if options.compress_mode == "percent" and not low <= int(options.target_percent) <= high:
+        raise MediaToolError(f"O tamanho alvo precisa ficar entre {low}% e {high}% do original.")
+    if fmt in COMPRESS_AUDIO_FORMATS:
+        return
+    if options.video_codec not in COMPRESS_CRF:
+        raise MediaToolError("Codec de vídeo desconhecido.")
+    if not compress_codec_allowed(fmt, options.video_codec):
+        allowed = ", ".join(COMPRESS_CODEC_NAMES[codec]
+                            for codec in COMPRESS_CONTAINER_CODECS[fmt])
+        raise MediaToolError(f"{fmt.upper()} não aceita {COMPRESS_CODEC_NAMES[options.video_codec]}"
+                             f"; use {allowed} ou troque o formato final.")
+    if options.legacy and options.video_codec != "h264":
+        raise MediaToolError("O modo para aparelhos antigos usa H.264; escolha H.264 como codec.")
+
+
+COMPRESS_CODEC_NAMES = {"h264": "H.264", "hevc": "H.265", "av1": "AV1", "vp9": "VP9"}
+
+
+def gpu_encoder_for(codec: str, encoders: list[str] | tuple[str, ...]) -> str:
+    """Encoder de GPU para ``codec`` entre os disponíveis (``h264_nvenc``…), ou vazio."""
+    if codec not in GPU_COMPRESS_CODECS:
+        return ""
+    return next((f"{codec}_{backend}" for backend in GPU_BACKEND_ORDER
+                 if f"{codec}_{backend}" in encoders), "")
+
+
+def compress_gpu_encoder(options: MediaToolOptions, toolchain: Toolchain) -> str:
+    """Testa a GPU (no worker) e devolve o encoder do codec pedido; vazio = só CPU."""
+    if not uses_gpu(options):
+        return ""
+    try:
+        encoders = detect(toolchain.ffmpeg, verify=True, query_device=False).section_encoders
+    except Exception:  # noqa: BLE001 - sem GPU a compressão continua na CPU
+        return ""
+    return gpu_encoder_for(options.video_codec, encoders)
+
+
+def compress_budget_kbps(source_bytes: int, duration: float, percent: int) -> float:
+    """Bitrate total (kbps) que deixa o resultado com ``percent`` % do tamanho original."""
+    if duration <= 0:
+        raise MediaToolError("Não foi possível ler a duração do arquivo para calcular o tamanho.")
+    return source_bytes * 8 / 1000 * percent / 100 / duration * TARGET_SAFETY
+
+
+def _compress_audio_only(options: MediaToolOptions, fmt: str, budget: float | None) -> list[str]:
+    codec = {"mp3": "libmp3lame", "m4a": "aac", "opus": "libopus"}[fmt]
+    if budget is None:
+        table = COMPRESS_OPUS_KBPS if fmt == "opus" else COMPRESS_AUDIO_ONLY_KBPS
+        kbps = table.get(options.quality_level, table["balanced"])
+    else:
+        kbps = int(max(32, min(320, budget)))
+    return ["-vn", "-map", "0:a:0", "-c:a", codec, "-b:a", f"{kbps}k"]
+
+
+def _compress_args(options: MediaToolOptions, toolchain: Toolchain) -> list[str]:
+    """Codec, método (qualidade ou % do original), compatibilidade e formato final."""
+    validate_compress(options)
+    fmt = _format_of(options.destination)
+    budget = None
+    if options.compress_mode == "percent":
+        budget = compress_budget_kbps(options.source.stat().st_size,
+                                      media_duration(options.source, toolchain),
+                                      int(options.target_percent))
+    if fmt in COMPRESS_AUDIO_FORMATS:
+        return _compress_audio_only(options, fmt, budget)
+
+    codec = options.video_codec
+    level = options.quality_level if options.quality_level in COMPRESS_QUALITY_LEVELS else "balanced"
+    opus = fmt == "webm"
+    args = ["-map", "0:v:0", "-map", "0:a?"]
+    if options.legacy:
+        # Até 1080p e 4:2:0 de 8 bits: o que celulares, TVs e players antigos decodificam.
+        args += ["-vf", "scale=-2:'min(1080,trunc(ih/2)*2)',format=yuv420p"]
+    if codec == "h264":
+        video = ["-c:v", "libx264", "-preset", "medium"]
+    elif codec == "hevc":
+        video = ["-c:v", "libx265", "-preset", "medium"]
+    elif codec == "av1":
+        # Reserva de CPU do AV1 de GPU: SVT-AV1, rápido o bastante para uso doméstico.
+        video = ["-c:v", "libsvtav1", "-preset", "8"]
+    else:
+        video = ["-c:v", "libvpx-vp9", "-row-mt", "1", "-deadline", "good", "-cpu-used", "3"]
+
+    if budget is None:
+        crf = COMPRESS_CRF[codec][level]
+        video += ["-crf", str(crf)]
+        if codec == "vp9":
+            video += ["-b:v", "0"]
+        audio_kbps = (COMPRESS_OPUS_KBPS if opus else COMPRESS_AUDIO_KBPS)[level]
+    else:
+        audio_kbps = int(max(48 if opus else 64, min(160, budget * 0.12)))
+        video_kbps = int(budget - audio_kbps)
+        if video_kbps < COMPRESS_MIN_VIDEO_KBPS:
+            raise MediaToolError(
+                f"{options.target_percent}% do original é pouco para este vídeo; aumente a "
+                "porcentagem ou use \"Definir uma qualidade de vídeo\".")
+        video += ["-b:v", f"{video_kbps}k"]
+        if codec in {"h264", "hevc"}:
+            # Teto de pico: o tamanho final fica perto do pedido numa passada só.
+            video += ["-maxrate", f"{int(video_kbps * 1.5)}k", "-bufsize", f"{video_kbps * 2}k"]
+    if options.legacy:
+        video += ["-profile:v", "main", "-level:v", "4.1"]
+    if codec == "hevc" and fmt in {"mp4", "mov"}:
+        video += ["-tag:v", "hvc1"]   # sem isso Apple/QuickTime não abre H.265 em MP4/MOV
+    audio = (["-c:a", "libopus", "-b:a", f"{audio_kbps}k"] if opus
+             else ["-c:a", "aac", "-b:a", f"{audio_kbps}k"])
+    if options.legacy:
+        audio += ["-ac", "2", "-ar", "48000"]
+    args += [*video, *audio]
+    if fmt in {"mp4", "mov"}:
+        args += ["-movflags", "+faststart"]
+    return args
 
 
 def _audio_args(destination: Path) -> list[str]:
@@ -594,11 +784,7 @@ def build_command(options: MediaToolOptions, toolchain: Toolchain, *, video_enco
     elif options.operation == "remux":
         command += _copy_all_args(options)
     elif options.operation == "compress":
-        command += [
-            "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264",
-            "-preset", "medium", "-crf", "23",
-            "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart",
-        ]
+        command += _compress_args(options, toolchain)
     elif options.operation == "shorts":
         video = (["-filter_complex", SHORTS_BLUR_FILTER, "-map", "[v]"] if options.shorts_blur
                  else ["-map", "0:v:0", "-vf",
